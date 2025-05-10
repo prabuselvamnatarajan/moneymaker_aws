@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: 'bitnami/zookeeper:latest'
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  broker1:
+    image: bitnami/kafka:latest
+    container_name: broker1
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker1:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    ports:
+      - "9092:9092"
+
+  broker2:
+    image: confluentinc/cp-kafka:latest
+    container_name: broker2
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker2:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    ports:
+      - "9093:9093"
+
+  broker3:
+    image: confluentinc/cp-kafka:latest
+    container_name: broker3
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker3:9094
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9094
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    ports:
+      - "9094:9094"
+
+  mongo1:
+    build:
+      context: ./mongo
+    container_name: mongo1
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  mongo2:
+    build:
+      context: ./mongo
+    container_name: mongo2
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  upstox-login:
+    build:
+      context: ./MicroServices/UpstoxLogin
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    environment:
+      CLIENT_ID: f7cb4ffb-7715-40d7-ac7a-877a65f792bf
+      CLIENT_SECRET: u6iuj7end2
+      REDIRECT_URI: http://localhost/logedin
+      MONGODB_URI: mongodb://mongo1:27017,mongo2:27018/?replicaSet=rs0
+      MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
+      SHARED_DIR: /shared
+    volumes:
+      - shared:/shared
+
+volumes:
+  mongo-data:
+    driver: local
+  shared:
+    driver: local

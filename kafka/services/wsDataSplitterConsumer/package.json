@@ -1,0 +1,15 @@
+{
+  "name": "wsdatasplitterconsumer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "wsDataSplitterConsumer.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "async-retry": "^1.3.3",
+    "kafkajs": "^2.2.4"
+  }
+}
