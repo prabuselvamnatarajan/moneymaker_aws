@@ -82,8 +82,8 @@ services:
     volumes:
       - mongo1-data:/data/db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
@@ -95,8 +95,8 @@ services:
     volumes:
       - mongo2-data:/data/db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
@@ -108,8 +108,8 @@ services:
     volumes:
       - mongo3-data:/data/db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
@@ -134,7 +134,7 @@ services:
       - mongo1
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
-      MONGO_URI: mongodb://root:example@mongo1:27017
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo1:27017
       TARGET_COLLECTION_NAME: stock_database
       TARGET_TOPIC: splited-live-data
       TARGET_GROUP_ID: storer-group
@@ -152,7 +152,7 @@ services:
       - mongo1
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
-      MONGO_URI: mongodb://root:example@mongo1:27017
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo1:27017
       TARGET_COLLECTION_NAME: order_details
       TARGET_TOPIC: order_details
       TARGET_GROUP_ID: order_storer_group
@@ -168,10 +168,10 @@ services:
     ports:
       - "8080:80"
     environment:
-      CLIENT_ID: f7cb4ffb-7715-40d7-ac7a-877a65f792bf
-      CLIENT_SECRET: u6iuj7end2
-      REDIRECT_URI: http://localhost/logedin
-      MONGODB_URI: mongodb://root:example@mongo1:27017
+      CLIENT_ID: ${CLIENT_ID}
+      CLIENT_SECRET: ${CLIENT_SECRET}
+      REDIRECT_URI: ${REDIRECT_URI}
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo1:27017
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
       PORT: 80
       SHARED_DIR: /shared
