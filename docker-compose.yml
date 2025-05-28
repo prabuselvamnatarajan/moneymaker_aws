@@ -164,7 +164,7 @@ services:
       - app-net
 
   upstock-login:
-    build: ./MicroServices/UpstoxLogin
+    image: upstock-login:latest
     ports:
       - "8080:80"
     environment:
@@ -181,7 +181,7 @@ services:
       - app-net
 
   connect-upstox-web-socket:
-    build: ./MicroServices/ConnectWS-Upstox
+    image: connect-upstox-web-socket:latest
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
       PORT: 80
@@ -191,7 +191,7 @@ services:
       - app-net
 
   get-ltp:
-    build: ./MicroServices/market-quote/getLTP
+    image: get-ltp:latest
     environment:
       PORT: 80
     volumes:
@@ -200,7 +200,7 @@ services:
       - app-net
 
   get-ohlc:
-    build: ./MicroServices/market-quote/getOHLC
+    image: get-ohlc:latest
     environment:
       PORT: 80
     volumes:
@@ -209,7 +209,7 @@ services:
       - app-net
 
   get-fullmarketquote:
-    build: ./MicroServices/market-quote/fullMarketQuote
+    image: get-fullmarketquote:latest
     environment:
       PORT: 80
     volumes:
@@ -218,7 +218,7 @@ services:
       - app-net
 
   placeorder:
-    build: ./MicroServices/Orders/placeOrder
+    image: placeorder:latest
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
       TARGET_TOPIC: order_details
@@ -229,7 +229,7 @@ services:
       - app-net
 
   get-orderbook:
-    build: ./MicroServices/Orders/getOrderBook
+    image: get-orderbook:latest
     environment:
       PORT: 80
     volumes:
@@ -269,6 +269,6 @@ networks:
 
 
 
-#  docker stack deploy --detach=false -c stack.yml moneymaker
+#  docker stack deploy --detach=false --compose-file docker-compose.yml moneymaker
 
 #  docker stack rm moneymaker
