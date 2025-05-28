@@ -2,95 +2,273 @@ version: '3.8'
 
 services:
   zookeeper:
-    image: 'bitnami/zookeeper:latest'
-    container_name: zookeeper
+    image: bitnami/zookeeper:latest
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+      ZOO_MY_ID: 1
+      ZOO_SERVERS: zookeeper:2888:3888
+      ALLOW_ANONYMOUS_LOGIN: "yes"
     ports:
       - "2181:2181"
+    networks:
+      - app-net
 
-  broker1:
-    image: bitnami/kafka:latest
-    container_name: broker1
+  kafka-broker-1:
+    image: bitnami/kafka:3.4.1
+    deploy:
+      mode: replicated
+      replicas: 1
     depends_on:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker1:9092
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker-1:9092
+      KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      ALLOW_PLAINTEXT_LISTENER: "yes"
     ports:
       - "9092:9092"
-
-  broker2:
-    image: confluentinc/cp-kafka:latest
-    container_name: broker2
+    networks:
+      - app-net
+  
+  kafka-broker-2:
+    image: bitnami/kafka:3.4.1
+    deploy:
+      mode: replicated
+      replicas: 1
     depends_on:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 2
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker2:9093
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker-2:9092
+      KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      ALLOW_PLAINTEXT_LISTENER: "yes"
     ports:
-      - "9093:9093"
-
-  broker3:
-    image: confluentinc/cp-kafka:latest
-    container_name: broker3
+      - "9093:9092"
+    networks:
+      - app-net
+  
+  kafka-broker-3:
+    image: bitnami/kafka:3.4.1
+    deploy:
+      mode: replicated
+      replicas: 1
     depends_on:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 3
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker3:9094
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9094
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker-3:9092
+      KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      ALLOW_PLAINTEXT_LISTENER: "yes"
     ports:
-      - "9094:9094"
+      - "9094:9092"
+    networks:
+      - app-net
 
   mongo1:
-    build:
-      context: ./mongo
-    container_name: mongo1
+    image: mongo:6.0
     ports:
       - "27017:27017"
     volumes:
-      - mongo-data:/data/db
+      - mongo1-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_REPLICA_SET_NAME: rs0
+    networks:
+      - app-net
 
   mongo2:
-    build:
-      context: ./mongo
-    container_name: mongo2
+    image: mongo:6.0
     ports:
       - "27018:27017"
     volumes:
-      - mongo-data:/data/db
+      - mongo2-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_REPLICA_SET_NAME: rs0
+    networks:
+      - app-net
 
-  upstox-login:
-    build:
-      context: ./MicroServices/UpstoxLogin
-      dockerfile: Dockerfile
+  mongo3:
+    image: mongo:6.0
     ports:
-      - "80:80"
+      - "27019:27017"
+    volumes:
+      - mongo3-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_REPLICA_SET_NAME: rs0
+    networks:
+      - app-net
+
+  wsdatasplitter-consumer:
+    image: prabuselvam/wsdatasplitterconsumer:latest
+    depends_on:
+      - kafka-broker-1
+    environment:
+      KAFKA_BROKERS: kafka-broker-1:9092
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
+
+  price-storer-consumer:
+    image: prabuselvam/storer-consumer:latest
+    depends_on:
+      - kafka-broker-1
+      - mongo1
+    environment:
+      KAFKA_BROKERS: kafka-broker-1:9092
+      MONGO_URI: mongodb://root:example@mongo1:27017
+      TARGET_COLLECTION_NAME: stock_database
+      TARGET_TOPIC: splited-live-data
+      TARGET_GROUP_ID: storer-group
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
+
+  order-storer-consumer:
+    image: prabuselvam/storer-consumer:latest
+    depends_on:
+      - kafka-broker-1
+      - mongo1
+    environment:
+      KAFKA_BROKERS: kafka-broker-1:9092
+      MONGO_URI: mongodb://root:example@mongo1:27017
+      TARGET_COLLECTION_NAME: order_details
+      TARGET_TOPIC: order_details
+      TARGET_GROUP_ID: order_storer_group
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
+
+  upstock-login:
+    image: prabuselvam/upstox-login:latest
+    ports:
+      - "8080:80"
     environment:
       CLIENT_ID: f7cb4ffb-7715-40d7-ac7a-877a65f792bf
       CLIENT_SECRET: u6iuj7end2
       REDIRECT_URI: http://localhost/logedin
-      MONGODB_URI: mongodb://mongo1:27017,mongo2:27018/?replicaSet=rs0
+      MONGODB_URI: mongodb://root:example@mongo1:27017
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
+      PORT: 80
       SHARED_DIR: /shared
     volumes:
-      - shared:/shared
+      - shared-space:/shared
+    networks:
+      - app-net
+
+  connect-upstox-web-socket:
+    image: prabuselvam/connectwebsocket:latest
+    environment:
+      KAFKA_BROKERS: kafka-broker-1:9092
+      PORT: 80
+    volumes:
+      - shared-space:/shared
+    networks:
+      - app-net
+
+  get-ltp:
+    image: prabuselvam/getltp:latest
+    environment:
+      PORT: 80
+    volumes:
+      - shared-space:/shared
+    networks:
+      - app-net
+
+  get-ohlc:
+    image: prabuselvam/getohlc:latest
+    environment:
+      PORT: 80
+    volumes:
+      - shared-space:/shared
+    networks:
+      - app-net
+
+  get-fullmarketquote:
+    image: prabuselvam/fullmarketquote:latest
+    environment:
+      PORT: 80
+    volumes:
+      - shared-space:/shared
+    networks:
+      - app-net
+
+  placeorder:
+    image: prabuselvam/placeorder:latest
+    environment:
+      KAFKA_BROKERS: kafka-broker-1:9092
+      TARGET_TOPIC: order_details
+      PORT: 80
+    volumes:
+      - shared-space:/shared
+    networks:
+      - app-net
+
+  get-orderbook:
+    image: prabuselvam/orderbook:latest
+    environment:
+      PORT: 80
+    volumes:
+      - shared-space:/shared
+    networks:
+      - app-net
+
+  reverse-proxy:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - upstock-login
+      - connect-upstox-web-socket
+      - get-ltp
+      - get-ohlc
+      - get-fullmarketquote
+      - get-orderbook
+      - placeorder
+    networks:
+      - app-net
 
 volumes:
-  mongo-data:
+  mongo1-data:
     driver: local
-  shared:
+  mongo2-data:
     driver: local
+  mongo3-data:
+    driver: local
+  shared-space:
+
+networks:
+  app-net:
+    driver: overlay
+
+
+
+#  docker stack deploy --detach=false -c stack.yml moneymaker
+
+#  docker stack rm moneymaker
