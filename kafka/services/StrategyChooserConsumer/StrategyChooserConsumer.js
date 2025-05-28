@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-const TARGET_TOPIC = process.env.TARGET_TOPIC;
+const TARGET_TOPICS = (process.env.TARGET_TOPIC || '').split(',').map(t => t.trim()).filter(Boolean);
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 const BACKTEST_TOPIC_PREFIX = process.env.BACKTEST_TOPIC_PREFIX || 'backtest-';
 
@@ -31,8 +31,11 @@ async function createConsumer() {
     await consumer.connect();
     await producer.connect();
 
-    // Always subscribe to both live and backtest topics
-    await consumer.subscribe({ topic: TARGET_TOPIC, fromBeginning: false });
+    // Subscribe to all topics in TARGET_TOPICS
+    for (const topic of TARGET_TOPICS) {
+        await consumer.subscribe({ topic, fromBeginning: false });
+    }
+    // Also subscribe to backtest topics by prefix if needed
     await consumer.subscribe({ topic: new RegExp(`^${BACKTEST_TOPIC_PREFIX}`), fromBeginning: false });
 
     await consumer.run({

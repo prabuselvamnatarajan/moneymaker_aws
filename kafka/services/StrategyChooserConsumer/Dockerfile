@@ -20,7 +20,7 @@ EXPOSE 3000
 ENV KAFKA_BROKERS=localhost:9092
 ENV SHARED_DIR=/shared
 ENV TARGET_GROUP_ID=strategy_chooser_group
-ENV TARGET_TOPIC=splited-live-data
+ENV TARGET_TOPIC=splited-live-data,backtest-stream-data
 ENV BACKTEST_TOPIC_PREFIX=backtest-
 
 # Command to run the Kafka consumer
