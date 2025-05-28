@@ -164,7 +164,7 @@ services:
       - app-net
 
   upstock-login:
-    image: prabuselvam/upstox-login:latest
+    build: ./MicroServices/UpstoxLogin
     ports:
       - "8080:80"
     environment:
@@ -181,7 +181,7 @@ services:
       - app-net
 
   connect-upstox-web-socket:
-    image: prabuselvam/connectwebsocket:latest
+    build: ./MicroServices/ConnectWS-Upstox
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
       PORT: 80
@@ -191,7 +191,7 @@ services:
       - app-net
 
   get-ltp:
-    image: prabuselvam/getltp:latest
+    build: ./MicroServices/market-quote/getLTP
     environment:
       PORT: 80
     volumes:
@@ -200,7 +200,7 @@ services:
       - app-net
 
   get-ohlc:
-    image: prabuselvam/getohlc:latest
+    build: ./MicroServices/market-quote/getOHLC
     environment:
       PORT: 80
     volumes:
@@ -209,7 +209,7 @@ services:
       - app-net
 
   get-fullmarketquote:
-    image: prabuselvam/fullmarketquote:latest
+    build: ./MicroServices/market-quote/fullMarketQuote
     environment:
       PORT: 80
     volumes:
@@ -218,7 +218,7 @@ services:
       - app-net
 
   placeorder:
-    image: prabuselvam/placeorder:latest
+    build: ./MicroServices/Orders/placeOrder
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
       TARGET_TOPIC: order_details
@@ -229,7 +229,7 @@ services:
       - app-net
 
   get-orderbook:
-    image: prabuselvam/orderbook:latest
+    build: ./MicroServices/Orders/getOrderBook
     environment:
       PORT: 80
     volumes:
