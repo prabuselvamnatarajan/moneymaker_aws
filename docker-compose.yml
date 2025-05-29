@@ -134,7 +134,7 @@ services:
       - mongo1
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
-      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo1:27017
+      MONGO_URI: mongodb://root:example@mongo1:27017
       TARGET_COLLECTION_NAME: stock_database
       TARGET_TOPIC: splited-live-data
       TARGET_GROUP_ID: storer-group
@@ -152,7 +152,7 @@ services:
       - mongo1
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
-      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo1:27017
+      MONGO_URI: mongodb://root:example@mongo1:27017
       TARGET_COLLECTION_NAME: order_details
       TARGET_TOPIC: order_details
       TARGET_GROUP_ID: order_storer_group
@@ -168,10 +168,10 @@ services:
     ports:
       - "8080:80"
     environment:
-      CLIENT_ID: ${CLIENT_ID}
-      CLIENT_SECRET: ${CLIENT_SECRET}
-      REDIRECT_URI: ${REDIRECT_URI}
-      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongo1:27017
+      CLIENT_ID: 50b489f2-22c5-4824-9da5-9b815aab9667
+      CLIENT_SECRET: d51apkeb3c
+      REDIRECT_URI: http://localhost/logedin
+      MONGO_URI: mongodb://root:example@mongo1:27017
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
       PORT: 80
       SHARED_DIR: /shared
@@ -241,8 +241,11 @@ services:
     image: nginx:latest
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs/self-signed.crt:/etc/nginx/self-signed.crt:ro
+      - ./certs/self-signed.key:/etc/nginx/self-signed.key:ro
     depends_on:
       - upstock-login
       - connect-upstox-web-socket
