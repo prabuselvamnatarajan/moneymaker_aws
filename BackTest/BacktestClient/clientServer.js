@@ -10,6 +10,9 @@ const WS_URL = process.env.WS_URL || 'ws://localhost:8085';
 // Use environment variables with fallback defaults
 const KAFKA_BROKER = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 
+// Add topic from env variable with fallback
+const KAFKA_TOPIC = process.env.KAFKA_TOPIC || 'backtest-stream-data';
+
 
 if (!KAFKA_BROKER) {
     throw new Error('KAFKA_BROKER env variable is required');
@@ -45,7 +48,8 @@ app.get('/', (req, res) => {
     }
 
     // Sanitize topic parts
-    const topic = 'backtest-stream-data';
+    // Use topic from env variable
+    const topic = KAFKA_TOPIC;
     const partitionKey = `backtest-${sanitize(symbolName)}-${sanitize(date)}-${sanitize(timeMsNum)}`;
 
     const ws = new WebSocket(WS_URL);
