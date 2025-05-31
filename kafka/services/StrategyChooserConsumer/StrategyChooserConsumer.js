@@ -45,11 +45,17 @@ async function createConsumer() {
             console.log(`Active strategies for ${symbol}:`, strategies);
             const data = JSON.parse(value.toString());
 
-            await Promise.all(strategies.map(async (strategyName) => {
+            await Promise.all(strategies.map(async (strategy) => {
                 try {
+                    let { name: strategyName, isTest = true } = strategy;
                     const topicName = isBackTest
                         ? `${strategyName}_backtest_data`
                         : `${strategyName}_live_data`;
+                    if (isBackTest || isTest) {
+                        data.isTest = true;
+                    } else {
+                        data.isTest = false;
+                    }
                     await producer.send({
                         topic: topicName,
                         messages: [
