@@ -5,7 +5,7 @@ const fs = require('fs').promises;
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPICS = (process.env.TARGET_TOPIC || '').split(',').map(t => t.trim()).filter(Boolean);
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
-const BACKTEST_TOPIC_PREFIX = process.env.BACKTEST_TOPIC_PREFIX || 'backtest-';
+const BACKTEST_TOPIC = process.env.BACKTEST_TOPIC || 'backtest-stream-data';
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 
@@ -35,13 +35,11 @@ async function createConsumer() {
     for (const topic of TARGET_TOPICS) {
         await consumer.subscribe({ topic, fromBeginning: false });
     }
-    // Also subscribe to backtest topics by prefix if needed
-    await consumer.subscribe({ topic: new RegExp(`^${BACKTEST_TOPIC_PREFIX}`), fromBeginning: false });
 
     await consumer.run({
         eachMessage: async ({ topic, message: { key, value } }) => {
             const symbol = key.toString();
-            const isBackTest = topic.startsWith(BACKTEST_TOPIC_PREFIX);
+            const isBackTest = topic === BACKTEST_TOPIC;
             console.log(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
             const strategies = await getStrategiesForSymbol(isBackTest, symbol);
             console.log(`Active strategies for ${symbol}:`, strategies);
