@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-const TARGET_TOPIC = process.env.TARGET_TOPIC;
+const TARGET_TOPICS = (process.env.TARGET_TOPIC || '').split(',').map(t => t.trim()).filter(Boolean);
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
@@ -36,7 +36,11 @@ async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
 
     await consumer.connect();
-    await consumer.subscribe({ topic: TARGET_TOPIC, fromBeginning: false });
+
+    // Subscribe to all topics in TARGET_TOPICS
+    for (const topic of TARGET_TOPICS) {
+        await consumer.subscribe({ topic, fromBeginning: false });
+    }
 
     await consumer.run({
         eachMessage: async ({ message }) => {
