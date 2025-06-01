@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const WebSocket = require('ws');
-const { Kafka } = require('kafkajs');
+const { Kafka, Partitioners } = require('kafkajs');
 
 const app = express();
 const PORT = process.env.CLIENT_PORT || 3000;
@@ -22,7 +22,9 @@ const kafka = new Kafka({
     clientId: 'backtest-client',
     brokers: KAFKA_BROKER
 });
-const producer = kafka.producer();
+const producer = kafka.producer({
+    createPartitioner: Partitioners.LegacyPartitioner
+});
 
 function sanitize(str) {
     return String(str).replace(/[^a-zA-Z0-9]/g, '_');
