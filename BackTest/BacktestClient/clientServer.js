@@ -20,7 +20,7 @@ if (!KAFKA_BROKER) {
 
 const kafka = new Kafka({
     clientId: 'backtest-client',
-    brokers: [KAFKA_BROKER]
+    brokers: KAFKA_BROKER
 });
 const producer = kafka.producer();
 
