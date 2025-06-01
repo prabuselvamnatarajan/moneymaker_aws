@@ -54,6 +54,9 @@ app.get('/', (req, res) => {
     const topic = KAFKA_TOPIC;
     const partitionKey = `backtest-${sanitize(symbolName)}-${sanitize(date)}-${sanitize(timeMsNum)}`;
 
+    // Log the WebSocket URL and payload for debugging
+    console.log(`Starting WebSocket client for symbol: ${symbolName}, date: ${date}, time_ms: ${timeMsNum} at WS_URL: ${WS_URL}`);
+
     const ws = new WebSocket(WS_URL);
 
     ws.on('open', () => {
@@ -61,6 +64,7 @@ app.get('/', (req, res) => {
         if (time_ms !== undefined) {
             payload.time_ms = timeMsNum;
         }
+        console.log('Sending payload to WebSocket:', payload);
         ws.send(JSON.stringify(payload));
     });
 
@@ -84,6 +88,10 @@ app.get('/', (req, res) => {
 
     ws.on('error', (err) => {
         console.error('WebSocket error:', err.message);
+        // Log more details if available
+        if (err && err.message) {
+            console.error('WebSocket error details:', err);
+        }
     });
 
     res.send('WebSocket client started. Check server console for streamed data.');

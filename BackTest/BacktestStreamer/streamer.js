@@ -28,7 +28,7 @@ wss.on('connection', ws => {
             return;
         }
         let sanitised_SymbolName = sanitize(symbolName);
-        const filePath = path.join(SHARED_DIR, 'exportedData', date, `${sanitised_SymbolName}_export.json`);
+        const filePath = path.join(SHARED_DIR, 'exportedData', date, `${sanitised_SymbolName}.json`);
         try {
             const data = await getSourceData('local_file', filePath);
             if (!Array.isArray(data)) {
