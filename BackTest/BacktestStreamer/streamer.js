@@ -8,6 +8,10 @@ const SHARED_DIR = process.env.SHARED_DIR || path.join(__dirname, '..');
 
 const wss = new WebSocket.Server({ port: PORT });
 
+function sanitize(str) {
+    return String(str).replace(/[^a-zA-Z0-9]/g, '_');
+}
+
 wss.on('connection', ws => {
     ws.on('message', async message => {
         // Expecting JSON: { symbolName: "AAPL", date: "2024-06-01", time_ms: 1000 }
@@ -23,7 +27,8 @@ wss.on('connection', ws => {
             ws.send(JSON.stringify({ error: 'Missing symbolName or date' }));
             return;
         }
-        const filePath = path.join(SHARED_DIR, 'exportedData', date, `${symbolName}.json`);
+        let sanitised_SymbolName = sanitize(symbolName);
+        const filePath = path.join(SHARED_DIR, 'exportedData', date, `${sanitised_SymbolName}_export.json`);
         try {
             const data = await getSourceData('local_file', filePath);
             if (!Array.isArray(data)) {
