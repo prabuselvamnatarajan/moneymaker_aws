@@ -7,5 +7,7 @@ docker build -t get-ohlc:latest ./MicroServices/market-quote/getOHLC
 docker build -t get-fullmarketquote:latest ./MicroServices/market-quote/fullMarketQuote
 docker build -t placeorder:latest ./MicroServices/Orders/placeOrders
 docker build -t get-orderbook:latest ./MicroServices/Orders/getOrderBook
+docker build -t backteststreamer:latest ./BackTest/BacktestStreamer
+docker build -t backtestclient:latest ./BackTest/BacktestClient
 
 docker stack deploy --detach=false --compose-file docker-compose.yml moneymaker
