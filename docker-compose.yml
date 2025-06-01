@@ -187,7 +187,9 @@ services:
     image: prabuselvam/backteststreamer:latest
     environment:
       PORT: 80
-      SHARED_DIR: /app/exportedData
+      SHARED_DIR: /shared
+    volumes:
+      - backtest-data:/shared
     deploy:
       replicas: 3
       restart_policy:
@@ -315,6 +317,7 @@ volumes:
   mongo3-data:
     driver: local
   shared-space:
+  backtest-data:
 
 networks:
   app-net:
