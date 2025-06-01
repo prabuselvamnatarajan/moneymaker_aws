@@ -162,6 +162,26 @@ services:
         condition: any
     networks:
       - app-net
+  
+  strategy-chooser-consumer:
+    image: prabuselvam/strategy-chooser-consumer:latest
+    depends_on:
+      - kafka-broker-1
+      - mongo1
+    environment:
+      KAFKA_BROKERS: kafka-broker-1:9092
+      TARGET_TOPIC: splited-live-data,backtest-stream-data
+      BACKTEST_TOPIC: backtest-stream-data
+      TARGET_GROUP_ID: strategy_chooser_group
+      SHARED_DIR: /shared
+    volumes:
+      - shared-space:/shared
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
 
   upstock-login:
     image: upstock-login:latest
