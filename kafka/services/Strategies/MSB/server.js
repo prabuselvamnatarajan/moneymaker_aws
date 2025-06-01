@@ -1,18 +1,21 @@
 const { Kafka } = require('kafkajs');
+const MSB = require('./MSB');
 const fs = require('fs').promises;
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPICS = (process.env.TARGET_TOPIC || '').split(',').map(t => t.trim()).filter(Boolean);
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
+const BACKTEST_TOPIC = process.env.BACKTEST_TOPIC || 'backtest-stream-data';
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 
 const rootDir = process.env.SHARED_DIR || '.';
 
-async function getMSBStrategyStateForSymbol(symbol) {
+async function getMSBStrategyStateForSymbol(symbol, isBackTest = false) {
     try {
-        const filePath = `${rootDir}/strategy/MSB/${symbol}.json`;
+        const fileName = isBackTest ? 'backtest' : 'live';
+        const filePath = `${rootDir}/strategy/MSB/${fileName}/${symbol}.json`;
         const fileContent = await fs.readFile(filePath, 'utf-8');
         return JSON.parse(fileContent); // Return parsed JSON data
     } catch (error) {
@@ -45,12 +48,13 @@ async function createConsumer() {
     await consumer.run({
         eachMessage: async ({ message }) => {
             const symbol = message.key.toString();
+            const isBackTest = topic === BACKTEST_TOPIC;
             console.log(`Received message for symbol ${symbol}`);
-            const lastState = await getMSBStrategyStateForSymbol(symbol);
+            const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest);
             const data = JSON.parse(message.value.toString());
 
             // call the actual strategy function here
-            let newState = MSB(lastState, data);
+            let newState = MSB(lastState, data, symbol);
 
             await writeMSBStrategyStateForSymbol(symbol, newState);
 
