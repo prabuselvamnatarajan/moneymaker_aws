@@ -82,8 +82,8 @@ services:
     volumes:
       - mongo1-data:/data/db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
       MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
@@ -95,8 +95,8 @@ services:
     volumes:
       - mongo2-data:/data/db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
       MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
@@ -108,8 +108,8 @@ services:
     volumes:
       - mongo3-data:/data/db
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
       MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
@@ -171,7 +171,7 @@ services:
       CLIENT_ID: 50b489f2-22c5-4824-9da5-9b815aab9667
       CLIENT_SECRET: d51apkeb3c
       REDIRECT_URI: http://localhost/logedin
-      MONGO_URI: mongodb://root:example@mongo1:27017
+      MONGODB_URI: mongodb://root:example@mongo1:27017
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
       PORT: 80
       SHARED_DIR: /shared
