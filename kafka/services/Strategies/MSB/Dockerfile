@@ -22,6 +22,6 @@ EXPOSE 3000
 ENV KAFKA_BROKERS=localhost:9092
 ENV TARGET_TOPIC=splited-live-data,backtest-stream-data
 ENV TARGET_GROUP_ID=MSB_Strategy_Processors
-ENV SHARED_DIR=.
+ENV SHARED_DIR=/shared
 
 CMD ["node", "server.js"]
