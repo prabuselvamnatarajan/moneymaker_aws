@@ -114,6 +114,22 @@ services:
     networks:
       - app-net
 
+  exporttofile:
+    image: prabuselvam/exporttofile:latest
+    depends_on:
+      - mongo1
+    environment:
+      MONGO_URI: mongodb://root:example@mongo1:27017
+      DB_NAME: stock_database
+      EXPORT_PREF_COLLECTION: exportPreferences
+      EXPORT_CRON_SCHEDULE: 15 16 * * *
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
+
   wsdatasplitter-consumer:
     image: prabuselvam/wsdatasplitterconsumer:latest
     depends_on:
