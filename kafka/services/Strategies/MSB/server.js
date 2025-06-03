@@ -1,5 +1,6 @@
 const { Kafka } = require('kafkajs');
 const MSB = require('./MSB');
+const { getLatestOHLCByInterval, getLTP } = require('./utils');
 const fs = require('fs').promises;
 
 // Use environment variables with fallback defaults
@@ -51,7 +52,13 @@ async function createConsumer() {
             const isBackTest = topic === BACKTEST_TOPIC;
             console.log(`Received message for symbol ${symbol}`);
             const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest);
-            const data = JSON.parse(message.value.toString());
+            const msg = JSON.parse(message.value.toString());
+
+            let data = getLatestOHLCByInterval(msg, 'I1');
+            let ltp = getLTP(msg);
+
+            console.log(`Processing data for symbol ${symbol}:`, data);
+            console.log(`Last Trade Price (LTP) for ${symbol}:`, ltp);
 
             // call the actual strategy function here
             let newState = MSB(lastState, data, symbol);
