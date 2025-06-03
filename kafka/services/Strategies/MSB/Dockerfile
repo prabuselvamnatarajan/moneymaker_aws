@@ -23,5 +23,6 @@ ENV KAFKA_BROKERS=localhost:9092
 ENV TARGET_TOPIC=splited-live-data,backtest-stream-data
 ENV TARGET_GROUP_ID=MSB_Strategy_Processors
 ENV SHARED_DIR=/shared
+ENV PLACEORDER_API=http://localhost/placeorder
 
 CMD ["node", "server.js"]
