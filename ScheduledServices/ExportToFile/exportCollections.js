@@ -26,7 +26,7 @@ async function exportCollection(collectionName) {
     const data = await collection.find(query).toArray();
 
     const dateFolder = todayIST.toFormat('yyyy-MM-dd');
-    const exportPath = path.join(__dirname, 'exportedData', dateFolder);
+    const exportPath = path.join(process.env.EXPORT_VOLUME_PATH ? path.join(process.env.EXPORT_VOLUME_PATH, 'exportedData') : path.join(__dirname, 'exportedData'), dateFolder);
     fs.mkdirSync(exportPath, { recursive: true });
 
     const sanitizedCollectionName = collectionName.replace(/[^a-zA-Z0-9-_]/g, '_');
