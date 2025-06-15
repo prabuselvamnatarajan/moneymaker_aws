@@ -1,5 +1,5 @@
-const { Kafka } = require('kafkajs');
-const fs = require('fs').promises;
+import { Kafka } from 'kafkajs';
+import getStrategiesForSymbol from './redis_utils/getStrategiesForSymbol.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -8,21 +8,6 @@ const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 const BACKTEST_TOPIC = process.env.BACKTEST_TOPIC || 'backtest-stream-data';
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
-
-const rootDir = process.env.SHARED_DIR || '.';
-
-async function getStrategiesForSymbol(isBackTest, symbol) {
-    try {
-        const fileName = isBackTest ? 'backtest' : 'live';
-        const filePath = `${rootDir}/strategyChooser/${fileName}/${symbol}.json`;
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-        const { activeStrategies = [] } = JSON.parse(fileContent);
-        return activeStrategies;
-    } catch (error) {
-        console.error(`Error reading strategies for symbol ${symbol}:`, error.message);
-        return [];
-    }
-}
 
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
