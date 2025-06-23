@@ -16,8 +16,8 @@ async function getStrategiesForSymbol(isBackTest, symbol) {
         redisJson = new RedisJson(redisClientInstance.getClient());
     }
     const key = isBackTest
-        ? `strategyChooser:backtest:${symbol}`
-        : `strategyChooser:live:${symbol}`;
+        ? `strategies:backtest:${symbol}`
+        : `strategies:live:${symbol}`;
     try {
         const data = await redisJson.getJson(key);
         if (!data || !Array.isArray(data.activeStrategies)) return [];
