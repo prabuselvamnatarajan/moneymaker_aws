@@ -1,0 +1,1 @@
+after every changes the AI need to update the git with proper message for the changes. so i will have a all the chnages tracked.

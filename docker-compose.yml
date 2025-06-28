@@ -259,6 +259,24 @@ services:
     networks:
       - app-net
 
+  appinit:
+    image: appinit:latest
+    depends_on:
+      - mongo1
+      - redis
+    environment:
+      MONGO_URI: mongodb://mongo1:27017
+      APP_INIT_DB: appInit
+      DB_LIVE_STRATEGYCHOOSER: strategyChooser
+      REDIS_LIVE_STRATEGYCHOOSER: '{"key":"strategyChooserKey","data_type":"json"}'
+      REDIS_URL: redis://redis:6379
+      PROPERTY_LIVE_STRATEGYCHOOSER: propertyName
+      DB_LIVE_WEBSOCKETLISTENING: webSocketListening
+      REDIS_LIVE_WEBSOCKETLISTENING: '{"key":"webSocketListeningKey","data_type":"json"}'
+      PROPERTY_LIVE_WEBSOCKETLISTENING: propertyName
+    networks:
+      - app-net
+
   upstock-login:
     image: upstock-login:latest
     ports:
