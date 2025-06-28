@@ -1,5 +1,7 @@
 #!/bin/sh
 
+docker build -t appinit:latest ./appInit
+
 docker build -t upstock-login:latest ./MicroServices/UpstoxLogin
 docker build -t connect-upstox-web-socket:latest ./MicroServices/ConnectWS-Upstox
 docker build -t get-ltp:latest ./MicroServices/market-quote/getLTP

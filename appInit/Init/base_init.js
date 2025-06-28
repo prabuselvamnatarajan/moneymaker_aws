@@ -1,4 +1,4 @@
-const connect = require('../db/connect.js');
+import { connect } from '../db/connect.js';
 import { getRedisTargetByType, addDataToRedisTarget, clearRedisKeyIfNeeded } from '../redis_operations/helpers.js';
 
 // main now takes config parameters
