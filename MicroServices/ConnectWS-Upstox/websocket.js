@@ -13,33 +13,27 @@ const kafkaBrokers = process.env.KAFKA_BROKERS || 'localhost:9092'; // Use envir
 async function get_WS_URL({ access_token, symbol = [] }) {
   try {
     await initProtobuf();
-    const response = await axios.get('https://api.upstox.com/v2/feed/market-data-feed', {
+    const initUrl = 'wss://api.upstox.com/v3/feed/market-data-feed';
+    const ws = new WebSocket(initUrl, {
       headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'Accept': '*/*'
+        "Accept": "*/*",
+        Authorization: `Bearer  ${access_token}`,
       },
-      maxRedirects: 0,
+      followRedirects: true,
     });
 
-    // This should not happen if a 302 redirect occurs, but in case it does:
-    console.log('Redirection detected: ' + response);
+    console.log('Redirection detected: ' + ws);
+    connectWebSocket({ ws, symbol })
 
   } catch (error) {
-    if (error.response && error.response.status === 302) {
-      const redirectUrl = error.response.headers.location;
-
-      connectWebSocket({ wsUrl: redirectUrl, accessToken: access_token, symbol })
-
-    } else {
-      console.error('Error during WebSocket connection setup:', error.message);
-    }
+    console.error('Error during WebSocket connection setup:', error.message);
   }
 }
 
 
 
 
-const connectWebSocket = async ({ wsUrl, accessToken, symbol = [] }) => {
+const connectWebSocket = async ({ ws, symbol = [] }) => {
   const kafka = new Kafka({ clientId: 'stock-app', brokers: [kafkaBrokers] });
   const producer = kafka.producer();
 
@@ -54,13 +48,6 @@ const connectWebSocket = async ({ wsUrl, accessToken, symbol = [] }) => {
   }
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl, {
-      headers: {
-        "Api-Version": apiVersion,
-        Authorization: `Bearer  ${accessToken}`,
-      },
-      followRedirects: true,
-    });
 
     // WebSocket event handlers
     ws.on("open", () => {
@@ -121,7 +108,7 @@ const decodeProfobuf = async (buffer) => {
   }
 
   const FeedResponse = protobufRoot.lookupType(
-    "com.upstox.marketdatafeeder.rpc.proto.FeedResponse"
+    "com.upstox.marketdatafeederv3udapi.rpc.proto.FeedResponse"
   );
   return FeedResponse.decode(buffer);
 };
