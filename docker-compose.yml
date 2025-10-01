@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   zookeeper:
-    image: bitnami/zookeeper:latest
+    image: bitnamilegacy/zookeeper:latest
     environment:
       ZOO_MY_ID: 1
       ZOO_SERVERS: zookeeper:2888:3888
@@ -13,7 +13,7 @@ services:
       - app-net
 
   kafka-broker-1:
-    image: bitnami/kafka:3.4.1
+    image: bitnamilegacy/kafka:3.4.1
     deploy:
       mode: replicated
       replicas: 1
@@ -34,7 +34,7 @@ services:
       - app-net
   
   kafka-broker-2:
-    image: bitnami/kafka:3.4.1
+    image: bitnamilegacy/kafka:3.4.1
     deploy:
       mode: replicated
       replicas: 1
@@ -55,7 +55,7 @@ services:
       - app-net
   
   kafka-broker-3:
-    image: bitnami/kafka:3.4.1
+    image: bitnamilegacy/kafka:3.4.1
     deploy:
       mode: replicated
       replicas: 1
