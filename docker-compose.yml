@@ -81,10 +81,13 @@ services:
       - "27017:27017"
     volumes:
       - mongo1-data:/data/db
+      - ./mongo/mongod.conf:/etc/mongod.conf
+      - ./mongo/mongo-keyfile:/etc/mongo-keyfile:ro
+      - ./mongo/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    entrypoint: ["/bin/bash", "/docker-entrypoint-initdb.d/init.sh"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
-      MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
 
@@ -94,10 +97,13 @@ services:
       - "27018:27017"
     volumes:
       - mongo2-data:/data/db
+      - ./mongo/mongod.conf:/etc/mongod.conf
+      - ./mongo/mongo-keyfile:/etc/mongo-keyfile:ro
+      - ./mongo/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    entrypoint: ["/bin/bash", "/docker-entrypoint-initdb.d/init.sh"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
-      MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
 
@@ -107,10 +113,13 @@ services:
       - "27019:27017"
     volumes:
       - mongo3-data:/data/db
+      - ./mongo/mongod.conf:/etc/mongod.conf
+      - ./mongo/mongo-keyfile:/etc/mongo-keyfile:ro
+      - ./mongo/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    entrypoint: ["/bin/bash", "/docker-entrypoint-initdb.d/init.sh"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
-      MONGO_REPLICA_SET_NAME: rs0
     networks:
       - app-net
 
