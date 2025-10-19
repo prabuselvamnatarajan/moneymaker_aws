@@ -33,10 +33,11 @@ async function createConsumer() {
             await Promise.all(strategies.map(async (strategy) => {
                 try {
                     let { name: strategyName, isTest = true } = strategy;
-                    const topicName = isBackTest
+                    const isTestMode = isTest || isBackTest;
+                    const topicName = isTestMode
                         ? `${strategyName}_backtest_data`
                         : `${strategyName}_live_data`;
-                    if (isBackTest || isTest) {
+                    if (isTestMode) {
                         data.isTest = true;
                     } else {
                         data.isTest = false;
