@@ -5,32 +5,38 @@ const fs = require('fs').promises;
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-const TARGET_TOPICS = (process.env.TARGET_TOPIC || '').split(',').map(t => t.trim()).filter(Boolean);
+const BACKTEST_TOPIC_SUFFIX = process.env.BACKTEST_TOPIC_SUFFIX || '_backtest_data';
+const LIVE_TOPIC_SUFFIX = process.env.LIVE_TOPIC_SUFFIX || '_live_data';
+const STRATEGY_NAME = process.env.STRATEGY_NAME || 'msb';
+const TARGET_TOPICS = [`${STRATEGY_NAME}${BACKTEST_TOPIC_SUFFIX}`, `${STRATEGY_NAME}${LIVE_TOPIC_SUFFIX}`];
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
-const BACKTEST_TOPIC = process.env.BACKTEST_TOPIC || 'backtest-stream-data';
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 
 const rootDir = process.env.SHARED_DIR || '.';
 
-async function getMSBStrategyStateForSymbol(symbol, isBackTest = false) {
+function getRedisKey(symbol, isTestMode) {
+    const mode = isTestMode ? 'backtest' : 'live';
+    let key = `strategies:${STRATEGY_NAME}:${mode}:${symbol}`;
+    return key;
+}
+
+async function getMSBStrategyStateForSymbol(symbol, isTestMode = false) {
     try {
-        const fileName = isBackTest ? 'backtest' : 'live';
-        const filePath = `${rootDir}/strategy/MSB/${fileName}/${symbol}.json`;
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-        return JSON.parse(fileContent); // Return parsed JSON data
+        let redisKey = getRedisKey(symbol, isTestMode);
+        let data = {redisKey};  // read data from redis by util file.
+        return data;
     } catch (error) {
         console.error(`Error reading MSB strategy for symbol ${symbol}:`, error.message);
         return null;
     }
 }
 
-async function writeMSBStrategyStateForSymbol(symbol, newState) {
+async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newState) {
     try {
-        const filePath = `${rootDir}/strategy/MSB/${symbol}.json`;
-        const fileContent = JSON.stringify(newState, null, 2); // Format JSON with indentation
-        await fs.writeFile(filePath, fileContent, 'utf-8');
-        console.log(`Successfully wrote MSB strategy state for symbol ${symbol}`);
+        let redisKey = getRedisKey(symbol, isTestMode);
+        // write newState to redisKey
+        // write data to redis by util file.
     } catch (error) {
         console.error(`Error writing MSB strategy state for symbol ${symbol}:`, error.message);
     }
@@ -63,7 +69,7 @@ async function createConsumer() {
             // call the actual strategy function here
             let newState = MSB(lastState, data, symbol);
 
-            await writeMSBStrategyStateForSymbol(symbol, newState);
+            await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState);
 
             
         },

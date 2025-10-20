@@ -382,6 +382,19 @@ services:
     networks:
       - app-net
 
+  msb-strategy:
+    image: msb-strategy:latest
+    environment:
+      KAFKA_BROKERS: kafka-broker-1:9092
+      TARGET_GROUP_ID: msb_strategy_group
+      STRATEGY_NAME: msb
+      BACKTEST_TOPIC_SUFFIX: _backtest_data
+      LIVE_TOPIC_SUFFIX: _live_data
+    depends_on:
+      - kafka-broker-1
+    networks:
+      - app-net
+
 volumes:
   mongo1-data:
     driver: local
