@@ -360,6 +360,24 @@ services:
     networks:
       - app-net
 
+  get-put-call-option-chain:
+    image: get-put-call-option-chain:latest
+    environment:
+      PORT: 80
+    volumes:
+      - shared-space:/shared
+    networks:
+      - app-net
+
+  get-option-contracts:
+    image: get-option-contracts:latest
+    environment:
+      PORT: 80
+    volumes:
+      - shared-space:/shared
+    networks:
+      - app-net
+
   reverse-proxy:
     image: nginx:latest
     ports:
