@@ -154,7 +154,7 @@ services:
         constraints: [node.role == manager]
 
   exporttofile:
-    image: prabuselvam/exporttofile:latest
+    image: exporttofile:latest
     depends_on:
       - mongo1
       - mongo2
@@ -172,7 +172,7 @@ services:
       - app-net
 
   wsdatasplitter-consumer:
-    image: prabuselvam/wsdatasplitterconsumer:latest
+    image: wsdatasplitterconsumer:latest
     depends_on:
       - kafka-broker-1
     environment:
@@ -185,7 +185,7 @@ services:
       - app-net
 
   price-storer-consumer:
-    image: prabuselvam/storer-consumer:latest
+    image: storer-consumer:latest
     depends_on:
       - kafka-broker-1
       - mongo1
@@ -205,7 +205,7 @@ services:
       - app-net
 
   order-storer-consumer:
-    image: prabuselvam/storer-consumer:latest
+    image: storer-consumer:latest
     depends_on:
       - kafka-broker-1
       - mongo1
@@ -225,7 +225,7 @@ services:
       - app-net
   
   strategy-chooser-consumer:
-    image: prabuselvam/strategy-chooser-consumer:latest
+    image: strategy-chooser-consumer:latest
     depends_on:
       - kafka-broker-1
       - mongo1
@@ -247,7 +247,7 @@ services:
       - app-net
 
   backtest-streamer:
-    image: prabuselvam/backteststreamer:latest
+    image: backteststreamer:latest
     environment:
       PORT: 8085
       SHARED_DIR: /shared
@@ -261,7 +261,7 @@ services:
       - app-net
 
   backtest-client:
-    image: prabuselvam/backtestclient:latest
+    image: backtestclient:latest
     depends_on:
       - kafka-broker-1
     environment:
