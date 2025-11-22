@@ -157,8 +157,10 @@ services:
     image: prabuselvam/exporttofile:latest
     depends_on:
       - mongo1
+      - mongo2
+      - mongo3
     environment:
-      MONGO_URI: mongodb://root:example@mongo1:27017
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
       DB_NAME: stock_database
       EXPORT_PREF_COLLECTION: exportPreferences
       EXPORT_CRON_SCHEDULE: 15 16 * * *
@@ -187,9 +189,11 @@ services:
     depends_on:
       - kafka-broker-1
       - mongo1
+      - mongo2
+      - mongo3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
-      MONGO_URI: mongodb://root:example@mongo1:27017
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
       TARGET_COLLECTION_NAME: stock_database
       TARGET_TOPIC: splited-live-data
       TARGET_GROUP_ID: storer-group
@@ -205,9 +209,11 @@ services:
     depends_on:
       - kafka-broker-1
       - mongo1
+      - mongo2
+      - mongo3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
-      MONGO_URI: mongodb://root:example@mongo1:27017
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
       TARGET_COLLECTION_NAME: order_details
       TARGET_TOPIC: order_details
       TARGET_GROUP_ID: order_storer_group
@@ -223,6 +229,8 @@ services:
     depends_on:
       - kafka-broker-1
       - mongo1
+      - mongo2
+      - mongo3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
       TARGET_TOPIC: splited-live-data,backtest-stream-data
@@ -272,9 +280,11 @@ services:
     image: appinit:latest
     depends_on:
       - mongo1
+      - mongo2
+      - mongo3
       - redis
     environment:
-      MONGO_URI: mongodb://root:example@mongo1:27017
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
       APP_INIT_DB: appInit
       DB_LIVE_STRATEGYCHOOSER: strategyChooser
       REDIS_LIVE_STRATEGYCHOOSER: '{"key":"strategies:live:","data_type":"json"}'
@@ -288,13 +298,17 @@ services:
 
   upstock-login:
     image: upstock-login:latest
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
     ports:
       - "8080:80"
     environment:
       CLIENT_ID: 50b489f2-22c5-4824-9da5-9b815aab9667
       CLIENT_SECRET: d51apkeb3c
       REDIRECT_URI: http://localhost/logedin
-      MONGODB_URI: mongodb://root:example@mongo1:27017
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
       PORT: 80
       SHARED_DIR: /shared
