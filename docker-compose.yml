@@ -235,7 +235,7 @@ services:
       TARGET_GROUP_ID: strategy_chooser_group
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
     volumes:
-      - shared-space:/shared
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
     deploy:
       replicas: 3
       restart_policy:

@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "description": "",
   "main": "StrategyChooserConsumer.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "kafkajs": "^2.2.4"
+    "kafkajs": "^2.2.4",
+    "redis": "^5.5.6"
   }
 }
