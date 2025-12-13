@@ -359,6 +359,7 @@ services:
       KAFKA_BROKERS: kafka-broker-1:9092
       TARGET_TOPIC: order_details
       PORT: 80
+      NGINX_ADDRESS: http://reverse-proxy
     volumes:
       - shared-space:/shared
     networks:

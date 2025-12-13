@@ -6,6 +6,7 @@ const base_url = 'https://api-hft.upstox.com/v2';
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPIC = process.env.TARGET_TOPIC;
+const NGINX_ADDRESS = process.env.NGINX_ADDRESS;
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 
@@ -19,7 +20,8 @@ async function storeOrderDetails(symbol, order_details) {
 
     // Fetch additional data from Nginx API (load-balanced)
     try {
-        const ltpResponse = await fetch(`http://reverse-proxy/ltp?symbol=${symbol}`); // Use Nginx reverse proxy
+        let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}`; // Use Nginx reverse proxy
+        const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
         const ltpData = await ltpResponse.json();
 
         if (ltpData.status === 'success' && ltpData.data) {
