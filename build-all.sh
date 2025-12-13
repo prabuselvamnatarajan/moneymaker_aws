@@ -24,5 +24,8 @@ docker build -t backteststreamer:latest ./BackTest/BacktestStreamer
 docker build -t backtestclient:latest ./BackTest/BacktestClient
 docker build -t exporttofile:latest ./ScheduledServices/ExportToFile
 
+# Strategy Services
+docker build -t msb-strategy:latest ./kafka/services/Strategies/MSB
+
 # Deploy the stack
 docker stack deploy --detach=false --compose-file docker-compose.yml moneymaker

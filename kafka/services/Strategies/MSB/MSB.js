@@ -1,4 +1,4 @@
-const axios = require('axios');
+import axios from 'axios';
 
 function triggerOrder(requestBody) {
     const placeOrderApi = process.env.PLACEORDER_API;
@@ -15,7 +15,16 @@ function triggerOrder(requestBody) {
     }
 }
 
-function MSB(prevData, currentData, symbol) {
+function MSB(prevData, currentData, symbol, instrument_token) {
+    if ( !prevData ) {
+        // initialize
+        let initialState = {
+            isUp: null,
+            prevHigh: { high: currentData.high, low: currentData.low },
+            prevLow: { high: currentData.high, low: currentData.low }
+        };
+        return initialState;
+    }
     let { isUp, prevHigh, prevLow } = prevData;
     let { isTest } = currentData;
     let { high, low } = currentData;
@@ -27,7 +36,7 @@ function MSB(prevData, currentData, symbol) {
             isUp = false;
             // need to close long position
             if (isTest) {
-                console.log(`MSB: Closing Live long position at ${low}`);
+                console.log(`MSB Test: Closing Live long position at ${low}`);
             } else {
                 console.log(`MSB: Closing Test long position at ${low}`);
             }
@@ -39,7 +48,7 @@ function MSB(prevData, currentData, symbol) {
                 "validity": "DAY",
                 "price": 0,
                 "tag": symbol,
-                "instrument_token": symbol,
+                "instrument_token": instrument_token,
                 "order_type": "MARKET",
                 "transaction_type": "SELL",
                 "disclosed_quantity": 0,
@@ -64,7 +73,7 @@ function MSB(prevData, currentData, symbol) {
             isUp = true;
             // need to open long position
             if (isTest) {
-                console.log(`MSB: Opening Live long position at ${high}`);
+                console.log(`MSB Test: Opening Live long position at ${high}`);
             } else {
                 console.log(`MSB: Opening Test long position at ${high}`);
             }
@@ -93,6 +102,7 @@ function MSB(prevData, currentData, symbol) {
             }
         }
     }
+    return { isUp, prevHigh, prevLow };
 }
 
-module.exports = MSB;
+export { MSB };

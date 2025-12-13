@@ -1,7 +1,7 @@
-const { Kafka } = require('kafkajs');
-const MSB = require('./MSB');
-const { getLatestOHLCByInterval, getLTP } = require('./utils');
-const fs = require('fs').promises;
+import { Kafka } from 'kafkajs';
+import { MSB } from './MSB.js';
+import { getLatestOHLCByInterval, getLTP } from './utils.js';
+import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol } from './redis_utils/getStrategyStateDetails.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -13,35 +13,6 @@ const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 
-const rootDir = process.env.SHARED_DIR || '.';
-
-function getRedisKey(symbol, isTestMode) {
-    const mode = isTestMode ? 'backtest' : 'live';
-    let key = `strategies:${STRATEGY_NAME}:${mode}:${symbol}`;
-    return key;
-}
-
-async function getMSBStrategyStateForSymbol(symbol, isTestMode = false) {
-    try {
-        let redisKey = getRedisKey(symbol, isTestMode);
-        let data = {redisKey};  // read data from redis by util file.
-        return data;
-    } catch (error) {
-        console.error(`Error reading MSB strategy for symbol ${symbol}:`, error.message);
-        return null;
-    }
-}
-
-async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newState) {
-    try {
-        let redisKey = getRedisKey(symbol, isTestMode);
-        // write newState to redisKey
-        // write data to redis by util file.
-    } catch (error) {
-        console.error(`Error writing MSB strategy state for symbol ${symbol}:`, error.message);
-    }
-}
-
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
 
@@ -49,25 +20,31 @@ async function createConsumer() {
 
     // Subscribe to all topics in TARGET_TOPICS
     for (const topic of TARGET_TOPICS) {
+        console.log(`Subscribing to topic: ${topic}`);
         await consumer.subscribe({ topic, fromBeginning: false });
     }
 
     await consumer.run({
-        eachMessage: async ({ message }) => {
+        eachMessage: async ({ topic, partition, message }) => {
             const symbol = message.key.toString();
-            const isBackTest = topic === BACKTEST_TOPIC;
+            const isBackTest = topic.includes(BACKTEST_TOPIC_SUFFIX);
             console.log(`Received message for symbol ${symbol}`);
             const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest);
+
             const msg = JSON.parse(message.value.toString());
+            console.log(`Message content for ${symbol}:`, msg);
 
             let data = getLatestOHLCByInterval(msg, 'I1');
             let ltp = getLTP(msg);
+            if (isBackTest) {
+                data.isTest = true;
+            }
 
             console.log(`Processing data for symbol ${symbol}:`, data);
             console.log(`Last Trade Price (LTP) for ${symbol}:`, ltp);
 
             // call the actual strategy function here
-            let newState = MSB(lastState, data, symbol);
+            let newState = MSB(lastState, data, symbol, "NSE_EQ_INE036D01028");
 
             await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState);
 

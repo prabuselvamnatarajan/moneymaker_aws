@@ -20,7 +20,9 @@ EXPOSE 3000
 # COPY .env .env
 
 ENV KAFKA_BROKERS=localhost:9092
-ENV TARGET_TOPIC=splited-live-data,backtest-stream-data
+ENV BACKTEST_TOPIC_SUFFIX=_backtest_data
+ENV LIVE_TOPIC_SUFFIX=_live_data
+ENV STRATEGY_NAME=msb
 ENV TARGET_GROUP_ID=MSB_Strategy_Processors
 ENV SHARED_DIR=/shared
 ENV PLACEORDER_API=http://localhost/placeorder
