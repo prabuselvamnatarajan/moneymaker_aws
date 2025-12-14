@@ -11,5 +11,6 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV MONGO_URI=mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0&authSource=admin
+ENV MONGO_DB=BacktestApp
 
 CMD ["node", "src/server.js"]
