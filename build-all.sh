@@ -22,6 +22,7 @@ docker build -t strategy-chooser-consumer:latest ./kafka/services/StrategyChoose
 # BackTest Services
 docker build -t backteststreamer:latest ./BackTest/BacktestStreamer
 docker build -t backtestclient:latest ./BackTest/BacktestClient
+docker build -t backtestapp:latest ./BackTest/BackTestApp
 docker build -t exporttofile:latest ./ScheduledServices/ExportToFile
 
 # Strategy Services

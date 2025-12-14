@@ -1,8 +1,10 @@
 import mongoose from "mongoose";
 
+const MONGO_URI = process.env.MONGO_URI;
+
 export const connectDB = async () => {
   try {
-    await mongoose.connect("mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0&authSource=admin", {
+    await mongoose.connect( MONGO_URI , {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });

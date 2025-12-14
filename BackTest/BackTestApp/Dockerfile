@@ -1,0 +1,15 @@
+FROM node:18
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV MONGO_URI=mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0&authSource=admin
+
+CMD ["node", "src/server.js"]

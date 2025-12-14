@@ -290,6 +290,18 @@ services:
     networks:
       - app-net
 
+  backtest-app:
+    image: backtestapp:latest
+    environment:
+      PORT: 80
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
+
   appinit:
     image: appinit:latest
     depends_on:
