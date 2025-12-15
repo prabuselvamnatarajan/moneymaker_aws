@@ -7,6 +7,8 @@ const base_url = 'https://api-hft.upstox.com/v2';
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const NGINX_ADDRESS = process.env.NGINX_ADDRESS;
+const BACKTEST_APP_URL = process.env.BACKTEST_APP_URL || '/backtestapp';
+const BACKTEST_TRADE_URL = process.env.BACKTEST_TRADE_URL || '/api/trade';
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 
@@ -21,8 +23,18 @@ async function storeOrderDetails(symbol, order_details) {
     // Fetch additional data from Nginx API (load-balanced)
     try {
         let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}`; // Use Nginx reverse proxy
-        const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
-        const ltpData = await ltpResponse.json();
+        // const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
+        // const ltpData = await ltpResponse.json();
+
+        let ltpData = {
+            status: 'success',
+            data: {
+                "Prabu": {
+                    "instrument_token": "backtest-NSE_EQ_INE036D01028-2025_05_14-0",
+                    "last_price": 150.75
+                }
+            }
+        };
 
         if (ltpData.status === 'success' && ltpData.data) {
             const property = Object.entries(ltpData.data).find(([key, item]) => item.instrument_token.includes(symbol));
@@ -87,7 +99,41 @@ async function placeOrders(access_token, body) {
     }
 }
 
+async function triggerBackTestApp(body) {
+
+    const url = `${NGINX_ADDRESS}${BACKTEST_APP_URL}${BACKTEST_TRADE_URL}`;
+
+    try {
+        
+        let { strategy_details } = body;
+        let testAPIBody = {
+            "type_of_order": body.transaction_type,
+            "price": body.price,
+            "quantity": strategy_details.quantity,
+            ...strategy_details
+        }
+        console.log('Triggering Test API Call Body:', testAPIBody);
+        console.log('URL:', url);
+        const response = fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(testAPIBody), 
+        }).then(res => res.json()).then(data => {
+            console.log('Response:', data);
+            return data;
+        }).catch(error => { console.error('Error:', error); });
+        // console.log(response.data);
+        return response;
+    } catch (err) {
+        console.error('Error:', err);
+        throw new Error('Failed Make Order ...');
+    }
+}
+
 module.exports = {
     placeOrders,
-    storeOrderDetails
+    storeOrderDetails,
+    triggerBackTestApp
 };

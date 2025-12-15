@@ -27,13 +27,20 @@ async function createConsumer() {
     await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
             const symbol = message.key.toString();
-            const isBackTest = topic.includes(BACKTEST_TOPIC_SUFFIX);
+            const msg = JSON.parse(message.value.toString());
+            let { strategy_details = {}, done = false } = msg;
+
+            if (done) {
+                console.log(`Received done signal for symbol ${symbol}, skipping processing.`);
+                return;
+            }
+
+            const isBackTest = topic.includes(BACKTEST_TOPIC_SUFFIX) || strategy_details.isTest === true;
             console.log(`Received message for symbol ${symbol}`);
             const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest);
 
-            const msg = JSON.parse(message.value.toString());
             console.log(`Message content for ${symbol}:`, msg);
-
+            
             let data = getLatestOHLCByInterval(msg, 'I1');
             let ltp = getLTP(msg);
             if (isBackTest) {
@@ -42,9 +49,10 @@ async function createConsumer() {
 
             console.log(`Processing data for symbol ${symbol}:`, data);
             console.log(`Last Trade Price (LTP) for ${symbol}:`, ltp);
+            data.ltp = ltp;
 
             // call the actual strategy function here
-            let newState = MSB(lastState, data, symbol, "NSE_EQ_INE036D01028");
+            let newState = MSB(lastState, data, symbol, "NSE_EQ_INE036D01028", strategy_details);
 
             await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState);
 

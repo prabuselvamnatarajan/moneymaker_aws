@@ -14,6 +14,9 @@ RUN npm install
 ENV KAFKA_BROKERS=kafka-broker-1:9092
 ENV TARGET_TOPIC=order-details
 ENV PORT=80
+ENV NGINX_ADDRESS=http://nginx-server
+ENV BACKTEST_APP_URL=/backtestapp
+ENV BACKTEST_TRADE_URL=/api/trade
 
 # Copy the rest of the application code to the working directory
 COPY . .

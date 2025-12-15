@@ -37,10 +37,11 @@ async function createConsumer() {
                     const topicName = isTestMode
                         ? `${strategyName}_backtest_data`
                         : `${strategyName}_live_data`;
+                    data.strategy_details = strategy;
                     if (isTestMode) {
-                        data.isTest = true;
+                        data.strategy_details.isTest = true;
                     } else {
-                        data.isTest = false;
+                        data.strategy_details.isTest = false;
                     }
                     await producer.send({
                         topic: topicName,

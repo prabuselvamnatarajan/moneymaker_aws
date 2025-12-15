@@ -15,7 +15,7 @@ function triggerOrder(requestBody) {
     }
 }
 
-function MSB(prevData, currentData, symbol, instrument_token) {
+function MSB(prevData, currentData, symbol, instrument_token, strategy_details) {
     if ( !prevData ) {
         // initialize
         let initialState = {
@@ -27,7 +27,7 @@ function MSB(prevData, currentData, symbol, instrument_token) {
     }
     let { isUp, prevHigh, prevLow } = prevData;
     let { isTest } = currentData;
-    let { high, low } = currentData;
+    let { high, low, ltp } = currentData;
     if (isUp) {
         // check for break
         if (prevHigh.low > low) {
@@ -46,7 +46,7 @@ function MSB(prevData, currentData, symbol, instrument_token) {
                 "quantity": 1,
                 "product": "D",
                 "validity": "DAY",
-                "price": 0,
+                "price": ltp,
                 "tag": symbol,
                 "instrument_token": instrument_token,
                 "order_type": "MARKET",
@@ -54,7 +54,7 @@ function MSB(prevData, currentData, symbol, instrument_token) {
                 "disclosed_quantity": 0,
                 "trigger_price": 0,
                 "is_amo": false,
-                isTest
+                strategy_details
             };
             triggerOrder(requestBody);
         }
@@ -82,7 +82,7 @@ function MSB(prevData, currentData, symbol, instrument_token) {
                 "quantity": 1,
                 "product": "D",
                 "validity": "DAY",
-                "price": 0,
+                "price": ltp,
                 "tag": symbol,
                 "instrument_token": symbol,
                 "order_type": "MARKET",
@@ -90,7 +90,7 @@ function MSB(prevData, currentData, symbol, instrument_token) {
                 "disclosed_quantity": 0,
                 "trigger_price": 0,
                 "is_amo": false,
-                isTest
+                strategy_details
             };
             triggerOrder(requestBody);
         }

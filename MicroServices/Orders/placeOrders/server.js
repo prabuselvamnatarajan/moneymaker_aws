@@ -8,21 +8,23 @@ const port = process.env.PORT || 80;
 app.use(cors());
 app.use(express.json());
 
-const { storeOrderDetails, placeOrders } = require('./dependency.js');
+const { storeOrderDetails, placeOrders, triggerBackTestApp } = require('./dependency.js');
 
 app.post('/', async (req, res) => {
     try {
         const access_token = fs.readFileSync('/shared/access_token.txt', 'utf8').trim();
         const body = req.body;
 
+        let { strategy_details, ...filteredBody } = body;
+
         console.log('Request Body:', body);
 
         let result = null;
 
-        if (!req.body.isTest) {
-            const { isTest, ...filteredBody } = body; // Exclude isTest from body
+        if (!strategy_details.isTest) {
             result = await placeOrders(access_token, JSON.stringify(filteredBody));
         } else {
+            await triggerBackTestApp(body);
             result = 'Test Mode: Order not placed.';
         }
         

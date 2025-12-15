@@ -8,11 +8,16 @@ export const createTrade = async (tradeData) => {
   session.startTransaction();
 
   try {
+    console.log("Creating trade with data:", tradeData);
     const { account_id, price, quantity, type_of_order } = tradeData;
 
     // 1️⃣ Fetch the account
-    const account = await Account.findOne({ account_id }).session(session);
-    if (!account) throw new Error(`Account not found: ${account_id}`);
+    let account = await Account.findOne({ account_id }).session(session);
+    if (!account) {
+      // create a new account when missing with default balance
+      account = new Account({ account_id, current_balance: 40000, user_id: tradeData.user_id });
+      await account.save({ session });
+    }
 
     const opening_balance = account.current_balance;
     const tradeValue = price * quantity;
