@@ -177,7 +177,7 @@ services:
       - mongo2
       - mongo3
     environment:
-      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       DB_NAME: stock_database
       EXPORT_PREF_COLLECTION: exportPreferences
       EXPORT_CRON_SCHEDULE: 15 16 * * *
@@ -210,7 +210,7 @@ services:
       - mongo3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
-      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       TARGET_COLLECTION_NAME: stock_database
       TARGET_TOPIC: splited-live-data
       TARGET_GROUP_ID: storer-group
@@ -230,7 +230,7 @@ services:
       - mongo3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
-      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       TARGET_COLLECTION_NAME: order_details
       TARGET_TOPIC: order_details
       TARGET_GROUP_ID: order_storer_group
@@ -311,7 +311,7 @@ services:
       - mongo3
       - redis
     environment:
-      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       APP_INIT_DB: appInit
       DB_LIVE_STRATEGYCHOOSER: strategyChooser
       REDIS_LIVE_STRATEGYCHOOSER: '{"key":"strategies:live:","data_type":"json"}'
@@ -335,7 +335,7 @@ services:
       CLIENT_ID: 50b489f2-22c5-4824-9da5-9b815aab9667
       CLIENT_SECRET: d51apkeb3c
       REDIRECT_URI: http://localhost/logedin
-      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27018,mongo3:27019
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
       PORT: 80
       SHARED_DIR: /shared
