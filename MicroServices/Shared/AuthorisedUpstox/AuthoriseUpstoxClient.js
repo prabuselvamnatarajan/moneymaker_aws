@@ -29,4 +29,8 @@ async function getAuthorisedClient() {
     return authorisedClient;
 }
 
-export { getAuthorisedClient };
+async function resetAuthorisedClient() {
+    authorisedClient = null;
+}
+
+export { getAuthorisedClient, resetAuthorisedClient };
