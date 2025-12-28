@@ -23,18 +23,8 @@ async function storeOrderDetails(symbol, order_details) {
     // Fetch additional data from Nginx API (load-balanced)
     try {
         let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}`; // Use Nginx reverse proxy
-        // const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
-        // const ltpData = await ltpResponse.json();
-
-        let ltpData = {
-            status: 'success',
-            data: {
-                "Prabu": {
-                    "instrument_token": "backtest-NSE_EQ_INE036D01028-2025_05_14-0",
-                    "last_price": 150.75
-                }
-            }
-        };
+        const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
+        const ltpData = await ltpResponse.json();
 
         if (ltpData.status === 'success' && ltpData.data) {
             const property = Object.entries(ltpData.data).find(([key, item]) => item.instrument_token.includes(symbol));
