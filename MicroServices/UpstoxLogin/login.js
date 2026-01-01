@@ -1,14 +1,31 @@
-const axios = require('axios');
-require('dotenv').config();
-const { MongoClient } = require('mongodb');
-const fs = require('fs');
-const path = require('path');
+import axios from 'axios';
+import dotenv from 'dotenv';
+import { MongoClient } from 'mongodb';
+import { RedisClient, RedisString } from './redis_utils/redis_operations/index.js';
+
+dotenv.config();
+
+const redisUrl = process.env.REDIS_URL;
+const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
+let redisString;
 
 const url = 'https://api.upstox.com/v2/login/authorization/token';
 const headers = {
     'accept': 'application/json',
     'Content-Type': 'application/x-www-form-urlencoded',
 };
+
+function start_app_upstox() {
+
+    const client_id = process.env.CLIENT_ID;
+    const redirect_uri = process.env.REDIRECT_URI;
+    
+    if (!client_id || !redirect_uri) {
+        throw new Error('CLIENT_ID and REDIRECT_URI must be defined in the environment variables.');
+    }
+    
+    return `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${client_id}&redirect_uri=${redirect_uri}`;
+}
 
 async function get_new_access_token(code) {
     if (!code) {
@@ -49,31 +66,20 @@ async function get_new_access_token(code) {
         const access_token = response.data.access_token;
 
         console.log(`Access Token: ${access_token}`);
-        await checkAndUpdateCredentials({
+        let credentials = {
             client_id: process.env.CLIENT_ID,
             client_secret: process.env.CLIENT_SECRET,
             redirect_uri: process.env.REDIRECT_URI,
             access_token
-        });
+        };
+        await checkAndUpdateCredentials(credentials);
+        await setAccessTokenInRedis(credentials);
         return access_token;
     } catch (error) {
         console.error(`Error obtaining access token: ${error.message}`);
         throw new Error('Failed to obtain access token. Please check the provided "code" and API configuration.');
     }
 }
-
-function start_app_upstox() {
-
-    const client_id = process.env.CLIENT_ID;
-    const redirect_uri = process.env.REDIRECT_URI;
-    
-    if (!client_id || !redirect_uri) {
-        throw new Error('CLIENT_ID and REDIRECT_URI must be defined in the environment variables.');
-    }
-    
-    return `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${client_id}&redirect_uri=${redirect_uri}`;
-}
-
 
 async function checkAndUpdateCredentials(credentials) {
     const uri = process.env.MONGODB_URI; // MongoDB connection string
@@ -109,12 +115,6 @@ async function checkAndUpdateCredentials(credentials) {
             await collection.insertOne(credentials);
             console.log('New credentials stored in MongoDB');
         }
-
-        // Use the shared directory path from environment variables
-        const sharedDir = process.env.SHARED_DIR || '/shared';
-        const sharedFilePath = path.join(sharedDir, 'access_token.txt');
-        fs.writeFileSync(sharedFilePath, credentials.access_token, 'utf8');
-        console.log(`Access token written to file: ${sharedFilePath}`);
     } catch (error) {
         if (error.codeName === 'Unauthorized') {
             console.error('MongoDB authentication failed. Please check your credentials in the MONGODB_URI.');
@@ -126,8 +126,18 @@ async function checkAndUpdateCredentials(credentials) {
     }
 }
 
-module.exports = {
-    get_new_access_token,
-    start_app_upstox,
-    checkAndUpdateCredentials
-};
+async function setAccessTokenInRedis(credentials) {
+    let redisKey = 'redis_upstox_access_token';
+    if (!redisString) {
+        await redisClientInstance.connect();
+        redisString = new RedisString(redisClientInstance.getClient());
+    }
+    try {
+        await redisString.set(redisKey, credentials.access_token);
+        console.log(`Access token set in Redis with key ${redisKey}`);
+    } catch (error) {
+        console.error(`Error setting Access Token in Redis with key ${redisKey} :`, error.message);
+    }
+}
+
+export { get_new_access_token, start_app_upstox };

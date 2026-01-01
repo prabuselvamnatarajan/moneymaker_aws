@@ -337,10 +337,10 @@ services:
       REDIRECT_URI: http://localhost/logedin
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       PORT: 80
-      SHARED_DIR: /shared
     volumes:
-      - shared-space:/shared
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
     networks:
       - app-net
 

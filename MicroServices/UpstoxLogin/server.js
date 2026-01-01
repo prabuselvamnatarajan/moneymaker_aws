@@ -1,7 +1,7 @@
-const express = require('express');
-const cors = require('cors');
+import express from 'express';
+import cors from 'cors';
 
-const { get_new_access_token, start_app_upstox } = require('./login.js');
+import { get_new_access_token, start_app_upstox } from './login.js';
 
 const app = express();
 const port = process.env.PORT || 80; // Use port from environment variables

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "login.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js"
@@ -14,6 +15,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "mongodb": "^6.16.0"
+    "mongodb": "^6.16.0",
+    "redis": "^5.10.0"
   }
 }
