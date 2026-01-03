@@ -6,7 +6,7 @@ const tradeSchema = new mongoose.Schema({
     default: () => new mongoose.Types.ObjectId().toString(), // Auto-generate
     unique: true,
   },
-  symbol_id: { type: String, required: true },
+  instrument_token: { type: String, required: true },
   price: { type: Number, required: true },
   quantity: { type: Number, required: true },
   strategy_id: { type: String },

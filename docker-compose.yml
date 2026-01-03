@@ -389,6 +389,7 @@ services:
       KAFKA_BROKERS: kafka-broker-1:9092
       TARGET_TOPIC: order_details
       PORT: 80
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       NGINX_ADDRESS: http://reverse-proxy
       FUNDS_AND_MARGIN_API_URL: /fundsandmargin
       BACKTEST_APP_URL: /backtestapp

@@ -52,7 +52,7 @@ async function createConsumer() {
             data.ltp = ltp;
 
             // call the actual strategy function here
-            let newState = MSB(lastState, data, symbol, "NSE_EQ_INE036D01028", strategy_details);
+            let newState = await MSB(lastState, data, symbol, strategy_details);
 
             await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState);
 

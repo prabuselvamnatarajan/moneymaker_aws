@@ -47,7 +47,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag)
     return orderPayLoad;
 }
 
-async function MSB(prevData, currentData, symbol, instrument_token, strategy_details) {
+async function MSB(prevData, currentData, symbol, strategy_details) {
     if ( !prevData ) {
         // initialize
         let initialState = {
