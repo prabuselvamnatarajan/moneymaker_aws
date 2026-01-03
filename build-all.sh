@@ -13,6 +13,7 @@ docker build -t placeorder:latest ./MicroServices/Orders/placeOrders
 docker build -t get-orderbook:latest ./MicroServices/Orders/getOrderBook
 docker build -t get-put-call-option-chain:latest ./MicroServices/Option-Chain/put-call-option-chain
 docker build -t get-option-contracts:latest ./MicroServices/Option-Chain/option-contracts
+docker build -t get-funds-and-margin:latest ./MicroServices/Users/FundsAndMargin
 
 # Kafka Services
 docker build -t wsdatasplitterconsumer:latest ./kafka/services/wsDataSplitterConsumer

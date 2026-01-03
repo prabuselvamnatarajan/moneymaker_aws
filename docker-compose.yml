@@ -408,6 +408,17 @@ services:
     networks:
       - app-net
 
+  get-funds-and-margin:
+    image: get-funds-and-margin:latest
+    environment:
+      PORT: 80
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+    networks:
+      - app-net
+
   get-put-call-option-chain:
     image: get-put-call-option-chain:latest
     environment:
