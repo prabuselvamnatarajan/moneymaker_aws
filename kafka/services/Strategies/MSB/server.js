@@ -36,6 +36,9 @@ async function createConsumer() {
             }
 
             const isBackTest = topic.includes(BACKTEST_TOPIC_SUFFIX) || strategy_details.isTest === true;
+            if (isBackTest) {
+                strategy_details.isTest = true;
+            }
             console.log(`Received message for symbol ${symbol}`);
             const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest);
 
@@ -43,9 +46,6 @@ async function createConsumer() {
             
             let data = getLatestOHLCByInterval(msg, 'I1');
             let ltp = getLTP(msg);
-            if (isBackTest) {
-                data.isTest = true;
-            }
 
             console.log(`Processing data for symbol ${symbol}:`, data);
             console.log(`Last Trade Price (LTP) for ${symbol}:`, ltp);

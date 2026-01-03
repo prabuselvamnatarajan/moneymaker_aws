@@ -58,7 +58,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
         return initialState;
     }
     let { isUp, prevHigh, prevLow } = prevData;
-    let { isTest } = currentData;
+    let { isTest } = strategy_details;
     let { high, low, ltp } = currentData;
     if (isUp) {
         // check for break
