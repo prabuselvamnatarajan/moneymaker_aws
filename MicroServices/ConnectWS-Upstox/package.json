@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js"
@@ -15,6 +16,8 @@
     "express": "^4.21.2",
     "kafkajs": "^2.2.4",
     "protobufjs": "^7.4.0",
-    "ws": "^8.18.1"
+    "ws": "^8.18.1",
+    "redis": "^5.10.0",
+    "upstox-js-sdk": "^2.21.0"
   }
 }

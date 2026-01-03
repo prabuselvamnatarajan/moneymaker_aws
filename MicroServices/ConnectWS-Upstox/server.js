@@ -1,13 +1,12 @@
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs');
+import express from 'express';
+import cors from 'cors';
+import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
+import { get_WS_URL } from './websocket.js';
 
 const app = express();
 const port = process.env.PORT || 80;
 
 app.use(cors());
-
-const { get_WS_URL } = require('./websocket.js');
 
 app.get('/', async (req, res) => {
     try {
@@ -17,7 +16,7 @@ app.get('/', async (req, res) => {
             symbols = [symbols];
         }
         console.log(symbols);
-        const access_token = fs.readFileSync('/shared/access_token.txt', 'utf8').trim();
+        const access_token = await getAccessTokenFromRedis();
         get_WS_URL({ access_token, symbol: symbols });
         res.send("Varataa Mamee tuuurrrr....");
     } catch (e) {

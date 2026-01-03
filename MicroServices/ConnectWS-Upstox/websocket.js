@@ -1,13 +1,10 @@
-const axios = require('axios');
-const WebSocket = require('ws');
-const { Kafka } = require('kafkajs');
-const protobuf = require("protobufjs");
-
+import WebSocket from 'ws';
+import { Kafka } from 'kafkajs';
+import protobuf from 'protobufjs';
 
 // Initialize global variables
 let protobufRoot = null;
 
-let apiVersion = "2.0";
 const kafkaBrokers = process.env.KAFKA_BROKERS || 'localhost:9092'; // Use environment variable for Kafka broker address
 
 async function get_WS_URL({ access_token, symbol = [] }) {
@@ -29,9 +26,6 @@ async function get_WS_URL({ access_token, symbol = [] }) {
     console.error('Error during WebSocket connection setup:', error.message);
   }
 }
-
-
-
 
 const connectWebSocket = async ({ ws, symbol = [] }) => {
   const kafka = new Kafka({ clientId: 'stock-app', brokers: [kafkaBrokers] });
@@ -98,7 +92,7 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
 };
 
 const initProtobuf = async () => {
-  protobufRoot = await protobuf.load(__dirname + "/MarketDataFeed.proto");
+  protobufRoot = await protobuf.load("./MarketDataFeed.proto");
 };
 
 const decodeProfobuf = async (buffer) => {
@@ -114,8 +108,6 @@ const decodeProfobuf = async (buffer) => {
 };
 
 
-
-
-module.exports = {
+export {
   get_WS_URL
 };
