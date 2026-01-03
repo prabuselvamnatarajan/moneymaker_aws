@@ -100,7 +100,7 @@ async function triggerBackTestApp(body) {
         let testAPIBody = {
             "type_of_order": body.transaction_type,
             "price": body.price,
-            "quantity": strategy_details.quantity,
+            "quantity": body.quantity,
             ...strategy_details
         }
         console.log('Triggering Test API Call Body:', testAPIBody);
