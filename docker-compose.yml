@@ -390,9 +390,11 @@ services:
       TARGET_TOPIC: order_details
       PORT: 80
       NGINX_ADDRESS: http://reverse-proxy
+      FUNDS_AND_MARGIN_API_URL: /fundsandmargin
       BACKTEST_APP_URL: /backtestapp
       BACKTEST_TRADE_URL: /api/trade
     volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - shared-space:/shared
     networks:
       - app-net

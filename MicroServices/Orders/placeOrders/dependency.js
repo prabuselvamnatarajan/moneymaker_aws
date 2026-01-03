@@ -1,5 +1,5 @@
-const { Kafka } = require('kafkajs');
-const retry = require('async-retry');
+import { Kafka } from 'kafkajs';
+import retry from 'async-retry';
 
 const base_url = 'https://api-hft.upstox.com/v2';
 
@@ -9,6 +9,7 @@ const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const NGINX_ADDRESS = process.env.NGINX_ADDRESS;
 const BACKTEST_APP_URL = process.env.BACKTEST_APP_URL || '/backtestapp';
 const BACKTEST_TRADE_URL = process.env.BACKTEST_TRADE_URL || '/api/trade';
+const FUNDS_AND_MARGIN_API_URL = process.env.FUNDS_AND_MARGIN_API_URL || '/funds_and_margin';
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 
@@ -122,8 +123,27 @@ async function triggerBackTestApp(body) {
     }
 }
 
-module.exports = {
-    placeOrders,
-    storeOrderDetails,
-    triggerBackTestApp
+async function getLiveAccountBalance() {
+    const url = `${NGINX_ADDRESS}${FUNDS_AND_MARGIN_API_URL}`;
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        const data = await response.json();
+        console.log('Live Account Balance Response:', data);
+        return data.equity.availableMargin;
+    } catch (error) {
+        console.error('Error fetching live account balance:', error);
+    }
+}
+
+
+export {
+  placeOrders,
+  storeOrderDetails,
+  triggerBackTestApp,
+  getLiveAccountBalance
 };

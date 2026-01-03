@@ -1,6 +1,6 @@
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs');
+import express from 'express';
+import cors from 'cors';
+import fs from 'fs';
 
 const app = express();
 const port = process.env.PORT || 80;
@@ -8,7 +8,8 @@ const port = process.env.PORT || 80;
 app.use(cors());
 app.use(express.json());
 
-const { storeOrderDetails, placeOrders, triggerBackTestApp } = require('./dependency.js');
+import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance } from './dependency.js';
+import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 
 app.post('/', async (req, res) => {
     try {
@@ -23,8 +24,12 @@ app.post('/', async (req, res) => {
 
         if (!strategy_details.isTest) {
             result = await placeOrders(access_token, JSON.stringify(filteredBody));
+            let new_balance = await getLiveAccountBalance();
+            await setAccountBalanceToRedis(strategy_details.account_id, new_balance);
         } else {
-            await triggerBackTestApp(body);
+            let orderResponse = await triggerBackTestApp(body);
+            let { data: { closing_balance } = {} } = orderResponse || {};
+            await setAccountBalanceToRedis(strategy_details.account_id, closing_balance);
             result = 'Test Mode: Order not placed.';
         }
         
