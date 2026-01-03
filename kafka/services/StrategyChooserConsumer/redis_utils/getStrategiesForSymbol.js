@@ -19,11 +19,12 @@ async function getStrategiesForSymbol(isBackTest, symbol) {
         ? `strategies:backtest:${symbol}`
         : `strategies:live:${symbol}`;
     try {
+        console.log(`Fetching strategies for key ${key} from Redis`);
         const data = await redisJson.getJson(key);
         if (!data || !Array.isArray(data.activeStrategies)) return [];
         return data.activeStrategies;
     } catch (error) {
-        console.error(`Error fetching strategies for symbol ${symbol} from Redis:`, error.message);
+        console.error(`Error fetching strategies for key ${key} from Redis:`, error.message);
         return [];
     }
 }
