@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis } from './redis_utils/getStrategyStateDetails.js';
 
-function triggerOrder(requestBody) {
+async function triggerOrder(requestBody) {
     const placeOrderApi = process.env.PLACEORDER_API;
     if (placeOrderApi) {
         axios.post(placeOrderApi, requestBody)
@@ -15,7 +16,38 @@ function triggerOrder(requestBody) {
     }
 }
 
-function MSB(prevData, currentData, symbol, instrument_token, strategy_details) {
+async function computeOrderPayload(strategy_details, transaction_type, ltp, tag) {
+    let { account_id, use_full_amount = false, quantity = 1, lot_size, instrument_token, product = "D", validity = "DAY", order_type = "MARKET" } = strategy_details;
+    if ( transaction_type == "BUY" && use_full_amount) {
+        let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+        if (lot_size) {
+            quantity = Math.floor(current_acc_balance / (ltp * lot_size)) * lot_size;
+        } else {
+            quantity = Math.floor(current_acc_balance / ltp);
+        }
+    }
+    if (transaction_type == "SELL" && use_full_amount) {
+        // For SELL orders, quantity should be determined based on holdings.
+        // so we get the last bought quantity from redis with the tag.
+        quantity = await getBoughtQuantityWithTagFromRedis(tag);
+    };
+    let orderPayLoad = {
+        quantity,
+        product,
+        validity,
+        "price": ltp,
+        tag,
+        instrument_token,
+        order_type,
+        transaction_type,
+        "disclosed_quantity": 0,
+        "trigger_price": 0,
+        strategy_details
+    };
+    return orderPayLoad;
+}
+
+async function MSB(prevData, currentData, symbol, instrument_token, strategy_details) {
     if ( !prevData ) {
         // initialize
         let initialState = {
@@ -40,23 +72,9 @@ function MSB(prevData, currentData, symbol, instrument_token, strategy_details) 
             } else {
                 console.log(`MSB: Closing Test long position at ${low}`);
             }
-            // need to find the open orders and close the open orders for the symbol
-            // tigger place order API here
-            const requestBody = {
-                "quantity": 1,
-                "product": "D",
-                "validity": "DAY",
-                "price": ltp,
-                "tag": symbol,
-                "instrument_token": instrument_token,
-                "order_type": "MARKET",
-                "transaction_type": "SELL",
-                "disclosed_quantity": 0,
-                "trigger_price": 0,
-                "is_amo": false,
-                strategy_details
-            };
-            triggerOrder(requestBody);
+
+            let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol);
+            await triggerOrder(requestBody);
         }
         else {
             // trend continuation
@@ -77,22 +95,10 @@ function MSB(prevData, currentData, symbol, instrument_token, strategy_details) 
             } else {
                 console.log(`MSB: Opening Test long position at ${high}`);
             }
-            // tigger place order API here
-            const requestBody = {
-                "quantity": 1,
-                "product": "D",
-                "validity": "DAY",
-                "price": ltp,
-                "tag": symbol,
-                "instrument_token": symbol,
-                "order_type": "MARKET",
-                "transaction_type": "BUY",
-                "disclosed_quantity": 0,
-                "trigger_price": 0,
-                "is_amo": false,
-                strategy_details
-            };
-            triggerOrder(requestBody);
+
+            let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);
+            await triggerOrder(requestBody);
+            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity);
         }
         else {
             // trend continuation
