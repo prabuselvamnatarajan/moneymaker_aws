@@ -194,6 +194,10 @@ services:
       - kafka-broker-1
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      LIVE_PREFIX: live
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
     deploy:
       replicas: 3
       restart_policy:

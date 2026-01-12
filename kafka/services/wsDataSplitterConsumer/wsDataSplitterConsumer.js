@@ -1,10 +1,14 @@
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
+import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
+const LIVE_PREFIX = process.env.LIVE_PREFIX || "live";
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
+const redisPubSub = new RedisPubSub({ url: REDIS_URL });
 
 async function processAndProduceMessages(data) {
     const producer = kafka.producer();
@@ -15,11 +19,16 @@ async function processAndProduceMessages(data) {
         console.log(`Processing ${key} data:`, value);
         console.log(`Topic : ${topic}`);
 
+        let redisPublishChannel = `${LIVE_PREFIX}:${key.replace(/'/g, "")}`;
+
         await retry(async () => {
+            let msg = JSON.stringify(value);
             await producer.send({
                 topic,
-                messages: [{ key, value: JSON.stringify(value) }],
+                messages: [{ key, value: msg }],
             });
+            console.log(`redisPublishChannel : ${redisPublishChannel} with message: ${msg}`);
+            await redisPubSub.publish(redisPublishChannel, msg);
         }, {
             retries: 5,
             minTimeout: 1000,
@@ -54,4 +63,13 @@ async function createConsumer() {
     }
 }
 
-createConsumer().catch(console.error);
+async function startServer() {
+    try {
+        await redisPubSub.connect();
+        createConsumer().catch(console.error);
+    } catch (error) {
+        console.error('Error starting server:', error);
+    }
+}
+
+startServer();
