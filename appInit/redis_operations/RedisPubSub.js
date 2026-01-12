@@ -4,6 +4,7 @@ class RedisPubSub {
     constructor(options = {}) {
         this.publisherClient = createClient(options);
         this.subscriberClient = createClient(options);
+        this.subscriptions = new Map(); // Track subscriptions and their callbacks
         
         this.publisherClient.on('error', (err) => console.log('Redis Publisher Error', err));
         this.subscriberClient.on('error', (err) => console.log('Redis Subscriber Error', err));
@@ -40,9 +41,24 @@ class RedisPubSub {
         }
     }
 
-    async subscribe(channel) {
+    async subscribe(channel, callback) {
         try {
-            await this.subscriberClient.subscribe(channel);
+            // Prevent duplicate subscriptions to same channel
+            if (this.subscriptions.has(channel)) {
+                console.log(`Already subscribed to channel: ${channel}`);
+                return;
+            }
+            
+            // Redis v4+ uses callback directly in subscribe
+            // Callback signature: (message, subscribedChannel)
+            await this.subscriberClient.subscribe(channel, (message, subscribedChannel) => {
+                // Convert to (channel, message) for consistency
+                if (callback) {
+                    callback(subscribedChannel, message);
+                }
+            });
+            
+            this.subscriptions.set(channel, callback);
             console.log(`Subscribed to channel: ${channel}`);
         } catch (err) {
             console.error(`Error subscribing to channel ${channel}:`, err);
@@ -50,17 +66,10 @@ class RedisPubSub {
         }
     }
 
-    onMessage(callback) {
-        this.subscriberClient.on('message', callback);
-    }
-
-    offMessage(callback) {
-        this.subscriberClient.off('message', callback);
-    }
-
     async unsubscribe(channel) {
         try {
             await this.subscriberClient.unsubscribe(channel);
+            this.subscriptions.delete(channel);
             console.log(`Unsubscribed from channel: ${channel}`);
         } catch (err) {
             console.error(`Error unsubscribing from channel ${channel}:`, err);
@@ -70,6 +79,7 @@ class RedisPubSub {
     async publish(channel, message) {
         try {
             const result = await this.publisherClient.publish(channel, message);
+            console.log(`Published to channel: ${channel} with result: ${result}`);
             return result;
         } catch (err) {
             console.error(`Error publishing to channel ${channel}:`, err);

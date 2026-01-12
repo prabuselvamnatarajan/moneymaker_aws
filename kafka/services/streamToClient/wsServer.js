@@ -30,7 +30,7 @@ function handleRedisMessage(channel, message) {
 
   for (const id of socketIds) {
     const ws = sockets.get(id);
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === ws.OPEN) {
       ws.send(message); // ZERO parsing overhead
     }
   }
@@ -40,7 +40,8 @@ async function ensureChannel(channel) {
   if (!channelSubscriptions.has(channel)) {
     channelSubscriptions.set(channel, new Set());
     try {
-      await redisPubSub.subscribe(channel);
+      // Subscribe with the message handler for this channel
+      await redisPubSub.subscribe(channel, handleRedisMessage);
     } catch (err) {
       console.error(`Failed to subscribe to ${channel}:`, err);
     }
@@ -110,8 +111,6 @@ wss.on("connection", (ws) => {
 async function startServer() {
   try {
     await redisPubSub.connect();
-    // Attach global message handler for all channels
-    redisPubSub.onMessage(handleRedisMessage);
     console.log(`Ultra-low latency WS server running on port ${WS_PORT}`);
     console.log(`Connected to Redis: ${REDIS_URL}`);
   } catch (err) {
@@ -123,7 +122,6 @@ async function startServer() {
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("Shutting down gracefully...");
-  redisPubSub.offMessage(handleRedisMessage);  // Detach message listener
   await redisPubSub.disconnect();
   process.exit(0);
 });
