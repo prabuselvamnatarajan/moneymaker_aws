@@ -1,5 +1,5 @@
-const { Kafka } = require('kafkajs');
-const retry = require('async-retry');
+import { Kafka } from 'kafkajs';
+import retry from 'async-retry';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
