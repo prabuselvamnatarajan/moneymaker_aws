@@ -26,6 +26,9 @@ docker build -t backtestclient:latest ./BackTest/BacktestClient
 docker build -t backtestapp:latest ./BackTest/BackTestApp
 docker build -t exporttofile:latest ./ScheduledServices/ExportToFile
 
+#Stream to Client Service
+docker build -t stream-to-client:latest ./kafka/services/streamToClient
+
 # Strategy Services
 docker build -t msb-strategy:latest ./kafka/services/Strategies/MSB
 

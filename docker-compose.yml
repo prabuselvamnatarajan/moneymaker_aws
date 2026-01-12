@@ -260,6 +260,24 @@ services:
     networks:
       - app-net
 
+  stream-to-client:
+    image: stream-to-client:latest
+    depends_on:
+      - redis
+    environment:
+      WS_PORT: 8080
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      LIVE_PREFIX: live
+      BACKTEST_PREFIX: backtest
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
+
   backtest-streamer:
     image: backteststreamer:latest
     environment:
