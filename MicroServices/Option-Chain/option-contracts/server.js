@@ -1,22 +1,36 @@
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs');
+import express from 'express';
+import cors from 'cors';
+
+import { getAuthorisedClient, resetAuthorisedClient } from './redis_utils/AuthoriseUpstoxClient.js';
 
 const app = express();
 const port = process.env.PORT || 80;
 
 app.use(cors());
 
-const { getOptionContracts } = require('./dependency.js');
-
-
 app.get('/', async (req, res) => {
     try {
-        const access_token = fs.readFileSync('/shared/access_token.txt', 'utf8').trim();
-        const result = await getOptionContracts(access_token, req.query.symbol || 'NSE_INDEX|Nifty 50', req.query.expiry || '');
-        res.send(result);
+
+        let { symbol = "NSE_INDEX|Nifty 50", expiry } = req.query;
+        let options = expiry ? { expiryDate: expiry } : null;
+
+        const UpstoxClient = await getAuthorisedClient();
+
+        let apiInstance  = new UpstoxClient.OptionsApi();
+
+        apiInstance.getOptionContracts(symbol, options, (error, data, response) => {
+            if (error) {
+                console.error("Failed to get Option Contracts:", error);
+                resetAuthorisedClient();
+                res.status(500).send('Internal Server Error');
+            } else {
+                console.log('API called successfully. Returned data: ' + JSON.stringify(data));
+                res.send(data);
+            }
+        });
     } catch (e) {
         console.error(e);
+        resetAuthorisedClient();
         res.status(500).send('Internal Server Error');
     }
 });
