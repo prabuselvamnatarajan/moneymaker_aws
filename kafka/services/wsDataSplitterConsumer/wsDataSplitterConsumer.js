@@ -16,6 +16,7 @@ async function processAndProduceMessages(data) {
 
     for (const [key, value] of Object.entries(data)) {
         const topic = "splited-live-data";
+        value.symbol_name = key; // adding symbol_name to value
         console.log(`Processing ${key} data:`, value);
         console.log(`Topic : ${topic}`);
 
