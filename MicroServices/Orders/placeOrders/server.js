@@ -9,11 +9,12 @@ app.use(cors());
 app.use(express.json());
 
 import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance } from './dependency.js';
+import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 
 app.post('/', async (req, res) => {
     try {
-        const access_token = fs.readFileSync('/shared/access_token.txt', 'utf8').trim();
+        const access_token = await getAccessTokenFromRedis();
         const body = req.body;
 
         let { strategy_details, ...filteredBody } = body;

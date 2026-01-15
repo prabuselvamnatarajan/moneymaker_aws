@@ -424,8 +424,8 @@ services:
       BACKTEST_TRADE_URL: /api/trade
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
       - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
-      - shared-space:/shared
     networks:
       - app-net
 
