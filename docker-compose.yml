@@ -419,7 +419,8 @@ services:
       TARGET_TOPIC: order_details
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
-      NGINX_ADDRESS: http://reverse-proxy
+      NGINX_ADDRESS: https://reverse-proxy
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
       FUNDS_AND_MARGIN_API_URL: /fundsandmargin
       BACKTEST_APP_URL: /backtestapp
       BACKTEST_TRADE_URL: /api/trade

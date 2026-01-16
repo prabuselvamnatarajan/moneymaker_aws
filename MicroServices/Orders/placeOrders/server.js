@@ -24,6 +24,7 @@ app.post('/', async (req, res) => {
         let result = null;
 
         if (!strategy_details.isTest) {
+            filteredBody.order_type === 'MARKET' && (filteredBody.price = 0);
             result = await placeOrders(access_token, JSON.stringify(filteredBody));
             let new_balance = await getLiveAccountBalance();
             await setAccountBalanceToRedis(strategy_details.account_id, new_balance);

@@ -24,14 +24,15 @@ async function storeOrderDetails(symbol, order_details) {
     // Fetch additional data from Nginx API (load-balanced)
     try {
         let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}`; // Use Nginx reverse proxy
+        console.log(`Fetching LTP from URL: ${getLTP_URL}`);
         const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
         const ltpData = await ltpResponse.json();
 
         if (ltpData.status === 'success' && ltpData.data) {
-            const property = Object.entries(ltpData.data).find(([key, item]) => item.instrument_token.includes(symbol));
+            const property = Object.entries(ltpData.data).find(([key, item]) => item.instrumentToken.includes(symbol));
             if (property) {
                 const [propertyName, propertyValue] = property;
-                order_details.ltp = propertyValue.last_price; // Add the last_price as ltp
+                order_details.ltp = propertyValue.lastPrice; // Add the last_price as ltp
                 order_details.Symbol_Name = propertyName; // Add the property name as Symbol_Name
             } else {
                 order_details.ltp = null; // Fallback if symbol not found
@@ -132,7 +133,7 @@ async function getLiveAccountBalance() {
                 'Content-Type': 'application/json',
             },
         });
-        const data = await response.json();
+        const { data } = await response.json();
         console.log('Live Account Balance Response:', data);
         return data.equity.availableMargin;
     } catch (error) {

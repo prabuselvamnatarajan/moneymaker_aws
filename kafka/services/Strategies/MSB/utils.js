@@ -1,5 +1,5 @@
 function getLatestOHLCByInterval(dataObject, interval) {
-  const ohlcArray = dataObject?.ff?.marketFF?.marketOHLC?.ohlc || [];
+  const ohlcArray = dataObject?.fullFeed?.marketFF?.marketOHLC?.ohlc || [];
 
   console.log(`Extracted OHLC Array:`, ohlcArray);
   // Filter only matching interval entries
@@ -24,7 +24,7 @@ function getLatestOHLCByInterval(dataObject, interval) {
 }
 
 function getLTP(dataObject) {
-  return dataObject?.ff?.marketFF?.ltpc?.ltp ?? null;
+  return dataObject?.fullFeed?.marketFF?.ltpc?.ltp ?? null;
 }
 
 
