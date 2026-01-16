@@ -1,6 +1,7 @@
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
+import { calculateLatency } from './utils/latencyUtil.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -15,6 +16,9 @@ async function processAndProduceMessages(data) {
     await producer.connect();
 
     for (const [key, value] of Object.entries(data)) {
+        value.latency = {
+            beforeSplit: calculateLatency(value)
+        };
         const topic = "splited-live-data";
         value.symbol_name = key; // adding symbol_name to value
         console.log(`Processing ${key} data:`, value);

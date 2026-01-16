@@ -1,6 +1,7 @@
 import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
 import { getLatestOHLCByInterval, getLTP } from './utils.js';
+import { calculateLatency } from './utils/latencyUtil.js';
 import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol } from './redis_utils/getStrategyStateDetails.js';
 
 // Use environment variables with fallback defaults
@@ -28,6 +29,10 @@ async function createConsumer() {
         eachMessage: async ({ topic, partition, message }) => {
             const symbol = message.key.toString();
             const msg = JSON.parse(message.value.toString());
+            msg.latency = {
+                ...msg.latency,
+                beforeStrategyExecution: calculateLatency(msg)
+            };
             let { strategy_details = {}, done = false } = msg;
 
             if (done) {
@@ -55,7 +60,10 @@ async function createConsumer() {
             let newState = await MSB(lastState, data, symbol, strategy_details);
 
             await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState);
-
+            
+            //after strategy execution latency
+            msg.latency.afterStrategyExecution = calculateLatency(msg);
+            console.log('Latency:', msg.latency);
             
         },
     });
