@@ -2,6 +2,7 @@ import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import { calculateLatency } from './utils/latencyUtil.js';
+import { initLogger, logger } from './utils/logUtils.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -21,8 +22,8 @@ async function processAndProduceMessages(data) {
         };
         const topic = "splited-live-data";
         value.symbol_name = key; // adding symbol_name to value
-        console.log(`Processing ${key} data:`, value);
-        console.log(`Topic : ${topic}`);
+        logger.info(`Processing ${key} data:`, value);
+        logger.info(`Topic : ${topic}`);
 
         let redisPublishChannel = `${LIVE_PREFIX}:${key.replace(/'/g, "")}`;
 
@@ -32,13 +33,13 @@ async function processAndProduceMessages(data) {
                 topic,
                 messages: [{ key, value: msg }],
             });
-            console.log(`redisPublishChannel : ${redisPublishChannel} with message: ${msg}`);
+            logger.info(`redisPublishChannel : ${redisPublishChannel} with message: ${msg}`);
             await redisPubSub.publish(redisPublishChannel, msg);
         }, {
             retries: 5,
             minTimeout: 1000,
             onRetry: (error, attempt) => {
-                console.log(`Retry attempt ${attempt} for topic ${topic} due to error: ${error.message}`);
+                logger.warn(`Retry attempt ${attempt} for topic ${topic} due to error: ${error.message}`);
             }
         });
     }
@@ -59,21 +60,22 @@ async function createConsumer() {
                     const data = JSON.parse(message.value.toString());
                     await processAndProduceMessages(data);
                 } catch (error) {
-                    console.error('Error processing message:', error);
+                    logger.error('Error processing message:', error);
                 }
             },
         });
     } catch (error) {
-        console.error('Error in consumer setup:', error);
+        logger.error('Error in consumer setup:', error);
     }
 }
 
 async function startServer() {
     try {
+        await initLogger();
         await redisPubSub.connect();
-        createConsumer().catch(console.error);
+        createConsumer().catch(logger.error);
     } catch (error) {
-        console.error('Error starting server:', error);
+        logger.error('Error starting server:', error);
     }
 }
 

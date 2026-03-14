@@ -202,6 +202,8 @@ services:
       KAFKA_BROKERS: kafka-broker-1:9092
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       LIVE_PREFIX: live
+      LOG_SERVICE_NAME: wsDataSplitterConsumer
+      LOG_SERVICE_MODE: live
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/utils:/app/utils:ro
