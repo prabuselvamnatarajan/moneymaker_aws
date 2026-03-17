@@ -1,14 +1,7 @@
-const { MongoClient } = require('mongodb');
-const { Kafka } = require('kafkajs');
-const retry = require('async-retry');
-
-let logger;
-
-async function initLogger() {
-    const { initLogger: init, logger: sharedLogger } = await import('../../../MicroServices/Shared/utils/logUtils.js');
-    logger = sharedLogger;
-    await init();
-}
+import { MongoClient } from 'mongodb';
+import { Kafka } from 'kafkajs';
+import retry from 'async-retry';
+import { initLogger, logger } from '../../../MicroServices/Shared/utils/logUtils.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
