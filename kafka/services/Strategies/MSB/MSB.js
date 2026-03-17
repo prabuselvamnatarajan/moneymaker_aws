@@ -1,18 +1,19 @@
 import axios from 'axios';
 import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis } from './redis_utils/account_utils.js';
+import { logger } from '../../../../MicroServices/Shared/utils/logUtils.js';
 
 async function triggerOrder(requestBody) {
     const placeOrderApi = process.env.PLACEORDER_API;
     if (placeOrderApi) {
         axios.post(placeOrderApi, requestBody)
             .then(res => {
-                console.log('Order API response:', res.data);
+                logger.debug('Order API response:', res.data);
             })
             .catch(err => {
-                console.error('Order API error:', err.message);
+                logger.error('Order API error:', err.message);
             });
     } else {
-        console.error('PLACEORDER_API env variable not set');
+        logger.error('PLACEORDER_API env variable not set');
     }
 }
 
@@ -68,9 +69,9 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp = false;
             // need to close long position
             if (isTest) {
-                console.log(`MSB Test: Closing Live long position at ${low}`);
+                logger.info(`MSB Test: Closing Live long position at ${low}`);
             } else {
-                console.log(`MSB: Closing Test long position at ${low}`);
+                logger.info(`MSB: Closing Test long position at ${low}`);
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol);
@@ -91,9 +92,9 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp = true;
             // need to open long position
             if (isTest) {
-                console.log(`MSB Test: Opening Live long position at ${high}`);
+                logger.info(`MSB Test: Opening Live long position at ${high}`);
             } else {
-                console.log(`MSB: Opening Test long position at ${high}`);
+                logger.info(`MSB: Opening Test long position at ${high}`);
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);

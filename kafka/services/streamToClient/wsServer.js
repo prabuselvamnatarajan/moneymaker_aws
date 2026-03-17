@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws';
 import { v4 as uuid } from "uuid";
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import dotenv from "dotenv";
+import { initLogger, logger } from "../../../MicroServices/Shared/utils/logUtils.js";
 
 dotenv.config();
 
@@ -43,7 +44,7 @@ async function ensureChannel(channel) {
       // Subscribe with the message handler for this channel
       await redisPubSub.subscribe(channel, handleRedisMessage);
     } catch (err) {
-      console.error(`Failed to subscribe to ${channel}:`, err);
+      logger.error(`Failed to subscribe to ${channel}:`, err);
     }
   }
 }
@@ -54,7 +55,7 @@ async function removeChannelIfUnused(channel) {
     try {
       await redisPubSub.unsubscribe(channel);
     } catch (err) {
-      console.error(`Failed to unsubscribe from ${channel}:`, err);
+      logger.error(`Failed to unsubscribe from ${channel}:`, err);
     }
   }
 }
@@ -69,7 +70,7 @@ wss.on("connection", (ws) => {
       const msg = JSON.parse(raw.toString());
 
       if (!msg.action || !msg.mode || !msg.symbol) {
-          console.log("Invalid message format:", msg);
+          logger.warn("Invalid message format:", msg);
           return;
       }
 
@@ -92,7 +93,7 @@ wss.on("connection", (ws) => {
         await removeChannelIfUnused(channel);
       }
     } catch (err) {
-      console.error("Error processing message:", err);
+      logger.error("Error processing message:", err);
     }
   });
 
@@ -110,18 +111,19 @@ wss.on("connection", (ws) => {
 // Initialize Redis connection
 async function startServer() {
   try {
+    await initLogger();
     await redisPubSub.connect();
-    console.log(`Ultra-low latency WS server running on port ${WS_PORT}`);
-    console.log(`Connected to Redis: ${REDIS_URL}`);
+    logger.info(`Ultra-low latency WS server running on port ${WS_PORT}`);
+    logger.info(`Connected to Redis: ${REDIS_URL}`);
   } catch (err) {
-    console.error("Failed to start server:", err);
+    logger.error("Failed to start server:", err);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  console.log("Shutting down gracefully...");
+  logger.info("Shutting down gracefully...");
   await redisPubSub.disconnect();
   process.exit(0);
 });

@@ -1,4 +1,5 @@
 import { RedisClient, RedisJson } from './redis_operations/index.js';
+import { logger } from '../../../../MicroServices/Shared/utils/logUtils.js';
 
 const STRATEGY_NAME = process.env.STRATEGY_NAME || 'msb';
 const redisUrl = process.env.REDIS_URL;
@@ -14,7 +15,7 @@ function getRedisKey(symbol, isTestMode) {
 async function getMSBStrategyStateForSymbol(symbol, isTestMode = false) {
     try {
         let redisKey = getRedisKey(symbol, isTestMode);
-        console.log(`Fetching MSB strategy state for key: ${redisKey}`);
+        logger.debug(`Fetching MSB strategy state for key: ${redisKey}`);
         if (!redisJson) {
             await redisClientInstance.connect();
             redisJson = new RedisJson(redisClientInstance.getClient());
@@ -22,14 +23,14 @@ async function getMSBStrategyStateForSymbol(symbol, isTestMode = false) {
         try {
             const data = await redisJson.getJson(redisKey);
             // if (!data || !Array.isArray(data.activeStrategies)) return [];
-            console.log(`Fetched MSB strategy state for key ${redisKey}:`, data);
+            logger.debug(`Fetched MSB strategy state for key ${redisKey}:`, data);
             return data;
         } catch (error) {
-            console.error(`Error fetching strategy details for symbol ${symbol} with redis key ${redisKey} from Redis:`, error.message);
+            logger.error(`Error fetching strategy details for symbol ${symbol} with redis key ${redisKey} from Redis:`, error.message);
             return [];
         }
     } catch (error) {
-        console.error(`Error reading MSB strategy details for symbol ${symbol}:`, error.message);
+        logger.error(`Error reading MSB strategy details for symbol ${symbol}:`, error.message);
         return null;
     }
 }
@@ -43,15 +44,15 @@ async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newSta
         }
         try {
             await redisJson.setJson(redisKey, newState);
-            console.log(`Writed MSB strategy state for key ${redisKey}:`, newState);
+            logger.debug(`Writed MSB strategy state for key ${redisKey}:`, newState);
         } catch (error) {
-            console.error(`Error writing strategy details for symbol ${symbol} with redis key ${redisKey} from Redis:`, error.message);
+            logger.error(`Error writing strategy details for symbol ${symbol} with redis key ${redisKey} from Redis:`, error.message);
             return [];
         }
         // write newState to redisKey
         // write data to redis by util file.
     } catch (error) {
-        console.error(`Error writing MSB strategy state for symbol ${symbol}:`, error.message);
+        logger.error(`Error writing MSB strategy state for symbol ${symbol}:`, error.message);
     }
 }
 

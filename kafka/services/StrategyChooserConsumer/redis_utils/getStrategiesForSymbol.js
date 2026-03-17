@@ -1,4 +1,5 @@
 import { RedisClient, RedisJson } from './redis_operations/index.js';
+import { logger } from '../../../../MicroServices/Shared/utils/logUtils.js';
 
 const redisUrl = process.env.REDIS_URL;
 const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
@@ -19,12 +20,12 @@ async function getStrategiesForSymbol(isBackTest, symbol) {
         ? `strategies:backtest:${symbol}`
         : `strategies:live:${symbol}`;
     try {
-        console.log(`Fetching strategies for key ${key} from Redis`);
+        logger.debug(`Fetching strategies for key ${key} from Redis`);
         const data = await redisJson.getJson(key);
         if (!data || !Array.isArray(data.activeStrategies)) return [];
         return data.activeStrategies;
     } catch (error) {
-        console.error(`Error fetching strategies for key ${key} from Redis:`, error.message);
+        logger.error(`Error fetching strategies for key ${key} from Redis:`, error.message);
         return [];
     }
 }

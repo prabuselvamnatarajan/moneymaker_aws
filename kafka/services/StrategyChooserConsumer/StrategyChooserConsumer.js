@@ -1,5 +1,6 @@
 import { Kafka } from 'kafkajs';
 import getStrategiesForSymbol from './redis_utils/getStrategiesForSymbol.js';
+import { initLogger, logger } from "../../../MicroServices/Shared/utils/logUtils.js";
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -25,9 +26,9 @@ async function createConsumer() {
         eachMessage: async ({ topic, message: { key, value } }) => {
             const symbol = key.toString();
             const isBackTest = topic === BACKTEST_TOPIC;
-            console.log(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
+            logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
             const strategies = await getStrategiesForSymbol(isBackTest, symbol);
-            console.log(`Active strategies for ${symbol}:`, strategies);
+            logger.debug(`Active strategies for ${symbol}:`, strategies);
             const data = JSON.parse(value.toString());
 
             await Promise.all(strategies.map(async (strategy) => {
@@ -49,13 +50,24 @@ async function createConsumer() {
                             { key: symbol, value: JSON.stringify(data) },
                         ],
                     });
-                    console.log(`Produced message to topic ${topicName} with key ${symbol}`);
+                    logger.debug(`Produced message to topic ${topicName} with key ${symbol}`);
                 } catch (error) {
-                    console.error(`Failed to produce message to topic ${strategyName}_live_data for symbol ${symbol}:`, error.message);
+                    logger.error(`Failed to produce message to topic ${strategyName}_live_data for symbol ${symbol}:`, error.message);
                 }
             }));
         },
     });
 }
 
-createConsumer().catch(console.error);
+(async () => {
+    await initLogger();
+    await createConsumer();
+})().catch((err) => {
+    if (logger && logger.error) {
+        logger.error('Unhandled error in consumer', err);
+    } else {
+        // Fallback if logger isn't available
+        console.error('Unhandled error in consumer', err);
+    }
+    process.exit(1);
+});

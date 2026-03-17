@@ -3,6 +3,7 @@ import { MSB } from './MSB.js';
 import { getLatestOHLCByInterval, getLTP } from './utils.js';
 import { calculateLatency } from './utils/latencyUtil.js';
 import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol } from './redis_utils/getStrategyStateDetails.js';
+import { initLogger, logger } from '../../../../MicroServices/Shared/utils/logUtils.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -21,7 +22,7 @@ async function createConsumer() {
 
     // Subscribe to all topics in TARGET_TOPICS
     for (const topic of TARGET_TOPICS) {
-        console.log(`Subscribing to topic: ${topic}`);
+        logger.info(`Subscribing to topic: ${topic}`);
         await consumer.subscribe({ topic, fromBeginning: false });
     }
 
@@ -36,7 +37,7 @@ async function createConsumer() {
             let { strategy_details = {}, done = false } = msg;
 
             if (done) {
-                console.log(`Received done signal for symbol ${symbol}, skipping processing.`);
+                logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
                 return;
             }
 
@@ -44,16 +45,16 @@ async function createConsumer() {
             if (isBackTest) {
                 strategy_details.isTest = true;
             }
-            console.log(`Received message for symbol ${symbol}`);
+            logger.info(`Received message for symbol ${symbol}`);
             const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest);
 
-            console.log(`Message content for ${symbol}:`, msg);
+            logger.debug(`Message content for ${symbol}:`, msg);
             
             let data = getLatestOHLCByInterval(msg, 'I1');
             let ltp = getLTP(msg);
 
-            console.log(`Processing data for symbol ${symbol}:`, data);
-            console.log(`Last Trade Price (LTP) for ${symbol}:`, ltp);
+            logger.debug(`Processing data for symbol ${symbol}:`, data);
+            logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
             data.ltp = ltp;
 
             // call the actual strategy function here
@@ -63,10 +64,21 @@ async function createConsumer() {
             
             //after strategy execution latency
             msg.latency.afterStrategyExecution = calculateLatency(msg);
-            console.log('Latency:', msg.latency);
+            logger.debug('Latency:', msg.latency);
             
         },
     });
 }
 
-createConsumer().catch(console.error);
+(async () => {
+    await initLogger();
+    await createConsumer();
+})().catch((err) => {
+    if (logger && logger.error) {
+        logger.error('Unhandled error in consumer', err);
+    } else {
+        // Fallback if logger isn't available
+        console.error('Unhandled error in consumer', err);
+    }
+    process.exit(1);
+});

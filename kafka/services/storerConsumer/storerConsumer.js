@@ -2,6 +2,14 @@ const { MongoClient } = require('mongodb');
 const { Kafka } = require('kafkajs');
 const retry = require('async-retry');
 
+let logger;
+
+async function initLogger() {
+    const { initLogger: init, logger: sharedLogger } = await import('../../../MicroServices/Shared/utils/logUtils.js');
+    logger = sharedLogger;
+    await init();
+}
+
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017';
@@ -13,7 +21,7 @@ const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 const client = new MongoClient(MONGO_URI);
 
 async function storeInMongoDB(symbol, data) {
-    console.log(`Processing ${symbol} data:`, data);
+    logger.info(`Processing ${symbol} data:`, data);
     const db = client.db(TARGET_COLLECTION_NAME);
     const collection = db.collection(symbol);
     await collection.insertOne({ timestamp: new Date(), ...data });
@@ -29,7 +37,7 @@ async function createConsumer() {
     await consumer.run({
         eachMessage: async ({ message }) => {
             const symbol = message.key.toString();
-            console.log(`Received message for symbol ${symbol}`);
+            logger.info(`Received message for symbol ${symbol}`);
             const data = JSON.parse(message.value.toString());
             await retry(async () => {
                 await storeInMongoDB(symbol, data);
@@ -37,11 +45,22 @@ async function createConsumer() {
                 retries: 5,
                 minTimeout: 1000,
                 onRetry: (error, attempt) => {
-                    console.log(`Retry attempt ${attempt} for storing data due to error: ${error.message}`);
+                    logger.warn(`Retry attempt ${attempt} for storing data due to error: ${error.message}`);
                 }
             });
         },
     });
 }
 
-createConsumer().catch(console.error);
+(async () => {
+    await initLogger();
+    await createConsumer();
+})().catch((err) => {
+    if (logger && logger.error) {
+        logger.error('Unhandled error in storerConsumer', err);
+    } else {
+        // Fallback if logger isn't available
+        console.error('Unhandled error in storerConsumer', err);
+    }
+    process.exit(1);
+});

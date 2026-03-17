@@ -1,13 +1,15 @@
+import { logger } from '../../../../MicroServices/Shared/utils/logUtils.js';
+
 function getLatestOHLCByInterval(dataObject, interval) {
   const ohlcArray = dataObject?.fullFeed?.marketFF?.marketOHLC?.ohlc || [];
 
-  console.log(`Extracted OHLC Array:`, ohlcArray);
+  logger.debug(`Extracted OHLC Array:`, ohlcArray);
   // Filter only matching interval entries
   const matchingOHLCs = ohlcArray.filter(item => item.interval === interval);
 
   if (matchingOHLCs.length === 0) {
-    console.log(`No OHLC data found for interval: ${interval}`);
-    ohlcArray.forEach(item => console.log(`Available interval: ${item.interval}`));
+    logger.warn(`No OHLC data found for interval: ${interval}`);
+    ohlcArray.forEach(item => logger.debug(`Available interval: ${item.interval}`));
     let oneDayOHLC = ohlcArray.filter(item => item.interval === '1d');
     if (oneDayOHLC.length > 0) {
       return oneDayOHLC[0];
