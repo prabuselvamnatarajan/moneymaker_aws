@@ -1,4 +1,4 @@
-import { RedisClient, RedisJson } from './redis_operations/index.js';
+import { RedisClient, RedisJson } from '../redis_utils/redis_operations/index.js';
 import winston from 'winston';
 
 const serviceName = process.env.SERVICE_NAME || 'all_service';

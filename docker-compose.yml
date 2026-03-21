@@ -199,11 +199,11 @@ services:
     depends_on:
       - kafka-broker-1
     environment:
-      KAFKA_BROKERS: kafka-broker-1:9092
+      SERVICE_NAME: wsdatasplitter-consumer
+      SERVICE_MODE: live
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      KAFKA_BROKERS: kafka-broker-1:9092
       LIVE_PREFIX: live
-      LOG_SERVICE_NAME: wsDataSplitterConsumer
-      LOG_SERVICE_MODE: live
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/utils:/app/utils:ro
@@ -222,11 +222,17 @@ services:
       - mongo2
       - mongo3
     environment:
+      SERVICE_NAME: price-storer-consumer
+      SERVICE_MODE: live
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       KAFKA_BROKERS: kafka-broker-1:9092
       MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       TARGET_COLLECTION_NAME: stock_database
       TARGET_TOPIC: splited-live-data
       TARGET_GROUP_ID: storer-group
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 3
       restart_policy:
@@ -242,11 +248,17 @@ services:
       - mongo2
       - mongo3
     environment:
+      SERVICE_NAME: order-storer-consumer
+      SERVICE_MODE: live
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       KAFKA_BROKERS: kafka-broker-1:9092
       MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       TARGET_COLLECTION_NAME: order_details
       TARGET_TOPIC: order_details
       TARGET_GROUP_ID: order_storer_group
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 3
       restart_policy:
@@ -259,13 +271,16 @@ services:
     depends_on:
       - kafka-broker-1
     environment:
+      SERVICE_NAME: strategy-chooser-consumer
+      SERVICE_MODE: live
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       KAFKA_BROKERS: kafka-broker-1:9092
       TARGET_TOPIC: splited-live-data,backtest-stream-data
       BACKTEST_TOPIC: backtest-stream-data
       TARGET_GROUP_ID: strategy_chooser_group
-      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 3
       restart_policy:
@@ -284,6 +299,7 @@ services:
       BACKTEST_PREFIX: backtest
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 1
       restart_policy:
@@ -508,6 +524,9 @@ services:
   msb-strategy:
     image: msb-strategy:latest
     environment:
+      SERVICE_NAME: order-storer-consumer
+      SERVICE_MODE: live
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       KAFKA_BROKERS: kafka-broker-1:9092
       BACKTEST_TOPIC_SUFFIX: _backtest_data
       LIVE_TOPIC_SUFFIX: _live_data
@@ -515,7 +534,6 @@ services:
       TARGET_GROUP_ID: msb_strategy_group
       SHARED_DIR: /shared
       PLACEORDER_API: http://placeorder
-      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro

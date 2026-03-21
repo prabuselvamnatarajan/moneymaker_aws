@@ -1,7 +1,7 @@
 import { MongoClient } from 'mongodb';
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
-import { initLogger, logger } from '../../../MicroServices/Shared/utils/logUtils.js';
+import { initLogger, logger } from '/app/utils/logUtils.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');

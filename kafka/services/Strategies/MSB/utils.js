@@ -1,4 +1,4 @@
-import { logger } from '../../../../MicroServices/Shared/utils/logUtils.js';
+import { logger } from '/app/utils/logUtils.js';
 
 function getLatestOHLCByInterval(dataObject, interval) {
   const ohlcArray = dataObject?.fullFeed?.marketFF?.marketOHLC?.ohlc || [];

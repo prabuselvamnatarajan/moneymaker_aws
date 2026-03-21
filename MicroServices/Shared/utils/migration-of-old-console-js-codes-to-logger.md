@@ -91,6 +91,7 @@ Then restart the service to pick up the new level (current implementation reads 
 
    ```json
    "dependencies": {
+    "redis": "^5.10.0",
      "winston": "^3.11.0"
    }
    ```

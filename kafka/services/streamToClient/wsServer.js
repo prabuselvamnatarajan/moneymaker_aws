@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws';
 import { v4 as uuid } from "uuid";
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import dotenv from "dotenv";
-import { initLogger, logger } from "../../../MicroServices/Shared/utils/logUtils.js";
+import { initLogger, logger } from '/app/utils/logUtils.js';
 
 dotenv.config();
 

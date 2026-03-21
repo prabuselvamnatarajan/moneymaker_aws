@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis } from './redis_utils/account_utils.js';
-import { logger } from '../../../../MicroServices/Shared/utils/logUtils.js';
+import { logger } from '/app/utils/logUtils.js';
 
 async function triggerOrder(requestBody) {
     const placeOrderApi = process.env.PLACEORDER_API;
