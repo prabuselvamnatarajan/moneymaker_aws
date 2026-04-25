@@ -1,5 +1,6 @@
 const authService = require("../services/authService");
 const mfaService = require("../services/mfaService");
+const sessionService = require("../services/sessionService");
 const jwtService = require("../utils/jwtService");
 
 async function setup(req, res, next) {
@@ -59,7 +60,26 @@ async function loginVerify(req, res, next) {
     }
 
     const verifiedUser = await mfaService.verifyLoginMfa(email, token);
-    const payload = { userId: verifiedUser._id.toString(), email: verifiedUser.email };
+
+    const initialRoleId = Array.isArray(verifiedUser.roles) && verifiedUser.roles.length > 0
+      ? verifiedUser.roles[0]
+      : null;
+    if (!initialRoleId) {
+      const error = new Error("User does not have an assigned role for session creation");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const session = await sessionService.createSession({
+      user: verifiedUser,
+      currentRoleId: initialRoleId,
+    });
+
+    const payload = {
+      userId: verifiedUser._id.toString(),
+      email: verifiedUser.email,
+      sessionID: session._id.toString(),
+    };
     const accessToken = jwtService.signAccessToken(payload);
     const refreshToken = jwtService.signRefreshToken(payload);
 

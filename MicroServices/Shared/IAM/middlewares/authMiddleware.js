@@ -31,6 +31,7 @@ async function authenticate(req, res, next) {
     req.auth = {
       userId: user._id.toString(),
       email: user.email,
+      sessionID: payload.sessionID,
       isMfaEnabled: user.is_mfa_enabled,
     };
     req.user = user;
