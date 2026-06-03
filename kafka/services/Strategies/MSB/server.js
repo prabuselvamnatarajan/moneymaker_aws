@@ -7,11 +7,9 @@ import { initLogger, logger } from '/app/utils/logUtils.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-const BACKTEST_TOPIC_SUFFIX = process.env.BACKTEST_TOPIC_SUFFIX || '_backtest_data';
-const LIVE_TOPIC_SUFFIX = process.env.LIVE_TOPIC_SUFFIX || '_live_data';
-const STRATEGY_NAME = process.env.STRATEGY_NAME || 'msb';
-const TARGET_TOPICS = [`${STRATEGY_NAME}${BACKTEST_TOPIC_SUFFIX}`, `${STRATEGY_NAME}${LIVE_TOPIC_SUFFIX}`];
+const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
+const IS_BACKTEST = process.env.IS_BACKTEST || false;
 
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 
@@ -19,12 +17,8 @@ async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
 
     await consumer.connect();
-
-    // Subscribe to all topics in TARGET_TOPICS
-    for (const topic of TARGET_TOPICS) {
-        logger.info(`Subscribing to topic: ${topic}`);
-        await consumer.subscribe({ topic, fromBeginning: false });
-    }
+    logger.info(`Subscribing to topic: ${TARGET_TOPIC}`);
+    await consumer.subscribe({ topic: TARGET_TOPIC, fromBeginning: false });
 
     await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
@@ -41,7 +35,7 @@ async function createConsumer() {
                 return;
             }
 
-            const isBackTest = topic.includes(BACKTEST_TOPIC_SUFFIX) || strategy_details.isTest === true;
+            const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
             if (isBackTest) {
                 strategy_details.isTest = true;
             }
