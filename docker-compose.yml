@@ -87,7 +87,9 @@ services:
       - "27017:27017"
     volumes:
       - mongo1-data:/data/db
-      - ./mongo/mongod.conf:/etc/mongod.conf
+      - ./mongo/mongod.conf:/etc/mongod.conf:ro
+      - ./mongo/mongod-bootstrap.conf:/etc/mongod-bootstrap.conf:ro
+      - mongo-init-signal:/init-signal
       - ./mongo/mongo-keyfile:/etc/mongo-keyfile:ro
       - ./mongo/init-mongo1.sh:/init.sh:ro
     entrypoint: ["/bin/bash", "/init.sh"]
@@ -100,7 +102,9 @@ services:
       - "27018:27017"
     volumes:
       - mongo2-data:/data/db
-      - ./mongo/mongod.conf:/etc/mongod.conf
+      - ./mongo/mongod.conf:/etc/mongod.conf:ro
+      - ./mongo/mongod-bootstrap.conf:/etc/mongod-bootstrap.conf:ro
+      - mongo-init-signal:/init-signal
       - ./mongo/mongo-keyfile:/etc/mongo-keyfile:ro
       - ./mongo/init-mongo.sh:/init.sh:ro
     entrypoint: ["/bin/bash", "/init.sh"]
@@ -113,7 +117,9 @@ services:
       - "27019:27017"
     volumes:
       - mongo3-data:/data/db
-      - ./mongo/mongod.conf:/etc/mongod.conf
+      - ./mongo/mongod.conf:/etc/mongod.conf:ro
+      - ./mongo/mongod-bootstrap.conf:/etc/mongod-bootstrap.conf:ro
+      - mongo-init-signal:/init-signal
       - ./mongo/mongo-keyfile:/etc/mongo-keyfile:ro
       - ./mongo/init-mongo.sh:/init.sh:ro
     entrypoint: ["/bin/bash", "/init.sh"]
@@ -559,6 +565,7 @@ volumes:
     driver: local
   mongo3-data:
     driver: local
+  mongo-init-signal:
   shared-space:
   backtest-data:
   redis_data:
