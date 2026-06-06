@@ -33,4 +33,5 @@ docker build -t stream-to-client:latest ./kafka/services/streamToClient
 docker build -t msb-strategy:latest ./kafka/services/Strategies/MSB
 
 # Deploy the stack
+docker swarm init
 docker stack deploy --detach=false --compose-file docker-compose.yml moneymaker
