@@ -18,7 +18,7 @@ async function processAndProduceMessages(data) {
 
     for (const [key, value] of Object.entries(data)) {
         value.latency = {
-            beforeSplit: calculateLatency(value)
+            beforeSplit: calculateLatency(key, value)
         };
         const topic = "splited-live-data";
         value.symbol_name = key; // adding symbol_name to value

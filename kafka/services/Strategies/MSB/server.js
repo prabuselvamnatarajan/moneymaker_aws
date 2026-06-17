@@ -26,7 +26,7 @@ async function createConsumer() {
             const msg = JSON.parse(message.value.toString());
             msg.latency = {
                 ...msg.latency,
-                beforeStrategyExecution: calculateLatency(msg)
+                beforeStrategyExecution: calculateLatency(symbol, msg)
             };
             let { strategy_details = {}, done = false } = msg;
 
@@ -57,7 +57,7 @@ async function createConsumer() {
             await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState);
             
             //after strategy execution latency
-            msg.latency.afterStrategyExecution = calculateLatency(msg);
+            msg.latency.afterStrategyExecution = calculateLatency(symbol, msg);
             logger.debug('Latency:', msg.latency);
             
         },
