@@ -24,16 +24,17 @@ async function createConsumer() {
         eachMessage: async ({ topic, partition, message }) => {
             const symbol = message.key.toString();
             const msg = JSON.parse(message.value.toString());
+            console.log(`msg: ${JSON.stringify(msg)}`);
+            if (msg.done) {
+                logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
+                return;
+            }
             msg.latency = {
                 ...msg.latency,
                 beforeStrategyExecution: calculateLatency(symbol, msg)
             };
-            let { strategy_details = {}, done = false } = msg;
+            let { strategy_details = {} } = msg;
 
-            if (done) {
-                logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
-                return;
-            }
 
             const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
             if (isBackTest) {

@@ -549,7 +549,7 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       KAFKA_BROKERS: kafka-broker-1:9092
       TARGET_TOPIC: msb_backtest_data
-      TARGET_GROUP_ID: msb_strategy_group
+      TARGET_GROUP_ID: backtest_msb_strategy_group
       SHARED_DIR: /shared
       PLACEORDER_API: http://placeorder
     volumes:

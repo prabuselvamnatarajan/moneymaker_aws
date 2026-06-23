@@ -28,7 +28,7 @@ async function createConsumer() {
             const isBackTest = topic === BACKTEST_TOPIC;
             logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
             const strategies = await getStrategiesForSymbol(isBackTest, symbol);
-            logger.debug(`Active strategies for ${symbol}:`, strategies);
+            logger.debug(`Active strategies for ${symbol}: ${JSON.stringify(strategies)}`);
             const data = JSON.parse(value.toString());
 
             await Promise.all(strategies.map(async (strategy) => {
@@ -51,6 +51,7 @@ async function createConsumer() {
                         ],
                     });
                     logger.debug(`Produced message to topic ${topicName} with key ${symbol}`);
+                    logger.debug(`sending msg: ${JSON.stringify(data)}`);
                 } catch (error) {
                     logger.error(`Failed to produce message to topic ${strategyName}_live_data for symbol ${symbol}:`, error.message);
                 }

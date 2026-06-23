@@ -14,7 +14,7 @@ function getLatestOHLCByInterval(dataObject, interval) {
     if (oneDayOHLC.length > 0) {
       return oneDayOHLC[0];
     }
-    return null;
+    return {};
   }
 
   // Find the OHLC with the latest timestamp
