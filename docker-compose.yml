@@ -197,7 +197,10 @@ services:
   wsdatasplitter-consumer:
     image: wsdatasplitterconsumer:latest
     depends_on:
+      - zookeeper
       - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
     environment:
       SERVICE_NAME: wsdatasplitter-consumer
       SERVICE_MODE: live
@@ -217,7 +220,10 @@ services:
   price-storer-consumer:
     image: storer-consumer:latest
     depends_on:
+      - zookeeper
       - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
       - mongo1
       - mongo2
       - mongo3
@@ -243,7 +249,10 @@ services:
   order-storer-consumer:
     image: storer-consumer:latest
     depends_on:
+      - zookeeper
       - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
       - mongo1
       - mongo2
       - mongo3
@@ -269,7 +278,10 @@ services:
   strategy-chooser-consumer:
     image: strategy-chooser-consumer:latest
     depends_on:
+      - zookeeper
       - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
     environment:
       SERVICE_NAME: strategy-chooser-consumer
       SERVICE_MODE: live
@@ -324,7 +336,10 @@ services:
   backtest-client:
     image: backtestclient:latest
     depends_on:
+      - zookeeper
       - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
     environment:
       CLIENT_PORT: 80
       WS_URL: ws://reverse-proxy/wsbacktest
@@ -393,6 +408,11 @@ services:
 
   connect-upstox-web-socket:
     image: connect-upstox-web-socket:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
       PORT: 80
@@ -438,6 +458,11 @@ services:
 
   placeorder:
     image: placeorder:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
       TARGET_TOPIC: order_details
@@ -523,6 +548,11 @@ services:
 
   msb-strategy:
     image: msb-strategy:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
     environment:
       SERVICE_NAME: msb-strategy-service
       SERVICE_MODE: live
@@ -536,13 +566,16 @@ services:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
       - ./MicroServices/Shared/utils:/app/utils:ro
-    depends_on:
-      - kafka-broker-1
     networks:
       - app-net
 
   msb-strategy-backtest:
     image: msb-strategy:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
     environment:
       SERVICE_NAME: msb-strategy-service
       SERVICE_MODE: backtest
@@ -556,8 +589,6 @@ services:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
       - ./MicroServices/Shared/utils:/app/utils:ro
-    depends_on:
-      - kafka-broker-1
     networks:
       - app-net
 
