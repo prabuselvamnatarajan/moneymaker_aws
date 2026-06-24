@@ -160,6 +160,8 @@ services:
 
   redisinsight:
     image: redislabs/redisinsight:1.14.0
+    depends_on:
+      - redis
     networks:
       - app-net
     volumes:
@@ -201,6 +203,7 @@ services:
       - kafka-broker-1
       - kafka-broker-2
       - kafka-broker-3
+      - redis
     environment:
       SERVICE_NAME: wsdatasplitter-consumer
       SERVICE_MODE: live
@@ -227,6 +230,7 @@ services:
       - mongo1
       - mongo2
       - mongo3
+      - redis
     environment:
       SERVICE_NAME: price-storer-consumer
       SERVICE_MODE: live
@@ -256,6 +260,7 @@ services:
       - mongo1
       - mongo2
       - mongo3
+      - redis
     environment:
       SERVICE_NAME: order-storer-consumer
       SERVICE_MODE: live
@@ -282,6 +287,7 @@ services:
       - kafka-broker-1
       - kafka-broker-2
       - kafka-broker-3
+      - redis
     environment:
       SERVICE_NAME: strategy-chooser-consumer
       SERVICE_MODE: live
@@ -354,6 +360,10 @@ services:
 
   backtest-app:
     image: backtestapp:latest
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       PORT: 80
       MONGO_DB: BacktestApp
@@ -391,6 +401,7 @@ services:
       - mongo1
       - mongo2
       - mongo3
+      - redis
     ports:
       - "8080:80"
     environment:
@@ -413,6 +424,7 @@ services:
       - kafka-broker-1
       - kafka-broker-2
       - kafka-broker-3
+      - redis
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
       PORT: 80
@@ -425,6 +437,8 @@ services:
 
   get-ltp:
     image: get-ltp:latest
+    depends_on:
+      - redis
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
@@ -436,6 +450,8 @@ services:
 
   get-ohlc:
     image: get-ohlc:latest
+    depends_on:
+      - redis
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
@@ -447,6 +463,8 @@ services:
 
   get-fullmarketquote:
     image: get-fullmarketquote:latest
+    depends_on:
+      - redis
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
@@ -463,6 +481,7 @@ services:
       - kafka-broker-1
       - kafka-broker-2
       - kafka-broker-3
+      - redis
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
       TARGET_TOPIC: order_details
@@ -482,6 +501,8 @@ services:
 
   get-orderbook:
     image: get-orderbook:latest
+    depends_on:
+      - redis
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
@@ -493,6 +514,8 @@ services:
 
   get-funds-and-margin:
     image: get-funds-and-margin:latest
+    depends_on:
+      - redis
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
@@ -504,6 +527,8 @@ services:
 
   get-put-call-option-chain:
     image: get-put-call-option-chain:latest
+    depends_on:
+      - redis
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
@@ -515,6 +540,8 @@ services:
 
   get-option-contracts:
     image: get-option-contracts:latest
+    depends_on:
+      - redis
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
@@ -553,6 +580,7 @@ services:
       - kafka-broker-1
       - kafka-broker-2
       - kafka-broker-3
+      - redis
     environment:
       SERVICE_NAME: msb-strategy-service
       SERVICE_MODE: live
@@ -576,6 +604,7 @@ services:
       - kafka-broker-1
       - kafka-broker-2
       - kafka-broker-3
+      - redis
     environment:
       SERVICE_NAME: msb-strategy-service
       SERVICE_MODE: backtest
