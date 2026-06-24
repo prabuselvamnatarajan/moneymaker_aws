@@ -12,39 +12,57 @@ const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
 const redisPubSub = new RedisPubSub({ url: REDIS_URL });
 
+function handleFatalError(error, context = 'service') {
+    logger.error(`Fatal error in ${context}:`, error);
+    process.exit(1);
+}
+
+process.on('uncaughtException', (error) => {
+    handleFatalError(error, 'uncaught exception');
+});
+
+process.on('unhandledRejection', (reason) => {
+    handleFatalError(reason, 'unhandled rejection');
+});
+
 async function processAndProduceMessages(data) {
     const producer = kafka.producer();
-    await producer.connect();
 
-    for (const [key, value] of Object.entries(data)) {
-        value.latency = {
-            beforeSplit: calculateLatency(key, value)
-        };
-        const topic = "splited-live-data";
-        value.symbol_name = key; // adding symbol_name to value
-        logger.info(`Processing ${key} data:`, value);
-        logger.info(`Topic : ${topic}`);
+    try {
+        await producer.connect();
 
-        let redisPublishChannel = `${LIVE_PREFIX}:${key.replace(/'/g, "")}`;
+        for (const [key, value] of Object.entries(data)) {
+            value.latency = {
+                beforeSplit: calculateLatency(key, value)
+            };
+            const topic = "splited-live-data";
+            value.symbol_name = key; // adding symbol_name to value
+            logger.info(`Processing ${key} data:`, value);
+            logger.info(`Topic : ${topic}`);
 
-        await retry(async () => {
-            let msg = JSON.stringify(value);
-            await producer.send({
-                topic,
-                messages: [{ key, value: msg }],
+            let redisPublishChannel = `${LIVE_PREFIX}:${key.replace(/'/g, "")}`;
+
+            await retry(async () => {
+                let msg = JSON.stringify(value);
+                await producer.send({
+                    topic,
+                    messages: [{ key, value: msg }],
+                });
+                logger.info(`redisPublishChannel : ${redisPublishChannel} with message: ${msg}`);
+                await redisPubSub.publish(redisPublishChannel, msg);
+            }, {
+                retries: 5,
+                minTimeout: 1000,
+                onRetry: (error, attempt) => {
+                    logger.warn(`Retry attempt ${attempt} for topic ${topic} due to error: ${error.message}`);
+                }
             });
-            logger.info(`redisPublishChannel : ${redisPublishChannel} with message: ${msg}`);
-            await redisPubSub.publish(redisPublishChannel, msg);
-        }, {
-            retries: 5,
-            minTimeout: 1000,
-            onRetry: (error, attempt) => {
-                logger.warn(`Retry attempt ${attempt} for topic ${topic} due to error: ${error.message}`);
-            }
-        });
+        }
+    } catch (error) {
+        handleFatalError(error, 'message processing');
+    } finally {
+        await producer.disconnect().catch(() => {});
     }
-
-    await producer.disconnect();
 }
 
 async function createConsumer() {   
@@ -60,12 +78,12 @@ async function createConsumer() {
                     const data = JSON.parse(message.value.toString());
                     await processAndProduceMessages(data);
                 } catch (error) {
-                    logger.error('Error processing message:', error);
+                    handleFatalError(error, 'message handling');
                 }
             },
         });
     } catch (error) {
-        logger.error('Error in consumer setup:', error);
+        handleFatalError(error, 'consumer setup');
     }
 }
 
@@ -73,9 +91,9 @@ async function startServer() {
     try {
         await initLogger();
         await redisPubSub.connect();
-        createConsumer().catch(logger.error);
+        await createConsumer();
     } catch (error) {
-        logger.error('Error starting server:', error);
+        handleFatalError(error, 'server startup');
     }
 }
 
