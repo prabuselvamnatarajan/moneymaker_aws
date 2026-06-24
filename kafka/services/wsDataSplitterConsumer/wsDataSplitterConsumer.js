@@ -9,7 +9,15 @@ const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',')
 const LIVE_PREFIX = process.env.LIVE_PREFIX || "live";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
-const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
+const kafka = new Kafka({
+  clientId: 'stock-app',
+  brokers: KAFKA_BROKERS,
+  retry: {
+    initialRetryTime: 300,
+    retries: 20
+  }
+});
+
 const redisPubSub = new RedisPubSub({ url: REDIS_URL });
 
 function handleFatalError(error, context = 'service') {

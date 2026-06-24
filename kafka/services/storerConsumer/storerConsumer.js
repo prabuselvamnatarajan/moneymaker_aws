@@ -10,7 +10,15 @@ const TARGET_COLLECTION_NAME = process.env.TARGET_COLLECTION_NAME;
 const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 
-const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
+const kafka = new Kafka({
+  clientId: 'stock-app',
+  brokers: KAFKA_BROKERS,
+  retry: {
+    initialRetryTime: 300,
+    retries: 20
+  }
+});
+
 const client = new MongoClient(MONGO_URI);
 
 async function storeInMongoDB(symbol, data) {

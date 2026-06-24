@@ -11,7 +11,14 @@ const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 const IS_BACKTEST = process.env.IS_BACKTEST || false;
 
-const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
+const kafka = new Kafka({
+    clientId: 'stock-app',
+    brokers: KAFKA_BROKERS,
+    retry: {
+      initialRetryTime: 300,
+      retries: 20
+    }
+});
 
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });

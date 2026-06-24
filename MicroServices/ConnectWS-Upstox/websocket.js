@@ -5,7 +5,7 @@ import protobuf from 'protobufjs';
 // Initialize global variables
 let protobufRoot = null;
 
-const kafkaBrokers = process.env.KAFKA_BROKERS || 'localhost:9092'; // Use environment variable for Kafka broker address
+const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 
 async function get_WS_URL({ access_token, symbol = [] }) {
   try {
@@ -28,11 +28,18 @@ async function get_WS_URL({ access_token, symbol = [] }) {
 }
 
 const connectWebSocket = async ({ ws, symbol = [] }) => {
-  const kafka = new Kafka({ clientId: 'stock-app', brokers: [kafkaBrokers] });
+  const kafka = new Kafka({
+    clientId: 'stock-app',
+    brokers: KAFKA_BROKERS,
+    retry: {
+      initialRetryTime: 300,
+      retries: 20
+    }
+  });
   const producer = kafka.producer();
 
   try {
-    console.log(`Connecting to Kafka broker at ${kafkaBrokers}...`);
+    console.log(`Connecting to Kafka broker at ${KAFKA_BROKERS}...`);
     await producer.connect();
     console.log('Connected to Kafka broker successfully.');
   } catch (error) {

@@ -11,7 +11,14 @@ const BACKTEST_APP_URL = process.env.BACKTEST_APP_URL || '/backtestapp';
 const BACKTEST_TRADE_URL = process.env.BACKTEST_TRADE_URL || '/api/trade';
 const FUNDS_AND_MARGIN_API_URL = process.env.FUNDS_AND_MARGIN_API_URL || '/funds_and_margin';
 
-const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
+const kafka = new Kafka({
+    clientId: 'stock-app',
+    brokers: KAFKA_BROKERS,
+    retry: {
+      initialRetryTime: 300,
+      retries: 20
+    }
+  });
 
 async function storeOrderDetails(symbol, order_details) {
     const producer = kafka.producer();

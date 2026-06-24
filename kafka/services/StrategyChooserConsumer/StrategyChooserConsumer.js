@@ -8,7 +8,14 @@ const TARGET_TOPICS = (process.env.TARGET_TOPIC || '').split(',').map(t => t.tri
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 const BACKTEST_TOPIC = process.env.BACKTEST_TOPIC || 'backtest-stream-data';
 
-const kafka = new Kafka({ clientId: 'stock-app', brokers: KAFKA_BROKERS });
+const kafka = new Kafka({
+  clientId: 'stock-app',
+  brokers: KAFKA_BROKERS,
+  retry: {
+    initialRetryTime: 300,
+    retries: 20
+  }
+});
 
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });

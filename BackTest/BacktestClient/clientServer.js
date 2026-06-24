@@ -8,19 +8,23 @@ const PORT = process.env.CLIENT_PORT || 3000;
 const WS_URL = process.env.WS_URL || 'ws://localhost:8085';
 
 // Use environment variables with fallback defaults
-const KAFKA_BROKER = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
+const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 
 // Add topic from env variable with fallback
 const KAFKA_TOPIC = process.env.KAFKA_TOPIC || 'backtest-stream-data';
 
 
-if (!KAFKA_BROKER) {
-    throw new Error('KAFKA_BROKER env variable is required');
+if (!KAFKA_BROKERS) {
+    throw new Error('KAFKA_BROKERS env variable is required');
 }
 
 const kafka = new Kafka({
     clientId: 'backtest-client',
-    brokers: KAFKA_BROKER
+    brokers: KAFKA_BROKERS,
+    retry: {
+        initialRetryTime: 300,
+        retries: 20
+    }
 });
 const producer = kafka.producer({
     createPartitioner: Partitioners.LegacyPartitioner
