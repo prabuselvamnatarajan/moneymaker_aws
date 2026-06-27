@@ -19,8 +19,32 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Please provide a valid email"],
   },
+  password: {
+    type: String,
+    required: true,
+  },
   full_name: {
     type: String,
+  },
+  is_mfa_enabled: {
+    type: Boolean,
+    default: false,
+  },
+  mfa_secret: {
+    type: String,
+    default: "",
+  },
+  mfa_temp_secret: {
+    type: String,
+    default: "",
+  },
+  backup_codes: {
+    type: [String],
+    default: [],
+  },
+  roles: {
+    type: [String],
+    default: ["user"],
   },
   is_active: {
     type: Boolean,
