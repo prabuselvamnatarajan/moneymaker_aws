@@ -368,6 +368,10 @@ services:
       PORT: 80
       MONGO_DB: BacktestApp
       MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
+      JWT_ACCESS_SECRET: iam-access-secret
+      JWT_REFRESH_SECRET: iam-refresh-secret
+    volumes:
+      - ./MicroServices/Shared/IAM:/app/iam:ro
     deploy:
       replicas: 1
       restart_policy:
