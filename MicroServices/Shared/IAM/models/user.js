@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -8,14 +8,16 @@ const userSchema = new mongoose.Schema({
   mfa_secret: { type: String, default: "" },
   mfa_temp_secret: { type: String, default: "" },
   backup_codes: { type: [String], default: [] },
-  roles: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Role",
-    default: [],
-  }],
+  roles: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Role",
+      default: []
+    },
+  ],
 }, { timestamps: true });
 
 userSchema.index({ email: 1 });
 userSchema.index({ roles: 1 });
 
-module.exports = mongoose.model("User", userSchema);
+export default mongoose.model("User", userSchema);

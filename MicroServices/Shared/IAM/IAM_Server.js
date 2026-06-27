@@ -1,9 +1,9 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const config = require("./config");
-const signupRoute = require("./routes/signup");
-const loginRoute = require("./routes/login");
-const mfaRoute = require("./routes/mfa");
+import express from "express";
+import mongoose from "mongoose";
+import * as config from "./config.js";
+import signupRoute from "./routes/signup.js";
+import loginRoute from "./routes/login.js";
+import mfaRoute from "./routes/mfa.js";
 
 const app = express();
 app.use(express.json());
@@ -33,8 +33,4 @@ async function start() {
   }
 }
 
-if (require.main === module) {
-  start();
-}
-
-module.exports = { app, start };
+export { app, start };

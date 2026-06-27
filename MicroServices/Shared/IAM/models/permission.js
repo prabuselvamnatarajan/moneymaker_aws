@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const permissionSchema = new mongoose.Schema({
   operation: {
@@ -23,4 +23,4 @@ const permissionSchema = new mongoose.Schema({
 
 permissionSchema.index({ operation: 1, entity: 1 }, { unique: true });
 
-module.exports = mongoose.model("Permission", permissionSchema);
+export default mongoose.model("Permission", permissionSchema);

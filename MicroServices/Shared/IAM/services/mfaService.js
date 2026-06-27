@@ -1,7 +1,7 @@
-const { authenticator } = require("otplib");
-const QRCode = require("qrcode");
-const User = require("../models/user");
-const config = require("../config");
+import { authenticator } from "otplib";
+import QRCode from "qrcode";
+import User from "../models/user.js";
+import * as config from "../config.js";
 
 function generateBackupCodes(count = 8, length = 8) {
   const codes = [];
@@ -103,8 +103,4 @@ async function verifyLoginMfa(email, token) {
   return user;
 }
 
-module.exports = {
-  generateMfaSetup,
-  verifyMfaSetup,
-  verifyLoginMfa,
-};
+export { generateMfaSetup, verifyMfaSetup, verifyLoginMfa };

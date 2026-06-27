@@ -1,7 +1,7 @@
-const bcrypt = require("bcryptjs");
-const User = require("../models/user");
+import bcrypt from "bcryptjs";
+import User from "../models/user.js";
 
-async function createUser({ name, email, password }) {
+export async function createUser({ name, email, password }) {
   const normalizedEmail = String(email).toLowerCase().trim();
   const existingUser = await User.findOne({ email: normalizedEmail }).lean();
   if (existingUser) {
@@ -26,23 +26,16 @@ async function createUser({ name, email, password }) {
   return user;
 }
 
-async function findUserByEmail(email) {
+export async function findUserByEmail(email) {
   if (!email) return null;
   const normalizedEmail = String(email).toLowerCase().trim();
   return User.findOne({ email: normalizedEmail });
 }
 
-async function findUserById(userId) {
+export async function findUserById(userId) {
   return User.findById(userId);
 }
 
-async function validatePassword(candidatePassword, storedHash) {
+export async function validatePassword(candidatePassword, storedHash) {
   return bcrypt.compare(candidatePassword, storedHash);
 }
-
-module.exports = {
-  createUser,
-  findUserByEmail,
-  findUserById,
-  validatePassword,
-};

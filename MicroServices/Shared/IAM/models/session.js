@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const sessionHistorySchema = new mongoose.Schema({
   role: {
@@ -55,4 +55,4 @@ const sessionSchema = new mongoose.Schema({
 sessionSchema.index({ user: 1, active: 1 });
 sessionSchema.index({ currentRole: 1 });
 
-module.exports = mongoose.model("Session", sessionSchema);
+export default mongoose.model("Session", sessionSchema);

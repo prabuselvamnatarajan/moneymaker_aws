@@ -1,7 +1,7 @@
-const authService = require("../services/authService");
-const jwtService = require("../utils/jwtService");
+import * as authService from "../services/authService.js";
+import * as jwtService from "../utils/jwtService.js";
 
-async function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization || req.headers.Authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -40,7 +40,3 @@ async function authenticate(req, res, next) {
     next(error);
   }
 }
-
-module.exports = {
-  authenticate,
-};

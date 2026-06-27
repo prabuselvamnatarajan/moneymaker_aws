@@ -1,6 +1,6 @@
-const Session = require("../models/session");
-const Role = require("../models/role");
-const User = require("../models/user");
+import Session from "../models/session.js";
+import Role from "../models/role.js";
+import User from "../models/user.js";
 
 function hasUserRole(userRoles, roleId) {
   if (!Array.isArray(userRoles)) return false;
@@ -171,9 +171,4 @@ async function endSession(sessionId, user) {
   return session.save();
 }
 
-module.exports = {
-  createSession,
-  getSessionById,
-  switchSessionRole,
-  endSession,
-};
+export { createSession, getSessionById, switchSessionRole, endSession };

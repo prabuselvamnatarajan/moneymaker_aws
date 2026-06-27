@@ -1,9 +1,5 @@
-const User = require("./user");
-const Role = require("./role");
-const Permission = require("./permission");
+import User from "./user.js";
+import Role from "./role.js";
+import Permission from "./permission.js";
 
-module.exports = {
-  User,
-  Role,
-  Permission,
-};
+export { User, Role, Permission };

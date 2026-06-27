@@ -1,9 +1,9 @@
-const authService = require("../services/authService");
-const mfaService = require("../services/mfaService");
-const sessionService = require("../services/sessionService");
-const jwtService = require("../utils/jwtService");
+import * as authService from "../services/authService.js";
+import * as mfaService from "../services/mfaService.js";
+import * as sessionService from "../services/sessionService.js";
+import * as jwtService from "../utils/jwtService.js";
 
-async function setup(req, res, next) {
+export async function setup(req, res, next) {
   try {
     const { user } = req;
     if (!user) {
@@ -19,7 +19,7 @@ async function setup(req, res, next) {
   }
 }
 
-async function verifySetup(req, res, next) {
+export async function verifySetup(req, res, next) {
   try {
     const { token } = req.body || {};
     const { user } = req;
@@ -36,7 +36,7 @@ async function verifySetup(req, res, next) {
   }
 }
 
-async function loginVerify(req, res, next) {
+export async function loginVerify(req, res, next) {
   try {
     const { email, password, token } = req.body || {};
     if (!email || !password || !token) {
@@ -93,8 +93,3 @@ async function loginVerify(req, res, next) {
   }
 }
 
-module.exports = {
-  setup,
-  verifySetup,
-  loginVerify,
-};

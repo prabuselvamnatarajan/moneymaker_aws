@@ -1,4 +1,4 @@
-const sessionService = require("../services/sessionService");
+import * as sessionService from "../services/sessionService.js";
 
 function normalizePermission(permission) {
   if (!permission) return null;
@@ -90,6 +90,4 @@ function authorize(requiredPermissions = []) {
   };
 }
 
-module.exports = {
-  authorize,
-};
+export { authorize };

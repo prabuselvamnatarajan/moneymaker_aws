@@ -1,8 +1,8 @@
-const authService = require("../services/authService");
-const jwtService = require("../utils/jwtService");
-const sessionService = require("../services/sessionService");
+import * as authService from "../services/authService.js";
+import * as jwtService from "../utils/jwtService.js";
+import * as sessionService from "../services/sessionService.js";
 
-async function signup(req, res, next) {
+export async function signup(req, res, next) {
   try {
     const { email, name, password } = req.body || {};
     if (!email || !name || !password) {
@@ -18,7 +18,7 @@ async function signup(req, res, next) {
   }
 }
 
-async function login(req, res, next) {
+export async function login(req, res, next) {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) {
@@ -78,7 +78,3 @@ async function login(req, res, next) {
   }
 }
 
-module.exports = {
-  signup,
-  login,
-};

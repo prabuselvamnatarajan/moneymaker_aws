@@ -1,10 +1,10 @@
-const express = require("express");
-const mfaController = require("../controllers/mfaController");
-const { authenticate } = require("../middlewares/authMiddleware");
+import express from "express";
+import { setup, verifySetup, loginVerify } from "../controllers/mfaController.js";
+import { authenticate } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
-router.post("/mfa/setup", authenticate, mfaController.setup);
-router.post("/mfa/verify-setup", authenticate, mfaController.verifySetup);
-router.post("/mfa/login-verify", mfaController.loginVerify);
+router.post("/mfa/setup", authenticate, setup);
+router.post("/mfa/verify-setup", authenticate, verifySetup);
+router.post("/mfa/login-verify", loginVerify);
 
-module.exports = router;
+export default router;
