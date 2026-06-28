@@ -5,8 +5,9 @@ import {
   updateAccount,
   deleteAccount,
 } from "../services/account.js";
+import { checkAdmin } from "../utils/roleHelper.js";
 
-export const createAccountController = async (req, res) => {
+export const createAccountController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
     const result = await createAccount(userId, req.body);
@@ -15,33 +16,29 @@ export const createAccountController = async (req, res) => {
       data: result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to create account",
-      error: err.message,
-    });
+    next(err);
   }
 };
 
-export const getAllAccountsController = async (req, res) => {
+export const getAllAccountsController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const result = await getAllAccounts(userId, req.query);
+    const isAdminUser = await checkAdmin(userId);
+    const result = await getAllAccounts(userId, req.query, isAdminUser);
     res.status(200).json({
       message: "Accounts retrieved successfully",
-      data: result,
+      ...result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to fetch accounts",
-      error: err.message,
-    });
+    next(err);
   }
 };
 
-export const getAccountByIdController = async (req, res) => {
+export const getAccountByIdController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const result = await getAccountById(userId, req.params.id);
+    const isAdminUser = await checkAdmin(userId);
+    const result = await getAccountById(userId, req.params.id, isAdminUser);
     if (!result) {
       return res.status(404).json({ message: "Account not found" });
     }
@@ -51,17 +48,15 @@ export const getAccountByIdController = async (req, res) => {
       data: result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to fetch account",
-      error: err.message,
-    });
+    next(err);
   }
 };
 
-export const updateAccountController = async (req, res) => {
+export const updateAccountController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const result = await updateAccount(userId, req.params.id, req.body);
+    const isAdminUser = await checkAdmin(userId);
+    const result = await updateAccount(userId, req.params.id, req.body, isAdminUser);
     if (!result) {
       return res.status(404).json({ message: "Account not found or unauthorized" });
     }
@@ -71,17 +66,15 @@ export const updateAccountController = async (req, res) => {
       data: result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to update account",
-      error: err.message,
-    });
+    next(err);
   }
 };
 
-export const deleteAccountController = async (req, res) => {
+export const deleteAccountController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const result = await deleteAccount(userId, req.params.id);
+    const isAdminUser = await checkAdmin(userId);
+    const result = await deleteAccount(userId, req.params.id, isAdminUser);
     if (!result) {
       return res.status(404).json({ message: "Account not found or unauthorized" });
     }
@@ -91,9 +84,27 @@ export const deleteAccountController = async (req, res) => {
       data: result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to delete account",
-      error: err.message,
+    next(err);
+  }
+};
+
+export const getAccountBalanceController = async (req, res, next) => {
+  try {
+    const userId = req.auth.userId;
+    const isAdminUser = await checkAdmin(userId);
+    const result = await getAccountById(userId, req.params.id, isAdminUser);
+    if (!result) {
+      return res.status(404).json({ message: "Account not found" });
+    }
+
+    res.status(200).json({
+      message: "Account balance retrieved successfully",
+      data: {
+        account_id: result.account_id,
+        current_balance: result.current_balance,
+      },
     });
+  } catch (err) {
+    next(err);
   }
 };

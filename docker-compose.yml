@@ -370,6 +370,7 @@ services:
       MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       JWT_ACCESS_SECRET: iam-access-secret
       JWT_REFRESH_SECRET: iam-refresh-secret
+      BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
       - ./MicroServices/Shared/IAM:/app/iam:ro
     deploy:
@@ -496,6 +497,7 @@ services:
       FUNDS_AND_MARGIN_API_URL: /fundsandmargin
       BACKTEST_APP_URL: /backtestapp
       BACKTEST_TRADE_URL: /api/trade
+      BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro

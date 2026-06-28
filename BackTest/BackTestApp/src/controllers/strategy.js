@@ -5,8 +5,9 @@ import {
   updateStrategy,
   deleteStrategy,
 } from "../services/strategy.js";
+import { checkAdmin } from "../utils/roleHelper.js";
 
-export const createStrategyController = async (req, res) => {
+export const createStrategyController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
     const result = await createStrategy(userId, req.body);
@@ -15,33 +16,29 @@ export const createStrategyController = async (req, res) => {
       data: result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to create strategy",
-      error: err.message,
-    });
+    next(err);
   }
 };
 
-export const getAllStrategiesController = async (req, res) => {
+export const getAllStrategiesController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const result = await getAllStrategies(userId, req.query);
+    const isAdminUser = await checkAdmin(userId);
+    const result = await getAllStrategies(userId, req.query, isAdminUser);
     res.status(200).json({
       message: "Strategies retrieved successfully",
-      data: result,
+      ...result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to fetch strategies",
-      error: err.message,
-    });
+    next(err);
   }
 };
 
-export const getStrategyByIdController = async (req, res) => {
+export const getStrategyByIdController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const result = await getStrategyById(userId, req.params.id);
+    const isAdminUser = await checkAdmin(userId);
+    const result = await getStrategyById(userId, req.params.id, isAdminUser);
     if (!result) {
       return res.status(404).json({ message: "Strategy not found" });
     }
@@ -51,17 +48,15 @@ export const getStrategyByIdController = async (req, res) => {
       data: result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to fetch strategy",
-      error: err.message,
-    });
+    next(err);
   }
 };
 
-export const updateStrategyController = async (req, res) => {
+export const updateStrategyController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const result = await updateStrategy(userId, req.params.id, req.body);
+    const isAdminUser = await checkAdmin(userId);
+    const result = await updateStrategy(userId, req.params.id, req.body, isAdminUser);
     if (!result) {
       return res.status(404).json({ message: "Strategy not found or unauthorized" });
     }
@@ -71,17 +66,15 @@ export const updateStrategyController = async (req, res) => {
       data: result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to update strategy",
-      error: err.message,
-    });
+    next(err);
   }
 };
 
-export const deleteStrategyController = async (req, res) => {
+export const deleteStrategyController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const result = await deleteStrategy(userId, req.params.id);
+    const isAdminUser = await checkAdmin(userId);
+    const result = await deleteStrategy(userId, req.params.id, isAdminUser);
     if (!result) {
       return res.status(404).json({ message: "Strategy not found or unauthorized" });
     }
@@ -91,9 +84,6 @@ export const deleteStrategyController = async (req, res) => {
       data: result,
     });
   } catch (err) {
-    res.status(400).json({
-      message: "Failed to delete strategy",
-      error: err.message,
-    });
+    next(err);
   }
 };

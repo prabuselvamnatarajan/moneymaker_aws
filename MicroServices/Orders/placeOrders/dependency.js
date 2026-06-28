@@ -9,6 +9,7 @@ const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const NGINX_ADDRESS = process.env.NGINX_ADDRESS;
 const BACKTEST_APP_URL = process.env.BACKTEST_APP_URL || '/backtestapp';
 const BACKTEST_TRADE_URL = process.env.BACKTEST_TRADE_URL || '/api/trade';
+const BACKTEST_SERVICE_TOKEN = process.env.BACKTEST_SERVICE_TOKEN;
 const FUNDS_AND_MARGIN_API_URL = process.env.FUNDS_AND_MARGIN_API_URL || '/funds_and_margin';
 
 const kafka = new Kafka({
@@ -113,12 +114,16 @@ async function triggerBackTestApp(body) {
         }
         console.log('Triggering Test API Call Body:', testAPIBody);
         console.log('URL:', url);
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        if (BACKTEST_SERVICE_TOKEN) {
+            headers['X-Service-Token'] = BACKTEST_SERVICE_TOKEN;
+        }
         const response = fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(testAPIBody), 
+            headers,
+            body: JSON.stringify(testAPIBody),
         }).then(res => res.json()).then(data => {
             console.log('Response:', data);
             return data;
