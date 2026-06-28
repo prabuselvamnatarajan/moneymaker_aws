@@ -23,8 +23,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  full_name: {
+  name: {
     type: String,
+    required: true,
+    trim: true,
   },
   is_mfa_enabled: {
     type: Boolean,
@@ -43,8 +45,8 @@ const userSchema = new mongoose.Schema({
     default: [],
   },
   roles: {
-    type: [String],
-    default: ["user"],
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Role" }],
+    default: [],
   },
   is_active: {
     type: Boolean,
@@ -69,5 +71,6 @@ userSchema.pre("save", function (next) {
 // Indexes
 userSchema.index({ username: 1 });
 userSchema.index({ email: 1 });
+userSchema.index({ roles: 1 });
 
 export default mongoose.model("User", userSchema);

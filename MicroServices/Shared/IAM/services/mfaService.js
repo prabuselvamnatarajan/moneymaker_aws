@@ -1,7 +1,19 @@
 import { authenticator } from "otplib";
 import QRCode from "qrcode";
-import User from "../models/user.js";
 import * as config from "../config.js";
+
+const resolveUserModel = async () => {
+  const configuredModel = process.env.IAM_USER_MODEL;
+  if (configuredModel) {
+    const imported = await import(configuredModel);
+    return imported.default || imported;
+  }
+
+  const imported = await import("../models/user.js");
+  return imported.default || imported;
+};
+
+const User = await resolveUserModel();
 
 function generateBackupCodes(count = 8, length = 8) {
   const codes = [];

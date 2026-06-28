@@ -1,7 +1,20 @@
 import User from "../models/user.js";
 
+const iamRoot = process.env.IAM_ROOT;
+if (!iamRoot) {
+  throw new Error("IAM_ROOT must be set");
+}
+
+const { authService } = await import(iamRoot);
+const { getDefaultUserRoleId } = authService;
+
 export const createUser = async (userData) => {
-  const user = new User(userData);
+  const payload = { ...userData };
+  if (!Array.isArray(payload.roles) || payload.roles.length === 0) {
+    payload.roles = [await getDefaultUserRoleId()];
+  }
+
+  const user = new User(payload);
   return await user.save();
 };
 

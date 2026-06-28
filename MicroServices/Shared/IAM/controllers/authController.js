@@ -4,14 +4,14 @@ import * as sessionService from "../services/sessionService.js";
 
 export async function signup(req, res, next) {
   try {
-    const { email, name, password } = req.body || {};
-    if (!email || !name || !password) {
-      const error = new Error("Email, name, and password are required");
+    const { username, name, email, password } = req.body || {};
+    if (!email || !password || !username || !name) {
+      const error = new Error("Email, username, name, and password are required");
       error.statusCode = 400;
       throw error;
     }
 
-    await authService.createUser({ email, name, password });
+    await authService.createUser({ username, name, email, password });
     res.status(201).json({ message: "Sign Up success!" });
   } catch (error) {
     next(error);
@@ -77,4 +77,3 @@ export async function login(req, res, next) {
     next(error);
   }
 }
-
