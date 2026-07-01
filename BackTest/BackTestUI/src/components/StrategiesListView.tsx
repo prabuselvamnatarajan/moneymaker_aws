@@ -8,12 +8,13 @@ import {
   Cpu, Search, Plus, Play, Pause, Square, Activity, TrendingUp, 
   BarChart2, DollarSign, Globe, X, ChevronRight, AlertTriangle 
 } from 'lucide-react';
-import { Strategy, SymbolData } from '../types';
+import { Strategy, SymbolData, Account } from '../types';
 
 interface StrategiesListViewProps {
   strategies: Strategy[];
   symbols: SymbolData[];
-  onAddStrategy: (newStrat: Strategy) => void;
+  accounts: Account[];
+  onAddStrategy: (newStrat: Strategy, accountId: string, symbol: string) => void;
   onUpdateStrategyStatus: (id: string, status: 'active' | 'paused' | 'stopped') => void;
   onNavigateToEntity: (type: 'strategy', id: string) => void;
 }
@@ -21,6 +22,7 @@ interface StrategiesListViewProps {
 export default function StrategiesListView({
   strategies,
   symbols,
+  accounts,
   onAddStrategy,
   onUpdateStrategyStatus,
   onNavigateToEntity
@@ -34,6 +36,7 @@ export default function StrategiesListView({
   const [mode, setMode] = useState<'live' | 'backtest'>('live');
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [initialStatus, setInitialStatus] = useState<'active' | 'paused' | 'stopped'>('active');
+  const [selectedAccountId, setSelectedAccountId] = useState('');
 
   // Computed metrics
   const totalPnl = strategies.reduce((sum, s) => sum + s.pnl, 0);
@@ -57,7 +60,7 @@ export default function StrategiesListView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !description) return;
+    if (!name || !description || !selectedAccountId) return;
 
     const newStrat: Strategy = {
       id: `STRAT-0${strategies.length + 1}`,
@@ -73,7 +76,8 @@ export default function StrategiesListView({
       description
     };
 
-    onAddStrategy(newStrat);
+    const targetSymbol = selectedSymbols.length > 0 ? selectedSymbols[0] : 'BTC/USD';
+    onAddStrategy(newStrat, selectedAccountId, targetSymbol);
     
     // Reset Form
     setName('');
@@ -81,6 +85,7 @@ export default function StrategiesListView({
     setMode('live');
     setSelectedSymbols([]);
     setInitialStatus('active');
+    setSelectedAccountId('');
     setShowAddForm(false);
   };
 
@@ -326,6 +331,23 @@ export default function StrategiesListView({
                   placeholder="Detail the algorithmic triggers, entry ranges, indicator bounds, and safety stops..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 resize-none"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Target Brokerage Account</label>
+                <select
+                  required
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                >
+                  <option value="">Select Account...</option>
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} (${acc.balance.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
