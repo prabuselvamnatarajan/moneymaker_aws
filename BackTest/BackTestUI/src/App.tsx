@@ -3,10 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { 
-  MOCK_ACCOUNTS, MOCK_STRATEGIES, MOCK_SYMBOLS, MOCK_TRANSACTIONS 
-} from './mockData';
+import React, { useState, useEffect } from 'react';
 import { 
   Account, Strategy, SymbolData, Transaction, TransactionFilters, ViewScreen 
 } from './types';
@@ -21,6 +18,9 @@ import AccountsListView from './components/AccountsListView';
 import StrategiesListView from './components/StrategiesListView';
 import SymbolsListView from './components/SymbolsListView';
 import UserProfileView from './components/UserProfileView';
+import LoginView from './components/LoginView';
+import { api } from './api';
+import { mapAccount, mapSymbol, mapTrade, mapDeployment } from './adapters';
 
 const INITIAL_FILTERS: TransactionFilters = {
   search: '',
@@ -35,88 +35,144 @@ const INITIAL_FILTERS: TransactionFilters = {
 };
 
 export default function App() {
+  // --- Auth & Session States ---
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('accessToken'));
+  const [currentUser, setCurrentUser] = useState<{ _id: string; username: string; email: string; name: string } | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
   // --- Master App States ---
   const [activeScreen, setActiveScreen] = useState<ViewScreen>('dashboard');
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   
-  const [accounts, setAccounts] = useState<Account[]>(MOCK_ACCOUNTS);
-  const [strategies, setStrategies] = useState<Strategy[]>(MOCK_STRATEGIES);
-  const [symbols, setSymbols] = useState<SymbolData[]>(MOCK_SYMBOLS);
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [symbols, setSymbols] = useState<SymbolData[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filters, setFilters] = useState<TransactionFilters>(INITIAL_FILTERS);
   
   const [highlightedTxId, setHighlightedTxId] = useState<string | undefined>(undefined);
   const [timezone, setTimezone] = useState<string>('UTC');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
-  // --- Dynamic Simulation Mutators ---
+  // --- Data Loader ---
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      // Fetch current profile
+      const userRes = await api.auth.getMe();
+      setCurrentUser(userRes.data);
+
+      // Fetch accounts
+      const accountsRes = await api.accounts.list();
+      setAccounts(accountsRes.items.map(mapAccount));
+
+      // Fetch watchlisted symbols
+      const symbolsRes = await api.symbols.list();
+      setSymbols(symbolsRes.items.map(mapSymbol));
+
+      // Fetch deployments (mapped as strategies in UI)
+      const deploymentsRes = await api.deployments.list();
+      const mappedStrats = await Promise.all(
+        deploymentsRes.items.map(async (dep: any) => {
+          try {
+            const metrics = await api.deployments.getMetrics(dep._id);
+            return mapDeployment(dep, metrics);
+          } catch {
+            return mapDeployment(dep);
+          }
+        })
+      );
+      setStrategies(mappedStrats);
+
+      // Fetch trades (mapped as transactions in UI)
+      const tradesRes = await api.trades.list();
+      setTransactions(tradesRes.items.map(mapTrade));
+    } catch (err) {
+      console.error('Error loading API data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadData();
+    }
+  }, [isAuthenticated]);
+
+  // Auth logout / unauthorized event handler
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+    };
+    window.addEventListener('auth-unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('auth-unauthorized', handleUnauthorized);
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    await api.auth.logout();
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setActiveScreen('dashboard');
+  };
+
+  // --- Dynamic Simulation & Mutation Handlers ---
   
-  // Appending a new trade & updating related entity balances/stats in real-time!
   const handleAddTransaction = (newTx: Transaction) => {
-    // 1. Insert transaction
+    // Read-only / system-generated locally, but keep simulation sync if needed
     setTransactions(prev => [newTx, ...prev]);
-
-    // 2. Adjust corresponding account balance & P&L
-    setAccounts(prevAccs => prevAccs.map(acc => {
-      if (acc.id === newTx.accountId) {
-        const valueDelta = newTx.quantity * newTx.price;
-        const feeDelta = newTx.fee;
-        const balanceChange = newTx.type === 'BUY' 
-          ? -(valueDelta + feeDelta) 
-          : (valueDelta - feeDelta);
-        
-        return {
-          ...acc,
-          balance: parseFloat((acc.balance + balanceChange).toFixed(2)),
-          pnl: parseFloat((acc.pnl + (newTx.type === 'SELL' ? valueDelta : -valueDelta)).toFixed(2))
-        };
-      }
-      return acc;
-    }));
-
-    // 3. Increment strategy performance metrics
-    setStrategies(prevStrats => prevStrats.map(strat => {
-      if (strat.id === newTx.strategyId) {
-        const orderValue = newTx.quantity * newTx.price;
-        const fakePnlImpact = newTx.type === 'SELL' ? orderValue * 0.05 : -orderValue * 0.02; // simulate yield swing
-        const isWin = Math.random() > 0.35; // keep track of randomized win success
-        
-        return {
-          ...strat,
-          totalTrades: strat.totalTrades + 1,
-          openPositions: newTx.type === 'BUY' ? strat.openPositions + 1 : Math.max(0, strat.openPositions - 1),
-          pnl: parseFloat((strat.pnl + fakePnlImpact).toFixed(2)),
-          winRate: parseFloat(((strat.winRate * strat.totalTrades + (isWin ? 100 : 0)) / (strat.totalTrades + 1)).toFixed(1))
-        };
-      }
-      return strat;
-    }));
   };
 
   // Toggle API links to simulate disconnect audits
-  const handleToggleBrokerStatus = (accountId: string) => {
-    setAccounts(prev => prev.map(acc => {
-      if (acc.id === accountId) {
-        return {
-          ...acc,
-          status: acc.status === 'connected' ? 'disconnected' : 'connected'
-        };
-      }
-      return acc;
-    }));
+  const handleToggleBrokerStatus = async (accountId: string) => {
+    const target = accounts.find(a => a.id === accountId);
+    if (!target) return;
+    const nextActive = target.status !== 'connected';
+    try {
+      await api.accounts.update(accountId, { is_active: nextActive });
+      setAccounts(prev => prev.map(acc => {
+        if (acc.id === accountId) {
+          return {
+            ...acc,
+            status: nextActive ? 'connected' : 'disconnected'
+          };
+        }
+        return acc;
+      }));
+    } catch (err: any) {
+      alert(`Failed to update account state: ${err.message}`);
+    }
   };
 
   // Set strategy status
-  const handleUpdateStrategyStatus = (stratId: string, status: 'active' | 'paused' | 'stopped') => {
-    setStrategies(prev => prev.map(strat => {
-      if (strat.id === stratId) {
-        return {
-          ...strat,
-          status
-        };
+  const handleUpdateStrategyStatus = async (stratId: string, status: 'active' | 'paused' | 'stopped') => {
+    const target = strategies.find(s => s.id === stratId);
+    if (!target) return;
+    try {
+      if (status === 'active') {
+        if (target.status === 'paused') {
+          await api.deployments.resume(stratId);
+        } else {
+          await api.deployments.start(stratId);
+        }
+      } else if (status === 'paused') {
+        await api.deployments.pause(stratId);
+      } else if (status === 'stopped') {
+        await api.deployments.stop(stratId);
       }
-      return strat;
-    }));
+      
+      setStrategies(prev => prev.map(strat => {
+        if (strat.id === stratId) {
+          return { ...strat, status };
+        }
+        return strat;
+      }));
+    } catch (err: any) {
+      alert(`Failed to update strategy execution status: ${err.message}`);
+    }
   };
 
   // Override audit remarks/notes
@@ -154,16 +210,87 @@ export default function App() {
   };
 
   // --- Dynamic Entity Creators ---
-  const handleAddAccount = (newAcc: Account) => {
-    setAccounts(prev => [...prev, newAcc]);
+  const handleAddAccount = async (newAcc: Account) => {
+    try {
+      const res = await api.accounts.create({
+        account_name: newAcc.name,
+        account_type: 'SIMULATION',
+        initial_balance: newAcc.initialBalance,
+        description: `broker:${newAcc.broker}`,
+      });
+      const mapped = mapAccount(res.data);
+      setAccounts(prev => [...prev, mapped]);
+    } catch (err: any) {
+      alert(`Failed to register account: ${err.message}`);
+    }
   };
 
-  const handleAddStrategy = (newStrat: Strategy) => {
-    setStrategies(prev => [...prev, newStrat]);
+  const handleAddStrategy = async (newStrat: Strategy, accountId: string, symbol: string) => {
+    try {
+      // 1. Create strategy definition
+      const stratRes = await api.strategies.create({
+        strategy_name: newStrat.name,
+        strategy_description: newStrat.description,
+      });
+      const strategyId = stratRes.data._id;
+
+      // 2. Resolve UserSymbol for target symbol
+      let userSymbolId = '';
+      let instrumentToken = '';
+      const existingSymbol = symbols.find(s => s.ticker === symbol);
+      if (existingSymbol) {
+        const rawSymbols = await api.symbols.list();
+        const found = rawSymbols.items.find(s => s.symbol === symbol);
+        if (found) {
+          userSymbolId = found._id;
+          instrumentToken = found.instrument_token;
+        }
+      }
+
+      if (!userSymbolId) {
+        const symRes = await api.symbols.create({
+          symbol,
+          exchange: 'NSE',
+          instrument_token: `TOKEN_${symbol}`,
+        });
+        userSymbolId = symRes.data._id;
+        instrumentToken = symRes.data.instrument_token;
+      }
+
+      // 3. Deploy
+      const depRes = await api.deployments.create({
+        strategy_id: strategyId,
+        account_id: accountId,
+        user_symbol_id: userSymbolId,
+        instrument_token: instrumentToken,
+        symbol: symbol,
+        start_time: new Date().toISOString(),
+        current_status: newStrat.status === 'active' ? 'RUNNING' : newStrat.status === 'paused' ? 'PAUSED' : 'SCHEDULED',
+        strategy_mode: newStrat.mode === 'live' ? 'LIVE' : 'BACKTEST',
+        deployment_name: newStrat.name,
+        notes: newStrat.description,
+      });
+
+      const mappedStrat = mapDeployment(depRes.data);
+      setStrategies(prev => [...prev, mappedStrat]);
+      loadData(); // Reload stats and items to keep fully synchronized
+    } catch (err: any) {
+      alert(`Failed to deploy strategy: ${err.message}`);
+    }
   };
 
-  const handleAddSymbol = (newSym: SymbolData) => {
-    setSymbols(prev => [...prev, newSym]);
+  const handleAddSymbol = async (newSym: SymbolData) => {
+    try {
+      const res = await api.symbols.create({
+        symbol: newSym.ticker,
+        exchange: newSym.exchange || 'NSE',
+        instrument_token: `TOKEN_${newSym.ticker}`,
+      });
+      const mapped = mapSymbol(res.data);
+      setSymbols(prev => [...prev, mapped]);
+    } catch (err: any) {
+      alert(`Failed to add symbol to watchlist: ${err.message}`);
+    }
   };
 
   // --- Router & Entity Drilldown Navigation ---
@@ -249,6 +376,7 @@ export default function App() {
           <StrategiesListView
             strategies={strategies}
             symbols={symbols}
+            accounts={accounts}
             onAddStrategy={handleAddStrategy}
             onUpdateStrategyStatus={handleUpdateStrategyStatus}
             onNavigateToEntity={handleSelectEntity}
@@ -307,12 +435,27 @@ export default function App() {
         );
       case 'profile':
         return (
-          <UserProfileView />
+          <UserProfileView currentUser={currentUser} onLogout={handleLogout} />
         );
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;
     }
   };
+
+  if (!isAuthenticated) {
+    return <LoginView onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
+  if (isLoading && accounts.length === 0) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center font-sans">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs text-slate-500 font-mono tracking-wider">Loading Platform Audits...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="cobratrades-app-container" className="flex bg-slate-900 text-slate-100 min-h-screen">
@@ -328,6 +471,7 @@ export default function App() {
         onSelectEntity={handleSelectEntity}
         timezone={timezone}
         onTimezoneChange={(tz) => setTimezone(tz)}
+        currentUser={currentUser}
       />
 
       {/* Main Panel Frame */}

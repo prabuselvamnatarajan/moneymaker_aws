@@ -29,14 +29,29 @@ interface ApiKey {
   lastUsed: string;
 }
 
-export default function UserProfileView() {
+import { api } from '../api';
+
+interface UserProfileViewProps {
+  currentUser: { name: string; username: string; email: string; _id: string } | null;
+  onLogout: () => void;
+}
+
+export default function UserProfileView({ currentUser, onLogout }: UserProfileViewProps) {
   // User profile state
-  const [name, setName] = useState('Prabu Selvam');
-  const [username, setUsername] = useState('prabuselvam');
-  const [email, setEmail] = useState('prabuselvamonline@gmail.com');
+  const [name, setName] = useState(currentUser?.name || 'Prabu Selvam');
+  const [username, setUsername] = useState(currentUser?.username || 'prabuselvam');
+  const [email, setEmail] = useState(currentUser?.email || 'prabuselvamonline@gmail.com');
   const [role, setRole] = useState('Senior Algo Operator');
   const [mfaEnabled, setMfaEnabled] = useState(true);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  React.useEffect(() => {
+    if (currentUser) {
+      setName(currentUser.name);
+      setUsername(currentUser.username);
+      setEmail(currentUser.email);
+    }
+  }, [currentUser]);
 
   // Edit states
   const [isEditingInfo, setIsEditingInfo] = useState(false);
@@ -129,7 +144,7 @@ export default function UserProfileView() {
     setIsEditingInfo(false);
   };
 
-  const handleChangePasswordSubmit = (e: React.FormEvent) => {
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPassword || !newPassword || !confirmPassword) {
       showToast('error', 'Please fill out all password fields');
@@ -144,12 +159,16 @@ export default function UserProfileView() {
       return;
     }
 
-    // Success simulation
-    showToast('success', 'Account security credentials updated successfully');
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setShowPasswordModal(false);
+    try {
+      await api.auth.changePassword(currentPassword, newPassword);
+      showToast('success', 'Account security credentials updated successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowPasswordModal(false);
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to change password');
+    }
   };
 
   const handleRevokeSession = (sessionId: string) => {
@@ -256,6 +275,13 @@ export default function UserProfileView() {
                 <span className="text-slate-300 font-medium font-mono text-[11px]">COBRANET-US-EAST-01</span>
               </div>
             </div>
+
+            <button
+              onClick={onLogout}
+              className="w-full bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/30 text-rose-300 py-2 rounded-lg text-xs font-bold font-mono tracking-wider uppercase mt-4 transition-colors cursor-pointer"
+            >
+              Sign Out Session
+            </button>
           </div>
 
           {/* Quick Security Status Toggles */}

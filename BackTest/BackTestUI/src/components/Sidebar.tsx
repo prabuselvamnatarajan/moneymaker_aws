@@ -20,6 +20,7 @@ interface SidebarProps {
   onSelectEntity: (type: 'account' | 'strategy' | 'symbol', id: string) => void;
   timezone: string;
   onTimezoneChange: (tz: 'UTC' | 'Local') => void;
+  currentUser: { name: string; email: string } | null;
 }
 
 export default function Sidebar({
@@ -32,6 +33,7 @@ export default function Sidebar({
   onSelectEntity,
   timezone,
   onTimezoneChange,
+  currentUser,
 }: SidebarProps) {
   
   const connectedAccountsCount = accounts.filter(a => a.status === 'connected').length;
@@ -248,11 +250,11 @@ export default function Sidebar({
               ? 'bg-indigo-600 text-white shadow-md'
               : 'bg-slate-800 border border-slate-700 text-slate-300'
           }`}>
-            PS
+            {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('') : 'PS'}
           </div>
           <div className="truncate flex-1">
-            <h4 className="text-xs font-bold text-slate-200 truncate">Prabu Selvam</h4>
-            <p className="text-[10px] text-slate-500 truncate font-mono">prabuselvamonline@gmail.com</p>
+            <h4 className="text-xs font-bold text-slate-200 truncate">{currentUser?.name || 'Prabu Selvam'}</h4>
+            <p className="text-[10px] text-slate-500 truncate font-mono">{currentUser?.email || 'prabuselvamonline@gmail.com'}</p>
           </div>
         </button>
       </div>
