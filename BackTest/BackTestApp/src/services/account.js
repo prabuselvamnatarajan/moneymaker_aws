@@ -12,7 +12,11 @@ const ADMIN_UPDATABLE_FIELDS = [
 ];
 
 export const createAccount = async (userId, accountData) => {
-  const account = new Account({ ...accountData, user_id: userId });
+  const account = new Account({
+    ...accountData,
+    current_balance: accountData.current_balance !== undefined ? accountData.current_balance : accountData.initial_balance,
+    user_id: userId,
+  });
   return await account.save();
 };
 
