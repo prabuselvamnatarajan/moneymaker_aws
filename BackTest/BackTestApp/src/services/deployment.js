@@ -1,12 +1,15 @@
 import Deployment from "../models/deployment.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
+import { createClient } from "redis";
 
 const USER_UPDATABLE_FIELDS = ["deployment_name", "notes"];
 
 export const createDeployment = async (userId, deploymentData) => {
   const deployment = new Deployment({ ...deploymentData, user_id: userId });
-  return await deployment.save();
+  const result = await deployment.save();
+  await syncAllDeploymentsToRedis();
+  return result;
 };
 
 export const getAllDeployments = async (userId, queryParams) => {
@@ -59,7 +62,9 @@ export const updateDeployment = async (userId, id, updateData) => {
 };
 
 export const deleteDeployment = async (userId, id) => {
-  return await Deployment.findOneAndDelete({ _id: id, user_id: userId });
+  const result = await Deployment.findOneAndDelete({ _id: id, user_id: userId });
+  await syncAllDeploymentsToRedis();
+  return result;
 };
 
 // --- Lifecycle Actions ---
@@ -99,6 +104,7 @@ export const transitionDeployment = async (userId, id, action) => {
   }
 
   await deployment.save();
+  await syncAllDeploymentsToRedis();
   return deployment;
 };
 
@@ -150,4 +156,70 @@ export const getDeploymentMetrics = async (userId, id) => {
     losses,
     win_rate: totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(2) + "%" : "0%",
   };
+};
+
+export const syncAllDeploymentsToRedis = async () => {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    console.warn("⚠️ REDIS_URL not set, skipping deployment sync to Redis");
+    return;
+  }
+
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    await client.connect();
+
+    // Fetch all RUNNING deployments
+    const runningDeployments = await Deployment.find({ current_status: "RUNNING" })
+      .populate("strategy_id")
+      .populate("account_id");
+
+    const newKeysData = {};
+
+    for (const dep of runningDeployments) {
+      if (!dep.strategy_id || !dep.account_id) continue;
+      const symbol = dep.symbol;
+      const isBacktest = dep.strategy_mode !== "LIVE";
+      const key = isBacktest ? `strategies:backtest:${symbol}` : `strategies:live:${symbol}`;
+
+      if (!newKeysData[key]) {
+        newKeysData[key] = [];
+      }
+
+      newKeysData[key].push({
+        name: dep.strategy_id.strategy_name,
+        isTest: isBacktest,
+        account_id: dep.account_id.account_id || dep.account_id._id.toString(),
+        instrument_token: dep.instrument_token,
+        symbol: dep.symbol,
+        strategy_id: dep.strategy_id._id.toString(),
+        deployment_id: dep._id.toString(),
+      });
+    }
+
+    // Scan Redis for existing strategy keys to clean up
+    const liveKeys = await client.keys("strategies:live:*");
+    const backtestKeys = await client.keys("strategies:backtest:*");
+    const allExistingKeys = [...liveKeys, ...backtestKeys];
+
+    for (const key of allExistingKeys) {
+      if (!newKeysData[key]) {
+        await client.del(key);
+        console.log(`Deleted stale Redis key: ${key}`);
+      }
+    }
+
+    for (const [key, activeStrategies] of Object.entries(newKeysData)) {
+      await client.set(key, JSON.stringify({ activeStrategies }));
+      console.log(`Updated Redis key ${key} with ${activeStrategies.length} active strategies`);
+    }
+
+  } catch (error) {
+    console.error("❌ Failed to sync deployments to Redis:", error.message);
+  } finally {
+    if (client) {
+      await client.disconnect();
+    }
+  }
 };
