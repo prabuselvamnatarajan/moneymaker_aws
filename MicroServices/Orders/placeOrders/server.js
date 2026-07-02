@@ -31,7 +31,11 @@ app.post('/', async (req, res) => {
         } else {
             let orderResponse = await triggerBackTestApp(body);
             let { data: { closing_balance } = {} } = orderResponse || {};
-            await setAccountBalanceToRedis(strategy_details.account_id, closing_balance);
+            if (closing_balance !== undefined && closing_balance !== null) {
+                await setAccountBalanceToRedis(strategy_details.account_id, closing_balance);
+            } else {
+                console.warn('⚠️ Warning: Received invalid closing balance from BackTestApp:', closing_balance);
+            }
             result = 'Test Mode: Order not placed.';
         }
         
