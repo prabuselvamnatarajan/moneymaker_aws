@@ -10,32 +10,37 @@ require('dotenv').config();
 const cron = require('node-cron');
 const { MongoClient } = require('mongodb');
 const { getLTP, getRelatedStrikePrices, getRelatedOptionContracts} = require('./util.js');
-const { get } = require('http');
+const exportCollection = require('./exportCollections.js');
 
 const GET_LTP_URL = process.env.GET_LTP_URL;
-
-
-
+const uri = process.env.MONGO_URI;
+const dbName = process.env.DB_NAME;
+const prefCollection = process.env.EXPORT_PREF_COLLECTION || 'exportPreferences';
 
 async function addSymbolsToWatchListToRedis() {
-    let symbol = 'NSE_INDEX|Nifty 50';
-    let ltp = getLTP({ symbol });
-    console.log(`LTP for ${symbol}:`, ltp);
+    console.log("addSymbolsToWatchListToRedis is currently not active.");
+}
 
-    let relatedStrikePrices = await getRelatedStrikePrices(ltp, 50, noOfRelatedEntries = 0);
+async function getCollectionsToExport() {
+    const client = new MongoClient(uri);
+    try {
+        await client.connect();
+        const db = client.db(dbName);
+        const prefColl = db.collection(prefCollection);
+        const results = await prefColl.find({}).toArray();
+        return results.map(doc => doc.collectionName).filter(Boolean);
+    } catch (err) {
+        console.error('Error fetching export preferences:', err.message);
+        return [];
+    } finally {
+        await client.close();
+    }
+}
 
-    const option_chain = await getOptionChain({ access_token, symbol: req.query.symbol || 'NSE_INDEX|Nifty 50', expiry_date: formatDateToYYYYMMDD(new Date(req.query.expiry)) });
-    let relatedOptions = await getRelatedOptionContracts({ fulloptionchain: option_chain.data, relatedStrikePrices });
-
-    let symbolsToWatch = relatedOptions[0] && [ relatedOptions[0].call_options?.instrument_key , relatedOptions[0].put_options?.instrument_key ];
-
-    // Store symbolsToWatch in Redis
-    
-
-
-
-
-
+async function exportAll() {
+    const collections = await getCollectionsToExport();
+    console.log(`Starting export for: ${collections.join(', ')}`);
+    await Promise.all(collections.map(exportCollection));
 }
 
 const cronSchedule = process.env.EXPORT_CRON_SCHEDULE || '15 16 * * *';
