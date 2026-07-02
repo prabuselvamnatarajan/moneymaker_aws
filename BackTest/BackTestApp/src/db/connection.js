@@ -32,8 +32,24 @@ export const connectDB = async () => {
           useUnifiedTopology: true,
         });
         console.log("✅ Connected IAM mongoose instance successfully");
+
+        // Dynamically register Role and Permission models on the parent mongoose instance
+        const iamRolePath = iamRoot.replace('index.js', 'models/role.js');
+        const iamPermissionPath = iamRoot.replace('index.js', 'models/permission.js');
+        
+        const iamRoleModule = await import(iamRolePath);
+        const iamPermissionModule = await import(iamPermissionPath);
+        
+        if (!mongoose.models.Permission) {
+          mongoose.model("Permission", iamPermissionModule.default.schema);
+          console.log("✅ Registered Permission schema on parent mongoose");
+        }
+        if (!mongoose.models.Role) {
+          mongoose.model("Role", iamRoleModule.default.schema);
+          console.log("✅ Registered Role schema on parent mongoose");
+        }
       } catch (err) {
-        console.warn("⚠️ Could not connect separate IAM mongoose:", err.message);
+        console.warn("⚠️ Could not register/connect separate IAM mongoose:", err.message);
       }
     }
   } catch (err) {
