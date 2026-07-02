@@ -49,10 +49,31 @@ export const createTrade = async (tradeData) => {
     const change_in_balance = type_of_order === "BUY" ? -tradeValue : tradeValue;
     const closing_balance = opening_balance + change_in_balance;
 
+    let pnl = 0;
+    if (type_of_order === "SELL") {
+      const buyQuery = {
+        symbol: tradeData.symbol,
+        type_of_order: "BUY",
+      };
+      if (tradeData.deployment_id) {
+        buyQuery.deployment_id = tradeData.deployment_id;
+      } else {
+        buyQuery.account_id = account._id;
+      }
+      const lastBuyTrade = await Trade.findOne(buyQuery)
+        .sort({ created_at: -1 })
+        .session(session);
+
+      if (lastBuyTrade) {
+        pnl = (price - lastBuyTrade.price) * quantity;
+      }
+    }
+
     const tradePayload = {
       ...tradeData,
       account_id: account._id,
       user_id,
+      pnl,
     };
     const [trade] = await Trade.create([tradePayload], { session });
 
