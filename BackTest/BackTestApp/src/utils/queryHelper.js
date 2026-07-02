@@ -23,7 +23,10 @@ export function parseQueryParams(query, options = {}) {
   }
 
   if (query.status) {
-    filter.status = query.status;
+    filter.$or = [
+      { status: query.status },
+      { current_status: query.status.toUpperCase() }
+    ];
   }
   if (query.is_active !== undefined) {
     filter.is_active = query.is_active === "true";
