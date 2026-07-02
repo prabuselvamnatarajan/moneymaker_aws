@@ -69,9 +69,9 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp = false;
             // need to close long position
             if (isTest) {
-                logger.info(`MSB Test: Closing Live long position at ${low}`);
+                logger.info(`MSB Test: Closing Test long position at ${low}`);
             } else {
-                logger.info(`MSB: Closing Test long position at ${low}`);
+                logger.info(`MSB: Closing Live long position at ${low}`);
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol);
@@ -92,9 +92,9 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp = true;
             // need to open long position
             if (isTest) {
-                logger.info(`MSB Test: Opening Live long position at ${high}`);
+                logger.info(`MSB Test: Opening Test long position at ${high}`);
             } else {
-                logger.info(`MSB: Opening Test long position at ${high}`);
+                logger.info(`MSB: Opening Live long position at ${high}`);
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);
