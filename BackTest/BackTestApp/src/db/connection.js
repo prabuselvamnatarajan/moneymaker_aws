@@ -21,6 +21,21 @@ export const connectDB = async () => {
     });
     console.log("✅ MongoDB connected successfully");
     console.log(`Using MongoDB URI: ${uri}`);
+
+    const iamRoot = process.env.IAM_ROOT;
+    if (iamRoot) {
+      try {
+        const iamMongoosePath = iamRoot.replace('index.js', 'node_modules/mongoose/index.js');
+        const iamMongoose = await import(iamMongoosePath);
+        await iamMongoose.default.connect(uri, {
+          useNewUrlParser: true,
+          useUnifiedTopology: true,
+        });
+        console.log("✅ Connected IAM mongoose instance successfully");
+      } catch (err) {
+        console.warn("⚠️ Could not connect separate IAM mongoose:", err.message);
+      }
+    }
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
     process.exit(1);
