@@ -17,7 +17,7 @@ async function getAuthorisedClient() {
             authorisedClient = UpstoxClient;
         } catch (error) {
             console.error(`Error Creating Authorised Client with AccessToken :`, error.message);
-            return [];
+            throw new Error(`Failed to authorize Upstox client: ${error.message}`);
         }
     }
     return authorisedClient;
