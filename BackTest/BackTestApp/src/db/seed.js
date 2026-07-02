@@ -78,8 +78,8 @@ export const seedDB = async () => {
     console.log("Roles verified.");
 
     // 3. Create admin user
-    const adminPassword = process.env.SEED_ADMIN_PASSWORD || "admin123";
-    const userPassword = process.env.SEED_USER_PASSWORD || "user123";
+    const adminPassword = process.env.SEED_ADMIN_PASSWORD || "adminpassword123";
+    const userPassword = process.env.SEED_USER_PASSWORD || "userpassword123";
 
     if (!process.env.SEED_ADMIN_PASSWORD || !process.env.SEED_USER_PASSWORD) {
       console.warn(
@@ -107,7 +107,7 @@ export const seedDB = async () => {
     if (!standardUser) {
       const hashedUserPassword = await bcrypt.hash(userPassword, 10);
       standardUser = new User({
-        username: "user",
+        username: "standarduser",
         email: "user@moneymaker.com",
         password: hashedUserPassword,
         name: "Standard User",
