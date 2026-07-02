@@ -372,6 +372,7 @@ services:
       JWT_REFRESH_SECRET: iam-refresh-secret
       BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
       IAM_ROOT: /app/iam/index.js
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
     volumes:
       - ./MicroServices/Shared/IAM:/app/iam:ro
     deploy:
