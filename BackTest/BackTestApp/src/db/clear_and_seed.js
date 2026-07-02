@@ -8,6 +8,7 @@ import UserSymbol from "../models/userSymbol.js";
 import Deployment from "../models/deployment.js";
 import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
+import { syncAllDeploymentsToRedis } from "../services/deployment.js";
 
 const PermissionSchema = new mongoose.Schema({
   operation: { type: String, required: true },
@@ -335,6 +336,7 @@ export const clearAndSeedDB = async () => {
     await sellLedger.save();
 
     console.log("Created trade and ledger yield history.");
+    await syncAllDeploymentsToRedis();
     console.log("✅ Database clear and seed completed successfully!");
   } catch (error) {
     console.error("❌ Clear and seed failed:", error);
