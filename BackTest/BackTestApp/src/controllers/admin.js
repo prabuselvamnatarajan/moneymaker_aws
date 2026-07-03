@@ -60,6 +60,14 @@ export const createUser = async (req, res, next) => {
     });
 
     await newUser.save();
+
+    try {
+      const { initializeUserAccounts } = await import("../utils/accountInitializer.js");
+      await initializeUserAccounts(newUser._id);
+    } catch (initErr) {
+      console.error("Failed to initialize predefined accounts for user:", newUser._id, initErr);
+    }
+
     const created = await User.findById(newUser._id).select("-password").populate("roles");
     res.status(201).json({ message: "User created successfully", data: created });
   } catch (error) {

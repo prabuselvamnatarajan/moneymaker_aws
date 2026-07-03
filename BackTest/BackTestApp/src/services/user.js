@@ -15,7 +15,16 @@ export const createUser = async (userData) => {
   }
 
   const user = new User(payload);
-  return await user.save();
+  const savedUser = await user.save();
+
+  try {
+    const { initializeUserAccounts } = await import("../utils/accountInitializer.js");
+    await initializeUserAccounts(savedUser._id);
+  } catch (initErr) {
+    console.error("Failed to initialize predefined accounts for user:", savedUser._id, initErr);
+  }
+
+  return savedUser;
 };
 
 export const getAllUsers = async (userId, filters = {}) => {

@@ -8,14 +8,37 @@ if (!iamRoot) {
 }
 
 const {
-  signup,
   login,
   sessionService,
   jwtService,
   authService
 } = await import(iamRoot);
 
-export { signup, login };
+export { login };
+
+export const signup = async (req, res, next) => {
+  try {
+    const { username, name, email, password } = req.body || {};
+    if (!email || !password || !username || !name) {
+      const error = new Error("Email, username, name, and password are required");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await authService.createUser({ username, name, email, password });
+    
+    try {
+      const { initializeUserAccounts } = await import("../utils/accountInitializer.js");
+      await initializeUserAccounts(user._id);
+    } catch (initErr) {
+      console.error("Failed to initialize predefined accounts for user:", user._id, initErr);
+    }
+
+    res.status(201).json({ message: "Sign Up success!" });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const logout = async (req, res, next) => {
   try {
