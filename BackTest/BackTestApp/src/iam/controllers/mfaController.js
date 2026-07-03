@@ -93,3 +93,20 @@ export async function loginVerify(req, res, next) {
   }
 }
 
+export async function disable(req, res, next) {
+  try {
+    const { user } = req;
+    if (!user) {
+      const error = new Error("Authentication required");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const result = await mfaService.disableMfa(user);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+

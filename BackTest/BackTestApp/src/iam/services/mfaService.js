@@ -115,4 +115,19 @@ async function verifyLoginMfa(email, token) {
   return user;
 }
 
-export { generateMfaSetup, verifyMfaSetup, verifyLoginMfa };
+async function disableMfa(user) {
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  user.is_mfa_enabled = false;
+  user.mfa_secret = "";
+  user.mfa_temp_secret = "";
+  user.backup_codes = [];
+  await user.save();
+  return { message: "MFA disabled successfully" };
+}
+
+export { generateMfaSetup, verifyMfaSetup, verifyLoginMfa, disableMfa };
+

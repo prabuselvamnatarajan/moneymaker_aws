@@ -13,6 +13,7 @@ import {
   setup,
   verifySetup,
   loginVerify,
+  disable,
   authenticate
 } from "../iam/index.js";
 
@@ -30,5 +31,6 @@ router.post("/reset-password", resetPassword);
 router.post("/mfa/setup", authenticate, setup);
 router.post("/mfa/verify-setup", authenticate, verifySetup);
 router.post("/mfa/login-verify", loginVerify);
+router.post("/mfa/disable", authenticate, disable);
 
 export default router;

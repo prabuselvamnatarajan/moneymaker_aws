@@ -1,5 +1,5 @@
 import { signup, login } from "./controllers/authController.js";
-import { setup, verifySetup, loginVerify } from "./controllers/mfaController.js";
+import { setup, verifySetup, loginVerify, disable } from "./controllers/mfaController.js";
 import { authenticate } from "./middlewares/authMiddleware.js";
 import * as authService from "./services/authService.js";
 import * as mfaService from "./services/mfaService.js";
@@ -13,6 +13,7 @@ export {
   setup,
   verifySetup,
   loginVerify,
+  disable,
   authenticate,
   authService,
   mfaService,
