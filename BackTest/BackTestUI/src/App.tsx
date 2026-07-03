@@ -37,8 +37,17 @@ const INITIAL_FILTERS: TransactionFilters = {
 export default function App() {
   // --- Auth & Session States ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('accessToken'));
-  const [currentUser, setCurrentUser] = useState<{ _id: string; username: string; email: string; name: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ _id: string; username: string; email: string; name: string; is_mfa_enabled: boolean; backup_codes?: string[] } | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const handleProfileUpdate = async () => {
+    try {
+      const userRes = await api.auth.getMe();
+      setCurrentUser(userRes.data);
+    } catch (err) {
+      console.error('Error refreshing profile:', err);
+    }
+  };
 
   // --- Master App States ---
   const [activeScreen, setActiveScreen] = useState<ViewScreen>('dashboard');
@@ -435,7 +444,7 @@ export default function App() {
         );
       case 'profile':
         return (
-          <UserProfileView currentUser={currentUser} onLogout={handleLogout} />
+          <UserProfileView currentUser={currentUser} onLogout={handleLogout} onProfileUpdate={handleProfileUpdate} />
         );
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;

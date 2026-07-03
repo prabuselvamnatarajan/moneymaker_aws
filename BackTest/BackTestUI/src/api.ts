@@ -44,9 +44,11 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = await handleResponse<{ accessToken: string; refreshToken: string }>(res);
-      localStorage.setItem('accessToken', data.accessToken);
-      localStorage.setItem('refreshToken', data.refreshToken);
+      const data = await handleResponse<{ accessToken?: string; refreshToken?: string; mfaRequired?: boolean }>(res);
+      if (data.accessToken && data.refreshToken) {
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('refreshToken', data.refreshToken);
+      }
       return data;
     },
 
@@ -56,10 +58,8 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, username, password }),
       });
-      const data = await handleResponse<{ accessToken: string; refreshToken: string }>(res);
-      localStorage.setItem('accessToken', data.accessToken);
-      localStorage.setItem('refreshToken', data.refreshToken);
-      return data;
+      await handleResponse<{ message: string }>(res);
+      return this.login(email, password);
     },
 
     async logout() {
@@ -79,7 +79,7 @@ export const api = {
         method: 'GET',
         headers: getHeaders(),
       });
-      return handleResponse<{ data: { _id: string; username: string; email: string; name: string } }>(res);
+      return handleResponse<{ data: { _id: string; username: string; email: string; name: string; is_mfa_enabled: boolean; backup_codes?: string[] } }>(res);
     },
 
     async changePassword(currentPassword: string, newPassword: string) {
@@ -89,6 +89,46 @@ export const api = {
         body: JSON.stringify({ currentPassword, newPassword }),
       });
       return handleResponse<{ message: string }>(res);
+    },
+  },
+
+  // MFA API
+  mfa: {
+    async setup() {
+      const res = await fetch(`${BASE_URL}/auth/mfa/setup`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ otpauthUrl: string; qrCodeDataUrl: string; tempSecret: string }>(res);
+    },
+
+    async verifySetup(token: string) {
+      const res = await fetch(`${BASE_URL}/auth/mfa/verify-setup`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ token }),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+
+    async disable() {
+      const res = await fetch(`${BASE_URL}/auth/mfa/disable`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+
+    async loginVerify(email: string, password: string, token: string) {
+      const res = await fetch(`${BASE_URL}/auth/mfa/login-verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, token }),
+      });
+      const data = await handleResponse<{ accessToken: string; refreshToken: string }>(res);
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('refreshToken', data.refreshToken);
+      return data;
     },
   },
 

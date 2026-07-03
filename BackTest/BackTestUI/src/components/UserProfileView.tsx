@@ -32,26 +32,89 @@ interface ApiKey {
 import { api } from '../api';
 
 interface UserProfileViewProps {
-  currentUser: { name: string; username: string; email: string; _id: string } | null;
+  currentUser: { name: string; username: string; email: string; _id: string; is_mfa_enabled: boolean; backup_codes?: string[] } | null;
   onLogout: () => void;
+  onProfileUpdate: () => void;
 }
 
-export default function UserProfileView({ currentUser, onLogout }: UserProfileViewProps) {
+export default function UserProfileView({ currentUser, onLogout, onProfileUpdate }: UserProfileViewProps) {
   // User profile state
   const [name, setName] = useState(currentUser?.name || 'Prabu Selvam');
   const [username, setUsername] = useState(currentUser?.username || 'prabuselvam');
   const [email, setEmail] = useState(currentUser?.email || 'prabuselvamonline@gmail.com');
   const [role, setRole] = useState('Senior Algo Operator');
-  const [mfaEnabled, setMfaEnabled] = useState(true);
+  const [mfaEnabled, setMfaEnabled] = useState(currentUser?.is_mfa_enabled || false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // MFA setup modal states
+  const [showMfaSetupModal, setShowMfaSetupModal] = useState(false);
+  const [mfaSetupData, setMfaSetupData] = useState<{ otpauthUrl: string; qrCodeDataUrl: string; tempSecret: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaError, setMfaError] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (currentUser) {
       setName(currentUser.name);
       setUsername(currentUser.username);
       setEmail(currentUser.email);
+      setMfaEnabled(currentUser.is_mfa_enabled || false);
     }
   }, [currentUser]);
+
+  const handleMfaToggle = async () => {
+    if (mfaEnabled) {
+      if (!window.confirm("Are you sure you want to disable Multi-Factor Authentication? This makes your account less secure.")) {
+        return;
+      }
+      setMfaLoading(true);
+      try {
+        await api.mfa.disable();
+        onProfileUpdate();
+        showToast('success', 'Multi-factor authentication has been disabled successfully');
+      } catch (err: any) {
+        showToast('error', err.message || 'Failed to disable MFA');
+      } finally {
+        setMfaLoading(false);
+      }
+    } else {
+      setMfaCode('');
+      setMfaError(null);
+      setMfaSetupData(null);
+      setShowMfaSetupModal(true);
+      setMfaLoading(true);
+      try {
+        const data = await api.mfa.setup();
+        setMfaSetupData(data);
+      } catch (err: any) {
+        setMfaError(err.message || 'Failed to initialize MFA setup');
+        showToast('error', err.message || 'Failed to initialize MFA setup');
+      } finally {
+        setMfaLoading(false);
+      }
+    }
+  };
+
+  const handleVerifySetupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaCode || mfaCode.length < 6) {
+      setMfaError('Please enter a 6-digit confirmation code');
+      return;
+    }
+    setMfaLoading(true);
+    setMfaError(null);
+    try {
+      await api.mfa.verifySetup(mfaCode);
+      onProfileUpdate();
+      setShowMfaSetupModal(false);
+      showToast('success', 'Multi-factor authentication enabled successfully');
+    } catch (err: any) {
+      setMfaError(err.message || 'Verification failed. Please try again.');
+    } finally {
+      setMfaLoading(false);
+    }
+  };
 
   // Edit states
   const [isEditingInfo, setIsEditingInfo] = useState(false);
@@ -298,15 +361,28 @@ export default function UserProfileView({ currentUser, onLogout }: UserProfileVi
                 <p className="text-[10px] text-slate-500">Requires authenticator code</p>
               </div>
               <button 
-                onClick={() => {
-                  setMfaEnabled(!mfaEnabled);
-                  showToast('success', mfaEnabled ? 'Two-factor auth has been disabled' : 'Two-factor auth has been enabled');
-                }}
-                className={`w-10 h-5.5 rounded-full transition-all flex items-center p-0.5 cursor-pointer ${mfaEnabled ? 'bg-indigo-600 justify-end' : 'bg-slate-800 justify-start'}`}
+                onClick={handleMfaToggle}
+                disabled={mfaLoading}
+                className={`w-10 h-5.5 rounded-full transition-all flex items-center p-0.5 cursor-pointer ${mfaEnabled ? 'bg-indigo-600 justify-end' : 'bg-slate-800 justify-start'} disabled:opacity-50`}
               >
                 <span className="w-4.5 h-4.5 rounded-full bg-white shadow-md" />
               </button>
             </div>
+
+            {/* Display Backup Codes if MFA is Enabled */}
+            {currentUser?.backup_codes && currentUser.backup_codes.length > 0 && mfaEnabled && (
+              <div className="p-3 bg-slate-900 rounded-lg border border-slate-850 space-y-2 mt-3">
+                <p className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">MFA Backup Recovery Codes</p>
+                <p className="text-[9px] text-slate-500">Save these codes in a safe place. They can be used to access your account if you lose your authenticator device.</p>
+                <div className="grid grid-cols-2 gap-2 font-mono text-[10px] text-indigo-300">
+                  {currentUser.backup_codes.map((code, idx) => (
+                    <div key={idx} className="bg-slate-950 px-2 py-1 rounded border border-slate-800 text-center select-all font-semibold">
+                      {code}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Session Lockdown */}
             <div className="flex items-center justify-between p-3 bg-slate-900 rounded-lg border border-slate-850">
@@ -726,6 +802,109 @@ export default function UserProfileView({ currentUser, onLogout }: UserProfileVi
 
               </form>
             )}
+
+          </div>
+        </div>
+      )}
+
+      {/* MFA Setup Modal Overlay */}
+      {showMfaSetupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl animate-in fade-in duration-200">
+            
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                <Lock className="w-4 h-4 text-indigo-400" />
+                Configure MFA Protection
+              </h3>
+              <button 
+                onClick={() => setShowMfaSetupModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-sm cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {mfaError && (
+                <div className="p-3 bg-rose-950/40 border border-rose-900/30 text-rose-300 rounded-lg text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                  <span>{mfaError}</span>
+                </div>
+              )}
+
+              {mfaSetupData ? (
+                <form onSubmit={handleVerifySetupSubmit} className="space-y-4">
+                  <p className="text-xs text-slate-400 text-center leading-relaxed">
+                    Scan this QR code using an authenticator app (like Google Authenticator or Duo) and enter the 6-digit verification code below.
+                  </p>
+
+                  <div className="bg-white p-2.5 rounded-xl w-44 h-44 mx-auto flex items-center justify-center shadow-lg border border-slate-200">
+                    <img 
+                      src={mfaSetupData.qrCodeDataUrl} 
+                      alt="MFA QR Code" 
+                      className="w-full h-full"
+                    />
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-center space-y-1">
+                    <p className="text-[9px] text-slate-500 uppercase font-mono tracking-wider font-bold">Manual Setup Key</p>
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="font-mono text-xs text-slate-300 font-bold select-all">{mfaSetupData.tempSecret}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(mfaSetupData.tempSecret);
+                          setCopiedSecret(true);
+                          setTimeout(() => setCopiedSecret(false), 2000);
+                        }}
+                        className="p-1 hover:bg-slate-900 rounded border border-transparent hover:border-slate-850 text-slate-400 hover:text-indigo-400 transition-all cursor-pointer"
+                      >
+                        {copiedSecret ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold text-center block">
+                      Verification Code
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      pattern="\d{6}"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="000 000"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 text-center text-lg font-bold font-mono tracking-[0.5em] pl-[0.5em] text-indigo-400 focus:outline-hidden focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setShowMfaSetupModal(false)}
+                      className="px-4 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-md font-semibold text-slate-300 transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={mfaLoading || mfaCode.length !== 6}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-md transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {mfaLoading ? 'Verifying...' : 'Verify & Enable'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="py-12 text-center space-y-3">
+                  <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-xs text-slate-500 font-mono">Generating key pair credentials...</p>
+                </div>
+              )}
+            </div>
 
           </div>
         </div>
