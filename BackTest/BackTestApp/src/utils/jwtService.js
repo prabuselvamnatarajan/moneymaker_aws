@@ -1,9 +1,4 @@
-const iamRoot = process.env.IAM_ROOT;
-if (!iamRoot) {
-  throw new Error("IAM_ROOT must be set");
-}
-
-const { jwtService } = await import(iamRoot);
+import { jwtService } from "../iam/index.js";
 
 export const {
   signAccessToken,

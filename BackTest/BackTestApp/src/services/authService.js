@@ -1,9 +1,4 @@
-const iamRoot = process.env.IAM_ROOT;
-if (!iamRoot) {
-  throw new Error("IAM_ROOT must be set");
-}
-
-const { authService } = await import(iamRoot);
+import { authService } from "../iam/index.js";
 
 export const {
   createUser,

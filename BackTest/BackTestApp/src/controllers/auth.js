@@ -2,17 +2,8 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 
-const iamRoot = process.env.IAM_ROOT;
-if (!iamRoot) {
-  throw new Error("IAM_ROOT must be set");
-}
-
-const {
-  login,
-  sessionService,
-  jwtService,
-  authService
-} = await import(iamRoot);
+import { login, sessionService, jwtService, authService } from "../iam/index.js";
+import { initializeUserAccounts } from "../utils/accountInitializer.js";
 
 export { login };
 
@@ -28,7 +19,6 @@ export const signup = async (req, res, next) => {
     const user = await authService.createUser({ username, name, email, password });
     
     try {
-      const { initializeUserAccounts } = await import("../utils/accountInitializer.js");
       await initializeUserAccounts(user._id);
     } catch (initErr) {
       console.error("Failed to initialize predefined accounts for user:", user._id, initErr);

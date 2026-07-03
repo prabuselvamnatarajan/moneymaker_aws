@@ -1,8 +1,2 @@
-const iamRoot = process.env.IAM_ROOT;
-if (!iamRoot) {
-  throw new Error("IAM_ROOT must be set");
-}
-
-const { setup, verifySetup, loginVerify } = await import(iamRoot);
-
+import { setup, verifySetup, loginVerify } from "../iam/index.js";
 export { setup, verifySetup, loginVerify };

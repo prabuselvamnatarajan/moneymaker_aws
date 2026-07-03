@@ -9,17 +9,12 @@ import {
   resetPassword
 } from "../controllers/auth.js";
 
-const iamRoot = process.env.IAM_ROOT;
-if (!iamRoot) {
-  throw new Error("IAM_ROOT must be set");
-}
-
-const {
+import {
   setup,
   verifySetup,
   loginVerify,
   authenticate
-} = await import(iamRoot);
+} from "../iam/index.js";
 
 const router = express.Router();
 
