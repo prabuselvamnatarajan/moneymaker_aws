@@ -6,7 +6,6 @@ import * as mfaService from "./services/mfaService.js";
 import * as sessionService from "./services/sessionService.js";
 import * as jwtService from "./utils/jwtService.js";
 import * as config from "./config.js";
-import { app, start } from "./IAM_Server.js";
 
 export {
   signup,
@@ -20,6 +19,4 @@ export {
   sessionService,
   jwtService,
   config,
-  app,
-  start,
 };

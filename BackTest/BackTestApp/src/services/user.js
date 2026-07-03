@@ -1,11 +1,7 @@
 import User from "../models/user.js";
+import { authService } from "../iam/index.js";
+import { initializeUserAccounts } from "../utils/accountInitializer.js";
 
-const iamRoot = process.env.IAM_ROOT;
-if (!iamRoot) {
-  throw new Error("IAM_ROOT must be set");
-}
-
-const { authService } = await import(iamRoot);
 const { getDefaultUserRoleId } = authService;
 
 export const createUser = async (userData) => {
@@ -18,7 +14,6 @@ export const createUser = async (userData) => {
   const savedUser = await user.save();
 
   try {
-    const { initializeUserAccounts } = await import("../utils/accountInitializer.js");
     await initializeUserAccounts(savedUser._id);
   } catch (initErr) {
     console.error("Failed to initialize predefined accounts for user:", savedUser._id, initErr);
