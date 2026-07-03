@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { 
   User, Mail, Shield, ShieldAlert, Key, Smartphone, HardDrive, 
   Trash2, Plus, CheckCircle, RefreshCw, Eye, EyeOff, Check, X,
-  Globe, ShieldCheck, Laptop, Clock, AlertCircle, Copy
+  Globe, ShieldCheck, Laptop, Clock, AlertCircle, Copy, Lock
 } from 'lucide-react';
 
 interface ActiveSession {
