@@ -11,7 +11,7 @@ export function mapAccount(backendAcc: any): Account {
   const current = backendAcc.current_balance || 0;
   
   return {
-    id: backendAcc.account_id || backendAcc._id,
+    id: backendAcc._id || backendAcc.account_id,
     name: backendAcc.account_name || 'Unnamed Account',
     broker: backendAcc.description ? parseBrokerFromDescription(backendAcc.description) : 'Simulation Broker',
     balance: current,
@@ -88,7 +88,7 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     openPositions: 0, // Fallback placeholder
     symbols: [backendDeployment.symbol || 'NSE_INDEX|Nifty 50'],
     description: backendDeployment.notes || 'Algorithmic deployment workload.',
-    accountId: backendDeployment.account_id,
+    accountId: backendDeployment.account_id ? String(backendDeployment.account_id) : undefined,
   };
 }
 
