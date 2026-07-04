@@ -6,7 +6,7 @@
 import React from 'react';
 import { 
   LayoutDashboard, TableProperties, Landmark, Cpu, LineChart, 
-  Clock, Globe, X
+  Clock, Globe, X, Layers
 } from 'lucide-react';
 import { ViewScreen, Account, Strategy, SymbolData } from '../types';
 
@@ -131,6 +131,19 @@ export default function Sidebar({
             >
               <TableProperties className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>Transactions Ledger</span>
+            </button>
+
+            <button
+              id="nav-strategy-templates-btn"
+              onClick={() => handleNav('strategy-templates')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-semibold transition-all ${
+                activeScreen === 'strategy-templates' 
+                  ? 'bg-slate-900 text-white shadow-xs border-l-2 border-indigo-500 pl-2.5' 
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+              }`}
+            >
+              <Layers className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span>Strategy Templates</span>
             </button>
 
             <button

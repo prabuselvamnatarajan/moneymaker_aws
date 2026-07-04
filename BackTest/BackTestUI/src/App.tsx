@@ -22,6 +22,7 @@ import SymbolsListView from './components/SymbolsListView';
 import UserProfileView from './components/UserProfileView';
 import LoginView from './components/LoginView';
 import BrokersListView from './components/BrokersListView';
+import StrategyTemplatesView from './components/StrategyTemplatesView';
 import { api } from './api';
 import { mapAccount, mapSymbol, mapTrade, mapDeployment, mapLedger } from './adapters';
 
@@ -270,16 +271,12 @@ export default function App() {
     }
   };
 
-  const handleAddStrategy = async (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId?: string) => {
+  const handleAddStrategy = async (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId: string) => {
     try {
-      // 1. Resolve or Create strategy definition
-      let strategyId = existingStrategyId;
+      // 1. Resolve strategy definition
+      const strategyId = existingStrategyId;
       if (!strategyId) {
-        const stratRes = await api.strategies.create({
-          strategy_name: newStrat.description.startsWith('Deployed ') ? newStrat.description.replace('Deployed ', '').replace(' bot workload.', '') : newStrat.name,
-          strategy_description: newStrat.description,
-        });
-        strategyId = stratRes.data._id;
+        throw new Error("Strategy template is required for deployment");
       }
 
       // 2. Resolve UserSymbol for target symbol
@@ -329,6 +326,19 @@ export default function App() {
       loadData(); // Reload stats and items to keep fully synchronized
     } catch (err: any) {
       showError(`Failed to deploy strategy: ${err.message}`);
+    }
+  };
+
+  const handleCreateStrategyDefinition = async (name: string, description: string) => {
+    try {
+      await api.strategies.create({
+        strategy_name: name,
+        strategy_description: description,
+      });
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to create strategy template: ${err.message}`);
+      throw err;
     }
   };
 
@@ -438,6 +448,13 @@ export default function App() {
             onAddStrategy={handleAddStrategy}
             onUpdateStrategyStatus={handleUpdateStrategyStatus}
             onNavigateToEntity={handleSelectEntity}
+          />
+        );
+      case 'strategy-templates':
+        return (
+          <StrategyTemplatesView
+            strategyDefinitions={strategyDefinitions}
+            onCreateStrategy={handleCreateStrategyDefinition}
           />
         );
       case 'symbols-list':

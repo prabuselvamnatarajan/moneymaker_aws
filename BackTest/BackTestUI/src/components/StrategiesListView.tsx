@@ -15,7 +15,7 @@ interface StrategiesListViewProps {
   symbols: SymbolData[];
   accounts: Account[];
   strategyDefinitions?: any[];
-  onAddStrategy: (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId?: string) => void;
+  onAddStrategy: (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId: string) => void;
   onUpdateStrategyStatus: (id: string, status: 'active' | 'paused' | 'stopped') => void;
   onNavigateToEntity: (type: 'strategy', id: string) => void;
 }
@@ -32,8 +32,7 @@ export default function StrategiesListView({
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   
-  // Form fields
-  const [name, setName] = useState('');
+  // Form fields for deployment creation
   const [selectedStrategyId, setSelectedStrategyId] = useState('');
   const [deploymentName, setDeploymentName] = useState('');
   const [description, setDescription] = useState('');
@@ -68,13 +67,8 @@ export default function StrategiesListView({
     e.preventDefault();
     if (!deploymentName || !selectedAccountId || !selectedStrategyId) return;
 
-    let targetStrategyName = '';
-    if (selectedStrategyId === 'NEW') {
-      targetStrategyName = deploymentName;
-    } else {
-      const found = strategyDefinitions.find(s => s._id === selectedStrategyId);
-      targetStrategyName = found ? found.strategy_name : 'Algorithmic Strategy';
-    }
+    const found = strategyDefinitions.find(s => s._id === selectedStrategyId);
+    const targetStrategyName = found ? found.strategy_name : 'Algorithmic Strategy';
 
     const newStrat: Strategy = {
       id: `STRAT-0${strategies.length + 1}`,
@@ -93,10 +87,9 @@ export default function StrategiesListView({
     };
 
     const targetSymbol = selectedSymbols.length > 0 ? selectedSymbols[0] : 'NSE_INDEX|Nifty 50';
-    onAddStrategy(newStrat, selectedAccountId, targetSymbol, selectedStrategyId === 'NEW' ? undefined : selectedStrategyId);
+    onAddStrategy(newStrat, selectedAccountId, targetSymbol, selectedStrategyId);
     
     // Reset Form
-    setName('');
     setDeploymentName('');
     setDescription('');
     setMode('live');
@@ -106,6 +99,8 @@ export default function StrategiesListView({
     setSelectedStrategyId('');
     setShowAddForm(false);
   };
+
+
 
   return (
     <div className="space-y-6">
@@ -122,13 +117,15 @@ export default function StrategiesListView({
           </p>
         </div>
         
-        <button
-          id="btn-deploy-strategy-trigger"
-          onClick={() => setShowAddForm(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-md text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/10 shrink-0 self-start sm:self-center"
-        >
-          <Plus className="w-4 h-4" /> Deploy New Strategy
-        </button>
+        <div className="flex flex-wrap gap-2 shrink-0 self-start sm:self-center">
+          <button
+            id="btn-deploy-strategy-trigger"
+            onClick={() => setShowAddForm(true)}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-md text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/10"
+          >
+            <Plus className="w-4 h-4" /> Deploy Strategy
+          </button>
+        </div>
       </div>
 
       {/* Aggregate metrics */}
@@ -315,7 +312,7 @@ export default function StrategiesListView({
             <div className="p-6 border-b border-slate-800 flex justify-between items-center">
               <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
                 <Cpu className="w-4 h-4 text-indigo-400" />
-                Deploy New Bot / Strategy
+                Deploy Strategy template
               </h3>
               <button 
                 onClick={() => setShowAddForm(false)}
@@ -328,24 +325,25 @@ export default function StrategiesListView({
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strategy Model (Template)</label>
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strategy Template</label>
                 <select
                   required
                   value={selectedStrategyId}
                   onChange={(e) => setSelectedStrategyId(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                 >
-                  <option value="">Select Strategy Model...</option>
-                  {strategyDefinitions.map(s => (
-                    <option key={s._id} value={s._id}>{s.strategy_name}</option>
-                  ))}
-                  <option value="NEW">Create Custom Strategy Model...</option>
+                  <option value="">Select Strategy Template...</option>
+                  {strategyDefinitions
+                    .filter(s => s.strategy_name.toLowerCase() !== 'manual')
+                    .map(s => (
+                      <option key={s._id} value={s._id}>{s.strategy_name}</option>
+                    ))
+                  }
                 </select>
               </div>
 
-
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Deployment Display Name (User-friendly)</label>
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Deployment Display Name</label>
                 <input
                   type="text"
                   required
@@ -357,7 +355,7 @@ export default function StrategiesListView({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Model Objective Description</label>
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Deployment Notes / Description</label>
                 <textarea
                   required
                   rows={2}
@@ -440,10 +438,10 @@ export default function StrategiesListView({
                 </div>
               )}
 
-              {/* Target Symbol Multi select list */}
+              {/* Targeted Market Symbols */}
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Targeted Market Symbols</label>
-                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-950 rounded border border-slate-800 max-h-24 overflow-y-auto">
+                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-950 rounded border border-slate-800 max-h-24 overflow-y-auto font-sans">
                   {symbols.map(sym => {
                     const isChecked = selectedSymbols.includes(sym.ticker);
                     return (
@@ -485,7 +483,6 @@ export default function StrategiesListView({
           </div>
         </div>
       )}
-
     </div>
   );
 }
