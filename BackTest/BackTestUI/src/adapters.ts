@@ -20,6 +20,8 @@ export function mapAccount(backendAcc: any): Account {
     pnl: parseFloat((current - initial).toFixed(2)),
     currency: 'INR',
     status: backendAcc.is_active ? 'connected' : 'disconnected',
+    commissionType: backendAcc.commission_type || 'PERCENTAGE',
+    commissionRate: backendAcc.commission_rate || 0,
   };
 }
 
@@ -50,7 +52,7 @@ export function mapTrade(backendTrade: any): Transaction {
     accountId: backendTrade.account_id,
     quantity: qty,
     price: prc,
-    fee: parseFloat((qty * prc * 0.0005).toFixed(2)), // Estimate 0.05% fee
+    fee: backendTrade.commission !== undefined ? backendTrade.commission : parseFloat((qty * prc * 0.0005).toFixed(2)),
     status: backendTrade.status === 'CANCELLED' ? 'CANCELLED' : backendTrade.status === 'PENDING' ? 'PENDING' : 'EXECUTED',
     tradeId: backendTrade.trade_id || backendTrade._id,
     orderId: backendTrade.trade_id || backendTrade._id,

@@ -59,14 +59,24 @@ export const createTrade = async (tradeData) => {
       throw new Error("Account does not belong to the authenticated user");
     }
 
-    const opening_balance = account.current_balance;
     const tradeValue = price * quantity;
 
-    if (type_of_order === "BUY" && opening_balance < tradeValue) {
-      throw new Error("Insufficient balance for BUY order");
+    // Calculate broker commission
+    let commission = 0;
+    if (account.commission_type === "PERCENTAGE") {
+      const rate = account.commission_rate || 0;
+      commission = parseFloat((tradeValue * (rate / 100)).toFixed(2));
+    } else if (account.commission_type === "FLAT") {
+      commission = account.commission_rate || 0;
     }
 
-    const change_in_balance = type_of_order === "BUY" ? -tradeValue : tradeValue;
+    const opening_balance = account.current_balance;
+
+    if (type_of_order === "BUY" && opening_balance < (tradeValue + commission)) {
+      throw new Error("Insufficient balance for BUY order (including commission)");
+    }
+
+    const change_in_balance = type_of_order === "BUY" ? -(tradeValue + commission) : (tradeValue - commission);
     const closing_balance = opening_balance + change_in_balance;
 
     let pnl = 0;
@@ -85,7 +95,9 @@ export const createTrade = async (tradeData) => {
         .session(session);
 
       if (lastBuyTrade) {
-        pnl = (price - lastBuyTrade.price) * quantity;
+        const buyCost = lastBuyTrade.price * quantity + (lastBuyTrade.commission || 0);
+        const sellRevenue = price * quantity - commission;
+        pnl = parseFloat((sellRevenue - buyCost).toFixed(2));
       }
     }
 
@@ -94,6 +106,7 @@ export const createTrade = async (tradeData) => {
       account_id: account._id,
       user_id,
       pnl,
+      commission,
     };
     const [trade] = await Trade.create([tradePayload], { session });
 

@@ -13,6 +13,8 @@ export interface Account {
   pnl: number;
   currency: string;
   status: 'connected' | 'disconnected';
+  commissionType?: 'PERCENTAGE' | 'FLAT';
+  commissionRate?: number;
 }
 
 export interface Strategy {

@@ -238,6 +238,8 @@ export default function App() {
         account_type: 'SIMULATION',
         initial_balance: newAcc.initialBalance,
         description: `broker:${newAcc.broker}`,
+        commission_type: newAcc.commissionType,
+        commission_rate: newAcc.commissionRate,
       });
       const mapped = mapAccount(res.data);
       setAccounts(prev => [...prev, mapped]);

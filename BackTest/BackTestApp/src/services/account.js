@@ -3,7 +3,7 @@ import Account from "../models/account.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 
-const USER_UPDATABLE_FIELDS = ["account_name", "description", "is_active"];
+const USER_UPDATABLE_FIELDS = ["account_name", "description", "is_active", "commission_type", "commission_rate"];
 const ADMIN_UPDATABLE_FIELDS = [
   ...USER_UPDATABLE_FIELDS,
   "account_type",

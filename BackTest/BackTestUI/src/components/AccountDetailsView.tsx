@@ -119,7 +119,7 @@ export default function AccountDetailsView({
       </div>
 
       {/* Valuation Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-sans">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 font-sans">
         
         {/* Net Liquidation Assets */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
@@ -160,6 +160,19 @@ export default function AccountDetailsView({
             </span>
           </div>
           <span className="text-[10px] text-slate-500 mt-1.5 block">Audit verified return</span>
+        </div>
+
+        {/* Broker Commission */}
+        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+          <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Broker Commission Setup</p>
+          <p className="text-xl font-bold font-mono text-indigo-400 mt-1.5">
+            {account.commissionRate !== undefined 
+              ? (account.commissionType === 'FLAT' ? `₹${account.commissionRate}` : `${account.commissionRate}%`)
+              : '0.00%'}
+          </p>
+          <span className="text-[10px] text-slate-500 mt-1.5 block">
+            Charge model: <strong className="font-mono text-slate-400">{account.commissionType === 'FLAT' ? 'Flat Fee' : 'Percentage-based'}</strong>
+          </span>
         </div>
       </div>
 

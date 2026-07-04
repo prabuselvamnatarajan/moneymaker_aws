@@ -37,6 +37,15 @@ const accountSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  commission_type: {
+    type: String,
+    enum: ["PERCENTAGE", "FLAT"],
+    default: "PERCENTAGE",
+  },
+  commission_rate: {
+    type: Number,
+    default: 0,
+  },
   created_on: {
     type: Date,
     default: Date.now,

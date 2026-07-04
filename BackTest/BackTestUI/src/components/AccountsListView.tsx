@@ -33,6 +33,8 @@ export default function AccountsListView({
   const [margin, setMargin] = useState('');
   const [currency, setCurrency] = useState('INR');
   const [status, setStatus] = useState<'connected' | 'disconnected'>('connected');
+  const [commissionType, setCommissionType] = useState<'PERCENTAGE' | 'FLAT'>('PERCENTAGE');
+  const [commissionRate, setCommissionRate] = useState('');
 
   // Computed metrics
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
@@ -61,7 +63,9 @@ export default function AccountsListView({
       initialBalance: initialVal,
       pnl: 0,
       currency,
-      status
+      status,
+      commissionType,
+      commissionRate: commissionRate ? parseFloat(commissionRate) : 0,
     };
 
     onAddAccount(newAcc);
@@ -72,6 +76,8 @@ export default function AccountsListView({
     setBalance('');
     setMargin('');
     setStatus('connected');
+    setCommissionType('PERCENTAGE');
+    setCommissionRate('');
     setShowAddForm(false);
   };
 
@@ -184,7 +190,17 @@ export default function AccountsListView({
                           {acc.id}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">API Provider: <span className="text-slate-400">{acc.broker}</span></p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        API Provider: <span className="text-slate-400">{acc.broker}</span>
+                        {acc.commissionRate !== undefined && (
+                          <span className="text-slate-500">
+                            {' • Commission: '}
+                            <span className="text-slate-400">
+                              {acc.commissionType === 'FLAT' ? `₹${acc.commissionRate}` : `${acc.commissionRate}%`}
+                            </span>
+                          </span>
+                        )}
+                      </p>
                       
                       {/* Connection status toggle pill */}
                       <button 
@@ -313,6 +329,35 @@ export default function AccountsListView({
                     value={margin}
                     onChange={(e) => setMargin(e.target.value)}
                     placeholder="Default: 70% of deposit"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Commission Type</label>
+                  <select
+                    value={commissionType}
+                    onChange={(e) => setCommissionType(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                  >
+                    <option value="PERCENTAGE">Percentage (%)</option>
+                    <option value="FLAT">Flat Fee (INR)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">
+                    Commission Rate ({commissionType === 'PERCENTAGE' ? '%' : '₹'})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={commissionRate}
+                    onChange={(e) => setCommissionRate(e.target.value)}
+                    placeholder={commissionType === 'PERCENTAGE' ? "e.g. 0.05" : "e.g. 20"}
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
                   />
                 </div>

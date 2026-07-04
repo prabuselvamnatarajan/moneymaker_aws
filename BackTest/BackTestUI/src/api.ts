@@ -191,7 +191,14 @@ export const api = {
       return handleResponse<{ items: any[] }>(res);
     },
 
-    async create(accountData: { account_name: string; account_type: string; initial_balance: number; description?: string }) {
+    async create(accountData: { 
+      account_name: string; 
+      account_type: string; 
+      initial_balance: number; 
+      description?: string;
+      commission_type?: 'PERCENTAGE' | 'FLAT';
+      commission_rate?: number;
+    }) {
       const res = await fetch(`${BASE_URL}/accounts`, {
         method: 'POST',
         headers: getHeaders(),
@@ -200,7 +207,13 @@ export const api = {
       return handleResponse<{ data: any }>(res);
     },
 
-    async update(id: string, updateData: { account_name?: string; description?: string; is_active?: boolean }) {
+    async update(id: string, updateData: { 
+      account_name?: string; 
+      description?: string; 
+      is_active?: boolean;
+      commission_type?: 'PERCENTAGE' | 'FLAT';
+      commission_rate?: number;
+    }) {
       const res = await fetch(`${BASE_URL}/accounts/${id}`, {
         method: 'PATCH',
         headers: getHeaders(),
