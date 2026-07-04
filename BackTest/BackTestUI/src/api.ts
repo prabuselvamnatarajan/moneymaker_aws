@@ -241,7 +241,14 @@ export const api = {
       return handleResponse<{ items: any[] }>(res);
     },
 
-    async create(symbolData: { symbol: string; exchange: string; instrument_token: string }) {
+    async create(symbolData: {
+      symbol: string;
+      exchange: string;
+      instrument_token: string;
+      symbol_name: string;
+      description?: string;
+      instrument_class?: string;
+    }) {
       const res = await fetch(`${BASE_URL}/symbols`, {
         method: 'POST',
         headers: getHeaders(),

@@ -20,7 +20,7 @@ export interface Account {
 export interface Strategy {
   id: string;
   name: string;
-  mode: 'live' | 'backtest';
+  mode: 'live' | 'paper' | 'backtest';
   status: 'active' | 'paused' | 'stopped';
   pnl: number;
   totalTrades: number;
@@ -40,6 +40,9 @@ export interface SymbolData {
   change24h: number; // percentage
   volume24h: number;
   instrumentType: 'crypto' | 'equity' | 'forex' | 'index';
+  instrumentToken?: string;
+  description?: string;
+  instrumentClass?: string;
 }
 
 export interface AuditTrailEvent {

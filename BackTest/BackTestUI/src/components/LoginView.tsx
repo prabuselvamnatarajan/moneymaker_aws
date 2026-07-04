@@ -299,7 +299,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => handleQuickFill('admin@moneymaker.com', 'admin123')}
+                    onClick={() => handleQuickFill('admin@moneymaker.com', 'adminpassword123')}
                     className="bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-left transition-colors cursor-pointer group"
                   >
                     <span className="text-[10px] font-bold text-slate-200 block group-hover:text-indigo-400 transition-colors">Admin Profile</span>
@@ -308,7 +308,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
                   <button
                     type="button"
-                    onClick={() => handleQuickFill('user@moneymaker.com', 'user123')}
+                    onClick={() => handleQuickFill('user@moneymaker.com', 'userpassword123')}
                     className="bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-left transition-colors cursor-pointer group"
                   >
                     <span className="text-[10px] font-bold text-slate-200 block group-hover:text-indigo-400 transition-colors">Standard User</span>

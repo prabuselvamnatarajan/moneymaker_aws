@@ -33,7 +33,7 @@ export default function StrategiesListView({
   // Form fields
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [mode, setMode] = useState<'live' | 'backtest'>('live');
+  const [mode, setMode] = useState<'live' | 'paper' | 'backtest'>('live');
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [initialStatus, setInitialStatus] = useState<'active' | 'paused' | 'stopped'>('active');
   const [selectedAccountId, setSelectedAccountId] = useState('');
@@ -358,7 +358,8 @@ export default function StrategiesListView({
                     onChange={(e) => setMode(e.target.value as any)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                   >
-                    <option value="live">Live Workload (Real-Time API)</option>
+                    <option value="live">Live Workload (Broker Routing)</option>
+                    <option value="paper">Paper Trading (Live Simulation)</option>
                     <option value="backtest">Backtest Engine (Historical Audit)</option>
                   </select>
                 </div>

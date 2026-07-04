@@ -50,7 +50,7 @@ const deploymentSchema = new mongoose.Schema({
   },
   strategy_mode: {
     type: String,
-    enum: ["LIVE", "TEST", "BACKTEST"],
+    enum: ["LIVE", "PAPER", "BACKTEST"],
     required: true,
   },
   deployment_name: {

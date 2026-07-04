@@ -28,11 +28,10 @@ export default function SymbolsListView({
   // Form fields
   const [ticker, setTicker] = useState('');
   const [name, setName] = useState('');
-  const [exchange, setExchange] = useState('');
-  const [lastPrice, setLastPrice] = useState('');
-  const [change24h, setChange24h] = useState('');
-  const [volume24h, setVolume24h] = useState('');
-  const [instrumentType, setInstrumentType] = useState<'crypto' | 'equity' | 'forex'>('equity');
+  const [exchange, setExchange] = useState('NSE');
+  const [instrumentToken, setInstrumentToken] = useState('');
+  const [description, setDescription] = useState('');
+  const [instrumentClass, setInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
 
   // Computed metrics
   const totalVolume = symbols.reduce((sum, s) => sum + s.volume24h, 0);
@@ -54,16 +53,19 @@ export default function SymbolsListView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticker || !name || !exchange || !lastPrice) return;
+    if (!ticker || !name || !exchange || !instrumentToken) return;
 
     const newSym: SymbolData = {
       ticker: ticker.toUpperCase(),
       name,
       exchange: exchange.toUpperCase(),
-      lastPrice: parseFloat(lastPrice),
-      change24h: change24h ? parseFloat(change24h) : 0,
-      volume24h: volume24h ? parseFloat(volume24h) : 1000000,
-      instrumentType
+      lastPrice: 100.0,
+      change24h: 0.0,
+      volume24h: 100000,
+      instrumentType: (instrumentClass.toLowerCase() === 'equity' || instrumentClass.toLowerCase() === 'index' ? 'equity' : instrumentClass.toLowerCase()) as any,
+      instrumentToken,
+      description,
+      instrumentClass,
     };
 
     onAddSymbol(newSym);
@@ -71,11 +73,10 @@ export default function SymbolsListView({
     // Reset Form
     setTicker('');
     setName('');
-    setExchange('');
-    setLastPrice('');
-    setChange24h('');
-    setVolume24h('');
-    setInstrumentType('equity');
+    setExchange('NSE');
+    setInstrumentToken('');
+    setDescription('');
+    setInstrumentClass('EQUITY');
     setShowAddForm(false);
   };
 
@@ -279,7 +280,7 @@ export default function SymbolsListView({
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -289,7 +290,7 @@ export default function SymbolsListView({
                     required
                     value={ticker}
                     onChange={(e) => setTicker(e.target.value)}
-                    placeholder="e.g. MSFT, ETH/USD"
+                    placeholder="e.g. INFy, AAPL, BTC/USD"
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500 uppercase"
                   />
                 </div>
@@ -301,61 +302,33 @@ export default function SymbolsListView({
                     required
                     value={exchange}
                     onChange={(e) => setExchange(e.target.value)}
-                    placeholder="e.g. NASDAQ, Coinbase"
+                    placeholder="e.g. NSE, BSE, NFO"
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 uppercase"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Asset Descriptive Name</label>
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Symbol Name (UI Display)</label>
                 <input
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Microsoft Corporation"
+                  placeholder="e.g. Infosys Technologies Ltd"
                   className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Last Price (INR)</label>
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Token</label>
                   <input
-                    type="number"
+                    type="text"
                     required
-                    step="any"
-                    min="0"
-                    value={lastPrice}
-                    onChange={(e) => setLastPrice(e.target.value)}
-                    placeholder="e.g. 420.50"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Estimated 24h Swing (%)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={change24h}
-                    onChange={(e) => setChange24h(e.target.value)}
-                    placeholder="e.g. 2.45 or -1.2"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Est 24h Volume (INR)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={volume24h}
-                    onChange={(e) => setVolume24h(e.target.value)}
-                    placeholder="e.g. 25000000"
+                    value={instrumentToken}
+                    onChange={(e) => setInstrumentToken(e.target.value)}
+                    placeholder="e.g. 408065 or NSE_INDEX|..."
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
                   />
                 </div>
@@ -363,15 +336,27 @@ export default function SymbolsListView({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Class</label>
                   <select
-                    value={instrumentType}
-                    onChange={(e) => setInstrumentType(e.target.value as any)}
+                    value={instrumentClass}
+                    onChange={(e) => setInstrumentClass(e.target.value as any)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                   >
-                    <option value="equity">Equity (Stock Share)</option>
-                    <option value="crypto">Cryptocurrency Pair</option>
-                    <option value="forex">Forex (FX Spot Contract)</option>
+                    <option value="EQUITY">Equity (Stock Share)</option>
+                    <option value="CRYPTO">Cryptocurrency Pair</option>
+                    <option value="FOREX">Forex Spot Contract</option>
+                    <option value="INDEX">Index</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Description (Optional)</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Large cap IT service provider listed on National Stock Exchange of India"
+                  rows={2}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 resize-none"
+                />
               </div>
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">

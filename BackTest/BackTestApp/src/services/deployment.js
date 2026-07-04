@@ -180,7 +180,8 @@ export const syncAllDeploymentsToRedis = async () => {
     for (const dep of runningDeployments) {
       if (!dep.strategy_id || !dep.account_id) continue;
       const symbol = dep.symbol;
-      const isBacktest = dep.strategy_mode !== "LIVE";
+      const isBacktest = dep.strategy_mode === "BACKTEST";
+      const isTest = dep.strategy_mode !== "LIVE"; // PAPER or BACKTEST
       const key = isBacktest ? `strategies:backtest:${symbol}` : `strategies:live:${symbol}`;
 
       if (!newKeysData[key]) {
@@ -189,7 +190,7 @@ export const syncAllDeploymentsToRedis = async () => {
 
       newKeysData[key].push({
         name: dep.strategy_id.strategy_name,
-        isTest: isBacktest,
+        isTest: isTest,
         account_id: dep.account_id.account_id || dep.account_id._id.toString(),
         instrument_token: dep.instrument_token,
         symbol: dep.symbol,

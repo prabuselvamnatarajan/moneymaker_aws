@@ -1,7 +1,8 @@
 import Account from "../models/account.js";
+import Strategy from "../models/strategy.js";
 
 /**
- * Initializes predefined accounts (paper and simulation) for a new user.
+ * Initializes predefined accounts (paper and simulation) and strategies for a new user.
  * @param {string|mongoose.Types.ObjectId} userId - The user's ID.
  */
 export const initializeUserAccounts = async (userId) => {
@@ -40,5 +41,22 @@ export const initializeUserAccounts = async (userId) => {
       await newAccount.save();
       console.log(`[AccountInitializer] Initialized predefined ${acc.account_type} account for user ${userId}`);
     }
+  }
+
+  // Predefined Strategy Initialization
+  const existingStrat = await Strategy.findOne({
+    user_id: userId,
+    strategy_name: "Manual Trade"
+  });
+
+  if (!existingStrat) {
+    const newStrategy = new Strategy({
+      user_id: userId,
+      strategy_name: "Manual Trade",
+      strategy_description: "Predefined manual trading strategy",
+      is_active: true
+    });
+    await newStrategy.save();
+    console.log(`[AccountInitializer] Initialized predefined Manual Trade strategy for user ${userId}`);
   }
 };

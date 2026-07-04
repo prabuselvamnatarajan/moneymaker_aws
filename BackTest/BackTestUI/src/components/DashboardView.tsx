@@ -105,6 +105,10 @@ export default function DashboardView({
     return strategies.filter(s => s.status === 'active' && s.mode === 'live').length;
   }, [strategies]);
 
+  const paperDeploymentsCount = useMemo(() => {
+    return strategies.filter(s => s.status === 'active' && s.mode === 'paper').length;
+  }, [strategies]);
+
   const backtestDeploymentsCount = useMemo(() => {
     return strategies.filter(s => s.status === 'active' && s.mode === 'backtest').length;
   }, [strategies]);
@@ -260,10 +264,10 @@ export default function DashboardView({
             <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Active Bot Deployments</p>
             <div className="flex items-center gap-1.5 mt-1">
               <span className="text-xl font-black text-slate-100 font-mono">
-                {liveDeploymentsCount + backtestDeploymentsCount}
+                {liveDeploymentsCount + paperDeploymentsCount + backtestDeploymentsCount}
               </span>
               <span className="text-xs text-slate-400 font-sans">
-                ({liveDeploymentsCount} Live, {backtestDeploymentsCount} Backtest)
+                ({liveDeploymentsCount} Live, {paperDeploymentsCount} Paper, {backtestDeploymentsCount} Backtest)
               </span>
             </div>
             <p className="text-[10px] text-slate-500 font-sans">Currently deployed scanning modules</p>

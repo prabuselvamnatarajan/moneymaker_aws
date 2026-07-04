@@ -92,6 +92,8 @@ export default function StrategyDetailsView({
             <span className={`px-2 py-0.5 rounded-sm text-[10px] font-mono font-bold tracking-wider ${
               strategy.mode === 'live' 
                 ? 'bg-rose-950/80 text-rose-400 border border-rose-900' 
+                : strategy.mode === 'paper'
+                ? 'bg-cyan-950/80 text-cyan-400 border border-cyan-900'
                 : 'bg-indigo-950/80 text-indigo-400 border border-indigo-900'
             }`}>
               {strategy.mode.toUpperCase()}

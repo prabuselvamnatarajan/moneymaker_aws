@@ -275,6 +275,9 @@ export default function App() {
           symbol,
           exchange: 'NSE',
           instrument_token: `TOKEN_${symbol}`,
+          symbol_name: symbol,
+          description: `Auto-generated symbol for strategy deployment`,
+          instrument_class: 'EQUITY',
         });
         userSymbolId = symRes.data._id;
         instrumentToken = symRes.data.instrument_token;
@@ -289,7 +292,7 @@ export default function App() {
         symbol: symbol,
         start_time: new Date().toISOString(),
         current_status: newStrat.status === 'active' ? 'RUNNING' : newStrat.status === 'paused' ? 'PAUSED' : 'SCHEDULED',
-        strategy_mode: newStrat.mode === 'live' ? 'LIVE' : 'BACKTEST',
+        strategy_mode: newStrat.mode === 'live' ? 'LIVE' : newStrat.mode === 'paper' ? 'PAPER' : 'BACKTEST',
         deployment_name: newStrat.name,
         notes: newStrat.description,
       });
@@ -307,7 +310,10 @@ export default function App() {
       const res = await api.symbols.create({
         symbol: newSym.ticker,
         exchange: newSym.exchange || 'NSE',
-        instrument_token: `TOKEN_${newSym.ticker}`,
+        instrument_token: newSym.instrumentToken || `TOKEN_${newSym.ticker}`,
+        symbol_name: newSym.name,
+        description: newSym.description || '',
+        instrument_class: newSym.instrumentClass || 'EQUITY',
       });
       const mapped = mapSymbol(res.data);
       setSymbols(prev => [...prev, mapped]);

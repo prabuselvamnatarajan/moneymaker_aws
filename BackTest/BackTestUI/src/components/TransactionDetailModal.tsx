@@ -162,9 +162,11 @@ export default function TransactionDetailModal({
                   <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 mt-1 rounded font-mono ${
                     matchedStrategy?.mode === 'live' 
                       ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                      : matchedStrategy?.mode === 'paper'
+                      ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
                       : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                   }`}>
-                    {matchedStrategy?.mode === 'live' ? 'LIVE' : 'BACKTEST'}
+                    {matchedStrategy?.mode?.toUpperCase() || 'BACKTEST'}
                   </span>
                 </div>
                 <button

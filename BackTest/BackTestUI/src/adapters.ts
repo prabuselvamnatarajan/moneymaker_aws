@@ -27,14 +27,26 @@ export function mapAccount(backendAcc: any): Account {
 
 // Map backend UserSymbol to UI SymbolData
 export function mapSymbol(backendSym: any): SymbolData {
+  const typeMap: Record<string, string> = {
+    'EQUITY': 'equity',
+    'CRYPTO': 'crypto',
+    'FOREX': 'forex',
+    'INDEX': 'index',
+  };
+  const instClass = backendSym.instrument_class || 'EQUITY';
+  const mappedType = typeMap[instClass.toUpperCase()] || 'equity';
+
   return {
     ticker: backendSym.symbol || 'UNKNOWN',
-    name: getSymbolName(backendSym.symbol),
+    name: backendSym.symbol_name || getSymbolName(backendSym.symbol),
     exchange: backendSym.exchange || 'NSE',
     lastPrice: 100.0, // Default fallback price
     change24h: 0.0,
     volume24h: 100000,
-    instrumentType: backendSym.exchange === 'NSE' || backendSym.exchange === 'BSE' ? 'equity' : 'crypto',
+    instrumentType: mappedType as any,
+    instrumentToken: backendSym.instrument_token || '',
+    description: backendSym.description || '',
+    instrumentClass: instClass,
   };
 }
 
@@ -81,7 +93,11 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
   return {
     id: backendDeployment._id || backendDeployment.deployment_id,
     name: backendDeployment.deployment_name || 'Algorithmic Strategy',
-    mode: backendDeployment.strategy_mode?.toLowerCase() === 'live' ? 'live' : 'backtest',
+    mode: backendDeployment.strategy_mode?.toLowerCase() === 'live'
+      ? 'live'
+      : backendDeployment.strategy_mode?.toLowerCase() === 'paper'
+      ? 'paper'
+      : 'backtest',
     status: mappedStatus,
     pnl: metrics?.total_pnl || 0,
     totalTrades: metrics?.total_trades || 0,

@@ -194,10 +194,10 @@ export const clearAndSeedDB = async () => {
 
     // 6. Create watchlisted user symbols
     const symbolsData = [
-      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", exchange: "NSE", is_active: true },
-      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", exchange: "NSE", is_active: true },
-      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", exchange: "NSE", is_active: true },
-      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", exchange: "NSE", is_active: true }
+      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", symbol_name: "Nifty 50", exchange: "NSE", is_active: true, description: "Nifty 50 Index", instrument_class: "INDEX" },
+      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", symbol_name: "Nifty Bank", exchange: "NSE", is_active: true, description: "Nifty Bank Index", instrument_class: "INDEX" },
+      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", symbol_name: "Nifty 50", exchange: "NSE", is_active: true, description: "Nifty 50 Index", instrument_class: "INDEX" },
+      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", symbol_name: "Nifty Bank", exchange: "NSE", is_active: true, description: "Nifty Bank Index", instrument_class: "INDEX" }
     ];
     const seededSymbols = await UserSymbol.insertMany(symbolsData);
     console.log(`Created ${seededSymbols.length} user symbols.`);
@@ -223,7 +223,7 @@ export const clearAndSeedDB = async () => {
         symbol: "NSE_INDEX|Nifty 50",
         start_time: new Date(Date.now() - 24 * 60 * 60 * 1000), // 24 hours ago
         current_status: "RUNNING",
-        strategy_mode: "TEST",
+        strategy_mode: "LIVE",
         deployment_name: "Mean Reversion v4 (live)",
         notes: "Running live simulation for audit check"
       },
@@ -236,7 +236,7 @@ export const clearAndSeedDB = async () => {
         symbol: "NSE_INDEX|Nifty Bank",
         start_time: new Date(Date.now() - 12 * 60 * 60 * 1000), // 12 hours ago
         current_status: "RUNNING",
-        strategy_mode: "TEST",
+        strategy_mode: "PAPER",
         deployment_name: "Momentum Scalper (live)",
         notes: "Trading on quick hourly trends"
       },
@@ -249,7 +249,7 @@ export const clearAndSeedDB = async () => {
         symbol: "NSE_INDEX|Nifty 50",
         start_time: new Date(Date.now() - 48 * 60 * 60 * 1000), // 48 hours ago
         current_status: "PAUSED",
-        strategy_mode: "TEST",
+        strategy_mode: "BACKTEST",
         deployment_name: "Grid Bot Alpha",
         notes: "Grid bounds need readjustment"
       }
