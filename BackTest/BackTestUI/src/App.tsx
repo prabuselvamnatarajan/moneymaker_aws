@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useToast } from './components/Toast';
 import { Menu } from 'lucide-react';
 import { 
   Account, Strategy, SymbolData, Transaction, TransactionFilters, ViewScreen, Broker
@@ -37,6 +38,8 @@ const INITIAL_FILTERS: TransactionFilters = {
 };
 
 export default function App() {
+  const { showError } = useToast();
+
   // --- Auth & Session States ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('accessToken'));
   const [currentUser, setCurrentUser] = useState<{ _id: string; username: string; email: string; name: string; is_mfa_enabled: boolean; backup_codes?: string[] } | null>(null);
@@ -159,7 +162,7 @@ export default function App() {
       });
       await loadData();
     } catch (err: any) {
-      alert(`Failed to execute trade: ${err.message}`);
+      showError(`Failed to execute trade: ${err.message}`);
       throw err;
     }
   };
@@ -181,7 +184,7 @@ export default function App() {
         return acc;
       }));
     } catch (err: any) {
-      alert(`Failed to update account state: ${err.message}`);
+      showError(`Failed to update account state: ${err.message}`);
     }
   };
 
@@ -209,7 +212,7 @@ export default function App() {
         return strat;
       }));
     } catch (err: any) {
-      alert(`Failed to update strategy execution status: ${err.message}`);
+      showError(`Failed to update strategy execution status: ${err.message}`);
     }
   };
 
@@ -263,7 +266,7 @@ export default function App() {
       setAccounts(prev => [...prev, mapped]);
       loadData();
     } catch (err: any) {
-      alert(`Failed to register account: ${err.message}`);
+      showError(`Failed to register account: ${err.message}`);
     }
   };
 
@@ -325,7 +328,7 @@ export default function App() {
       setStrategies(prev => [...prev, mappedStrat]);
       loadData(); // Reload stats and items to keep fully synchronized
     } catch (err: any) {
-      alert(`Failed to deploy strategy: ${err.message}`);
+      showError(`Failed to deploy strategy: ${err.message}`);
     }
   };
 
@@ -342,7 +345,7 @@ export default function App() {
       const mapped = mapSymbol(res.data);
       setSymbols(prev => [...prev, mapped]);
     } catch (err: any) {
-      alert(`Failed to add symbol to watchlist: ${err.message}`);
+      showError(`Failed to add symbol to watchlist: ${err.message}`);
     }
   };
 

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useToast } from './Toast';
 import { 
   IndianRupee as IndianRupeeIcon, Activity as ActivityIcon, Percent as PercentIcon, 
   ArrowUpRight as ArrowUpRightIcon, ArrowDownRight as ArrowDownRightIcon, 
@@ -55,7 +56,8 @@ export default function DashboardView({
   const [tradePrice, setTradePrice] = useState('150');
   const [tradeNotes, setTradeNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [successMsg, setSuccessMsg] = useState('');
+
+  const { showError, showSuccess } = useToast();
 
   // Synchronize initial selections based on first strategy
   useEffect(() => {
@@ -173,13 +175,13 @@ export default function DashboardView({
     const qty = parseFloat(tradeQty);
     const price = parseFloat(tradePrice);
     if (isNaN(qty) || qty <= 0 || isNaN(price) || price <= 0) {
-      alert('Please specify valid numeric values for quantity and price.');
+      showError('Please specify valid numeric values for quantity and price.');
       return;
     }
 
     const matchedAccount = accounts.find(a => a.id === selectedAcc);
     if (matchedAccount?.status !== 'connected') {
-      alert(`Selected Broker Account (${matchedAccount?.name}) is currently disconnected. Reconnect the broker API in the status panel first.`);
+      showError(`Selected Broker Account (${matchedAccount?.name}) is currently disconnected. Reconnect the broker API in the status panel first.`);
       return;
     }
 
@@ -217,8 +219,7 @@ export default function DashboardView({
     Promise.resolve(onAddTransaction(newTx))
       .then(() => {
         setTradeNotes('');
-        setSuccessMsg(`Order ${orderId} successfully executed & settled via ${matchedAccount?.broker}!`);
-        setTimeout(() => setSuccessMsg(''), 4000);
+        showSuccess(`Order ${orderId} successfully executed & settled via ${matchedAccount?.broker}!`);
       })
       .catch((err) => {
         console.error("Order submission failed:", err);
@@ -471,12 +472,6 @@ export default function DashboardView({
                   <p className="text-[10px] text-slate-500">Inject broker execution triggers straight to the global audit log.</p>
                 </div>
               </div>
-
-              {successMsg && (
-                <div id="manual-order-success" className="p-3 rounded-md bg-emerald-950/70 border border-emerald-500/30 text-[11px] text-emerald-400 leading-relaxed font-sans">
-                  {successMsg}
-                </div>
-              )}
 
               <form onSubmit={handlePlaceOrder} className="space-y-3.5 text-xs text-slate-300">
                 {/* Account Link */}
