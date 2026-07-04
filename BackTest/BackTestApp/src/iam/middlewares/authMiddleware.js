@@ -1,6 +1,7 @@
 import * as authService from "../services/authService.js";
 import * as jwtService from "../utils/jwtService.js";
 import PersonalAccessToken from "../models/personalAccessToken.js";
+import Session from "../models/session.js";
 
 export async function authenticate(req, res, next) {
   try {
@@ -48,6 +49,14 @@ export async function authenticate(req, res, next) {
       payload = jwtService.verifyAccessToken(token);
     } catch (verifyError) {
       const error = new Error("Invalid or expired access token");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    // Verify session is active in database
+    const session = await Session.findOne({ _id: payload.sessionID, active: true });
+    if (!session) {
+      const error = new Error("Session has been revoked or expired");
       error.statusCode = 401;
       throw error;
     }
