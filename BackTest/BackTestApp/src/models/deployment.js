@@ -33,7 +33,6 @@ const deploymentSchema = new mongoose.Schema({
   symbol: {
     type: String,
     required: true,
-    uppercase: true,
   },
   start_time: {
     type: Date,
@@ -58,6 +57,12 @@ const deploymentSchema = new mongoose.Schema({
   },
   notes: {
     type: String,
+  },
+  backtest_date: {
+    type: String,
+  },
+  backtest_speed: {
+    type: Number,
   },
   created_at: {
     type: Date,

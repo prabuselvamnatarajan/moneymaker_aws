@@ -53,17 +53,17 @@ export default function SymbolsListView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticker || !name || !exchange || !instrumentToken) return;
+    if (!ticker || !name || !exchange) return;
 
     const newSym: SymbolData = {
-      ticker: ticker.toUpperCase(),
+      ticker: ticker.trim(),
       name,
       exchange: exchange.toUpperCase(),
       lastPrice: 100.0,
       change24h: 0.0,
       volume24h: 100000,
       instrumentType: (instrumentClass.toLowerCase() === 'equity' || instrumentClass.toLowerCase() === 'index' ? 'equity' : instrumentClass.toLowerCase()) as any,
-      instrumentToken,
+      instrumentToken: ticker.trim(),
       description,
       instrumentClass,
     };
@@ -291,7 +291,7 @@ export default function SymbolsListView({
                     value={ticker}
                     onChange={(e) => setTicker(e.target.value)}
                     placeholder="e.g. INFy, AAPL, BTC/USD"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500 uppercase"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
                   />
                 </div>
 
@@ -320,32 +320,18 @@ export default function SymbolsListView({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Token</label>
-                  <input
-                    type="text"
-                    required
-                    value={instrumentToken}
-                    onChange={(e) => setInstrumentToken(e.target.value)}
-                    placeholder="e.g. 408065 or NSE_INDEX|..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Class</label>
-                  <select
-                    value={instrumentClass}
-                    onChange={(e) => setInstrumentClass(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
-                  >
-                    <option value="EQUITY">Equity (Stock Share)</option>
-                    <option value="CRYPTO">Cryptocurrency Pair</option>
-                    <option value="FOREX">Forex Spot Contract</option>
-                    <option value="INDEX">Index</option>
-                  </select>
-                </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Class</label>
+                <select
+                  value={instrumentClass}
+                  onChange={(e) => setInstrumentClass(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-805 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                >
+                  <option value="EQUITY">Equity (Stock Share)</option>
+                  <option value="CRYPTO">Cryptocurrency Pair</option>
+                  <option value="FOREX">Forex Spot Contract</option>
+                  <option value="INDEX">Index</option>
+                </select>
               </div>
 
               <div className="space-y-1">

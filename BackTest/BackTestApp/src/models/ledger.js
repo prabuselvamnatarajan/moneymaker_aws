@@ -53,7 +53,6 @@ const ledgerSchema = new mongoose.Schema({
   },
   symbol: {
     type: String,
-    uppercase: true,
   },
   order_type: {
     type: String,

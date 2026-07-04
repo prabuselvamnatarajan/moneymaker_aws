@@ -14,7 +14,8 @@ interface StrategiesListViewProps {
   strategies: Strategy[];
   symbols: SymbolData[];
   accounts: Account[];
-  onAddStrategy: (newStrat: Strategy, accountId: string, symbol: string) => void;
+  strategyDefinitions?: any[];
+  onAddStrategy: (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId?: string) => void;
   onUpdateStrategyStatus: (id: string, status: 'active' | 'paused' | 'stopped') => void;
   onNavigateToEntity: (type: 'strategy', id: string) => void;
 }
@@ -23,6 +24,7 @@ export default function StrategiesListView({
   strategies,
   symbols,
   accounts,
+  strategyDefinitions = [],
   onAddStrategy,
   onUpdateStrategyStatus,
   onNavigateToEntity
@@ -32,11 +34,15 @@ export default function StrategiesListView({
   
   // Form fields
   const [name, setName] = useState('');
+  const [selectedStrategyId, setSelectedStrategyId] = useState('');
+  const [deploymentName, setDeploymentName] = useState('');
   const [description, setDescription] = useState('');
   const [mode, setMode] = useState<'live' | 'paper' | 'backtest'>('live');
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [initialStatus, setInitialStatus] = useState<'active' | 'paused' | 'stopped'>('active');
   const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [backtestDate, setBacktestDate] = useState(new Date().toISOString().slice(0, 10));
+  const [backtestSpeed, setBacktestSpeed] = useState(1000);
 
   // Computed metrics
   const totalPnl = strategies.reduce((sum, s) => sum + s.pnl, 0);
@@ -60,32 +66,45 @@ export default function StrategiesListView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !description || !selectedAccountId) return;
+    if (!deploymentName || !selectedAccountId || !selectedStrategyId) return;
+
+    let targetStrategyName = '';
+    if (selectedStrategyId === 'NEW') {
+      if (!name) return;
+      targetStrategyName = name;
+    } else {
+      const found = strategyDefinitions.find(s => s._id === selectedStrategyId);
+      targetStrategyName = found ? found.strategy_name : 'Algorithmic Strategy';
+    }
 
     const newStrat: Strategy = {
       id: `STRAT-0${strategies.length + 1}`,
-      name,
+      name: deploymentName,
       mode,
       status: initialStatus,
       pnl: 0,
       totalTrades: 0,
-      winRate: 50.0, // starts flat
+      winRate: 50.0,
       lastDeployTime: new Date().toISOString(),
       openPositions: 0,
       symbols: selectedSymbols.length > 0 ? selectedSymbols : ['NSE_INDEX|Nifty 50'],
-      description
+      description: description || `Deployed ${targetStrategyName} bot workload.`,
+      backtestDate: mode === 'backtest' ? backtestDate : undefined,
+      backtestSpeed: mode === 'backtest' ? backtestSpeed : undefined,
     };
 
     const targetSymbol = selectedSymbols.length > 0 ? selectedSymbols[0] : 'NSE_INDEX|Nifty 50';
-    onAddStrategy(newStrat, selectedAccountId, targetSymbol);
+    onAddStrategy(newStrat, selectedAccountId, targetSymbol, selectedStrategyId === 'NEW' ? undefined : selectedStrategyId);
     
     // Reset Form
     setName('');
+    setDeploymentName('');
     setDescription('');
     setMode('live');
     setSelectedSymbols([]);
     setInitialStatus('active');
     setSelectedAccountId('');
+    setSelectedStrategyId('');
     setShowAddForm(false);
   };
 
@@ -310,13 +329,43 @@ export default function StrategiesListView({
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strategy Workload Name</label>
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strategy Model (Template)</label>
+                <select
+                  required
+                  value={selectedStrategyId}
+                  onChange={(e) => setSelectedStrategyId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                >
+                  <option value="">Select Strategy Model...</option>
+                  {strategyDefinitions.map(s => (
+                    <option key={s._id} value={s._id}>{s.strategy_name}</option>
+                  ))}
+                  <option value="NEW">Create Custom Strategy Model...</option>
+                </select>
+              </div>
+
+              {selectedStrategyId === 'NEW' && (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strategy Model Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Bollinger Bands MACD Scalp v1"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Deployment Display Name (User-friendly)</label>
                 <input
                   type="text"
                   required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Bollinger Bands MACD Scalp v1"
+                  value={deploymentName}
+                  onChange={(e) => setDeploymentName(e.target.value)}
+                  placeholder="e.g. Bollinger Bands Live Run 1"
                   className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
@@ -377,6 +426,33 @@ export default function StrategiesListView({
                   </select>
                 </div>
               </div>
+
+              {mode === 'backtest' && (
+                <div className="grid grid-cols-2 gap-4 border border-indigo-950 bg-indigo-950/20 p-3 rounded-lg">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Backtest Date (YYYY-MM-DD)</label>
+                    <input
+                      type="date"
+                      required
+                      value={backtestDate}
+                      onChange={(e) => setBacktestDate(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Delay Speed (ms delay)</label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      value={backtestSpeed}
+                      onChange={(e) => setBacktestSpeed(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Target Symbol Multi select list */}
               <div className="space-y-1">

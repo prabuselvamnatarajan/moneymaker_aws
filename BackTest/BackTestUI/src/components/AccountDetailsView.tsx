@@ -24,6 +24,7 @@ interface AccountDetailsViewProps {
   onDrilldownToTransactions: (filterKey: 'accountId', filterValue: string) => void;
   timezone: string;
   onRefreshData?: () => void;
+  onNavigateToScreen?: (screen: any) => void;
 }
 
 export default function AccountDetailsView({
@@ -37,6 +38,7 @@ export default function AccountDetailsView({
   onDrilldownToTransactions,
   timezone,
   onRefreshData,
+  onNavigateToScreen,
 }: AccountDetailsViewProps) {
 
   // Filter transactions belonging to this account
@@ -178,17 +180,27 @@ export default function AccountDetailsView({
     <div className="space-y-6">
       
       {/* Back button and breadcrumb */}
-      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium select-none">
         <button
           onClick={onBackToDashboard}
-          className="flex items-center gap-1 hover:text-indigo-400 transition-colors"
+          className="flex items-center gap-1 hover:text-indigo-400 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Dashboard
         </button>
         <span>/</span>
-        <span className="text-slate-400 font-mono font-normal">Accounts</span>
+        <button
+          onClick={() => onNavigateToScreen?.('accounts-list')}
+          className="text-slate-400 font-mono font-normal hover:text-indigo-400 transition-colors cursor-pointer"
+        >
+          Accounts
+        </button>
         <span>/</span>
-        <span className="text-slate-200 font-bold">{account.name}</span>
+        <button
+          onClick={() => onNavigateToScreen?.('accounts-list')}
+          className="text-slate-200 font-bold hover:text-indigo-400 transition-colors cursor-pointer"
+        >
+          {account.name}
+        </button>
       </div>
 
       {/* Main Header Block */}

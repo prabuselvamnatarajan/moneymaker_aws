@@ -3,7 +3,7 @@ import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed"];
 
 export const createDeployment = async (userId, deploymentData) => {
   const deployment = new Deployment({ ...deploymentData, user_id: userId });
@@ -98,6 +98,18 @@ export const transitionDeployment = async (userId, id, action) => {
 
   if (action === "start" || action === "restart") {
     deployment.start_time = new Date();
+
+    if (deployment.strategy_mode === "BACKTEST") {
+      const symbolName = deployment.symbol;
+      const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
+      const timeMs = deployment.backtest_speed || 1000;
+      const triggerUrl = `${process.env.BACKTEST_CLIENT_URL || "http://backtest-client"}/?symbolName=${encodeURIComponent(symbolName)}&date=${encodeURIComponent(date)}&time_ms=${timeMs}`;
+      console.log(`[Backtest] Triggering backtest client: ${triggerUrl}`);
+      fetch(triggerUrl)
+        .then(res => res.text())
+        .then(body => console.log(`[Backtest] Trigger response: ${body}`))
+        .catch(err => console.error(`[Backtest] Error triggering backtest: ${err.message}`));
+    }
   }
   if (action === "stop") {
     deployment.end_time = new Date();

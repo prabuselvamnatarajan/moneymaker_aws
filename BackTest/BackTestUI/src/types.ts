@@ -33,6 +33,8 @@ export interface Strategy {
   symbols: string[]; // Tickers associated with this strategy
   description: string;
   accountId?: string;
+  backtestDate?: string;
+  backtestSpeed?: number;
 }
 
 export interface SymbolData {

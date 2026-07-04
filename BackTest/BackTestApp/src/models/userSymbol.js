@@ -18,7 +18,6 @@ const userSymbolSchema = new mongoose.Schema({
   symbol: {
     type: String,
     required: true,
-    uppercase: true,
   },
   symbol_name: {
     type: String,

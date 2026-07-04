@@ -57,6 +57,7 @@ export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [strategyDefinitions, setStrategyDefinitions] = useState<any[]>([]);
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filters, setFilters] = useState<TransactionFilters>(INITIAL_FILTERS);
@@ -98,6 +99,14 @@ export default function App() {
       // Fetch brokers
       const brokersRes = await api.brokers.list();
       setBrokers(brokersRes.items);
+
+      // Fetch strategy definitions
+      try {
+        const stratsRes = await api.strategies.list();
+        setStrategyDefinitions(stratsRes.items);
+      } catch (err) {
+        console.error('Error loading strategy definitions:', err);
+      }
 
       // Fetch ledger (mapped as transactions in UI)
       const ledgerRes = await api.ledger.list();
@@ -256,14 +265,17 @@ export default function App() {
     }
   };
 
-  const handleAddStrategy = async (newStrat: Strategy, accountId: string, symbol: string) => {
+  const handleAddStrategy = async (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId?: string) => {
     try {
-      // 1. Create strategy definition
-      const stratRes = await api.strategies.create({
-        strategy_name: newStrat.name,
-        strategy_description: newStrat.description,
-      });
-      const strategyId = stratRes.data._id;
+      // 1. Resolve or Create strategy definition
+      let strategyId = existingStrategyId;
+      if (!strategyId) {
+        const stratRes = await api.strategies.create({
+          strategy_name: newStrat.description.startsWith('Deployed ') ? newStrat.description.replace('Deployed ', '').replace(' bot workload.', '') : newStrat.name,
+          strategy_description: newStrat.description,
+        });
+        strategyId = stratRes.data._id;
+      }
 
       // 2. Resolve UserSymbol for target symbol
       let userSymbolId = '';
@@ -282,7 +294,7 @@ export default function App() {
         const symRes = await api.symbols.create({
           symbol,
           exchange: 'NSE',
-          instrument_token: `TOKEN_${symbol}`,
+          instrument_token: symbol,
           symbol_name: symbol,
           description: `Auto-generated symbol for strategy deployment`,
           instrument_class: 'EQUITY',
@@ -303,6 +315,8 @@ export default function App() {
         strategy_mode: newStrat.mode === 'live' ? 'LIVE' : newStrat.mode === 'paper' ? 'PAPER' : 'BACKTEST',
         deployment_name: newStrat.name,
         notes: newStrat.description,
+        backtest_date: newStrat.backtestDate,
+        backtest_speed: newStrat.backtestSpeed,
       });
 
       const mappedStrat = mapDeployment(depRes.data);
@@ -415,6 +429,7 @@ export default function App() {
             strategies={strategies}
             symbols={symbols}
             accounts={accounts}
+            strategyDefinitions={strategyDefinitions}
             onAddStrategy={handleAddStrategy}
             onUpdateStrategyStatus={handleUpdateStrategyStatus}
             onNavigateToEntity={handleSelectEntity}
@@ -441,6 +456,7 @@ export default function App() {
             onSelectTransaction={setSelectedTransaction}
             onDrilldownToTransactions={(key, val) => handleDrilldownToTransactions(key, val)}
             timezone={timezone}
+            onNavigateToScreen={setActiveScreen}
           />
         );
       case 'account-detail':
@@ -457,6 +473,7 @@ export default function App() {
             onDrilldownToTransactions={(key, val) => handleDrilldownToTransactions(key, val)}
             timezone={timezone}
             onRefreshData={loadData}
+            onNavigateToScreen={setActiveScreen}
           />
         );
       case 'symbol-detail':
@@ -471,6 +488,7 @@ export default function App() {
             onSelectTransaction={setSelectedTransaction}
             onDrilldownToTransactions={(key, val) => handleDrilldownToTransactions(key, val)}
             timezone={timezone}
+            onNavigateToScreen={setActiveScreen}
           />
         );
       case 'profile':

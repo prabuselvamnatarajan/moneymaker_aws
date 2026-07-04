@@ -21,6 +21,7 @@ interface StrategyDetailsViewProps {
   onSelectTransaction: (tx: Transaction) => void;
   onDrilldownToTransactions: (filterKey: 'strategyId', filterValue: string) => void;
   timezone: string;
+  onNavigateToScreen?: (screen: any) => void;
 }
 
 export default function StrategyDetailsView({
@@ -33,6 +34,7 @@ export default function StrategyDetailsView({
   onSelectTransaction,
   onDrilldownToTransactions,
   timezone,
+  onNavigateToScreen,
 }: StrategyDetailsViewProps) {
   
   // Filter transactions connected to this strategy
@@ -139,17 +141,27 @@ export default function StrategyDetailsView({
     <div className="space-y-6">
       
       {/* Back button and breadcrumb */}
-      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium select-none">
         <button
           onClick={onBackToDashboard}
-          className="flex items-center gap-1 hover:text-indigo-400 transition-colors"
+          className="flex items-center gap-1 hover:text-indigo-400 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Dashboard
         </button>
         <span>/</span>
-        <span className="text-slate-400 font-mono">Strategies</span>
+        <button
+          onClick={() => onNavigateToScreen?.('strategies-list')}
+          className="text-slate-400 font-mono hover:text-indigo-400 transition-colors cursor-pointer"
+        >
+          Strategies
+        </button>
         <span>/</span>
-        <span className="text-slate-200 font-bold">{strategy.name}</span>
+        <button
+          onClick={() => onNavigateToScreen?.('strategies-list')}
+          className="text-slate-200 font-bold hover:text-indigo-400 transition-colors cursor-pointer"
+        >
+          {strategy.name}
+        </button>
       </div>
 
       {/* Main header block */}
