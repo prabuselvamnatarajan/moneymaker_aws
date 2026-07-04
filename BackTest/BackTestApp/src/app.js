@@ -12,6 +12,7 @@ import meRoutes from "./routes/meRoute.js";
 import symbolRoutes from "./routes/symbolRoute.js";
 import ledgerRoutes from "./routes/ledgerRoute.js";
 import adminRoutes from "./routes/adminRoute.js";
+import brokerRoutes from "./routes/brokerRoute.js";
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/trades", tradeRoutes);
 app.use("/symbols", symbolRoutes);
 app.use("/ledger", ledgerRoutes);
 app.use("/admin", adminRoutes);
+app.use("/brokers", brokerRoutes);
 
 // --- Mount routes at /api prefix (backward compatibility) ---
 app.use("/api", tradeRoutes);          // legacy /api/trade endpoint
@@ -56,6 +58,7 @@ app.use("/api/trades", tradeRoutes);
 app.use("/api/symbols", symbolRoutes);
 app.use("/api/ledger", ledgerRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/brokers", brokerRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {

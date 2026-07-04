@@ -37,6 +37,18 @@ export const getAllLedger = async (userId, queryParams) => {
     }
   }
 
+  if (queryParams.strategyId) {
+    filter.strategy_id = queryParams.strategyId;
+  }
+
+  if (queryParams.deploymentId) {
+    filter.deployment_id = queryParams.deploymentId;
+  }
+
+  if (queryParams.symbol) {
+    filter.symbol = queryParams.symbol.toUpperCase();
+  }
+
   if (queryParams.type === "credit") {
     filter.change_in_balance = { $gt: 0 };
   } else if (queryParams.type === "debit") {
@@ -70,4 +82,121 @@ export const getLedgerById = async (userId, id) => {
     $or: [...(isObjectId ? [{ _id: id }] : []), { ledger_id: id }],
   };
   return await Ledger.findOne(query).populate("account_id").populate("trade_id");
+};
+
+export const depositBalance = async (userId, accountId, amount, description) => {
+  if (!amount || amount <= 0) throw new Error("Amount must be greater than zero");
+  const Account = mongoose.model("Account");
+  const account = await Account.findOne({
+    user_id: userId,
+    $or: [
+      ...(mongoose.isValidObjectId(accountId) ? [{ _id: accountId }] : []),
+      { account_id: accountId }
+    ]
+  });
+  if (!account) throw new Error("Account not found");
+
+  const opening = account.current_balance;
+  account.current_balance += amount;
+  await account.save();
+
+  const ledgerEntry = new Ledger({
+    account_id: account._id,
+    user_id: userId,
+    change_in_balance: amount,
+    opening_balance: opening,
+    closing_balance: account.current_balance,
+    transaction_type: "DEPOSIT",
+    description: description || "Deposit transaction"
+  });
+  return await ledgerEntry.save();
+};
+
+export const withdrawBalance = async (userId, accountId, amount, description) => {
+  if (!amount || amount <= 0) throw new Error("Amount must be greater than zero");
+  const Account = mongoose.model("Account");
+  const account = await Account.findOne({
+    user_id: userId,
+    $or: [
+      ...(mongoose.isValidObjectId(accountId) ? [{ _id: accountId }] : []),
+      { account_id: accountId }
+    ]
+  });
+  if (!account) throw new Error("Account not found");
+  if (account.current_balance < amount) throw new Error("Insufficient funds");
+
+  const opening = account.current_balance;
+  account.current_balance -= amount;
+  await account.save();
+
+  const ledgerEntry = new Ledger({
+    account_id: account._id,
+    user_id: userId,
+    change_in_balance: -amount,
+    opening_balance: opening,
+    closing_balance: account.current_balance,
+    transaction_type: "WITHDRAW",
+    description: description || "Withdrawal transaction"
+  });
+  return await ledgerEntry.save();
+};
+
+export const transferBalance = async (userId, fromAccountId, toAccountId, amount, description) => {
+  if (!amount || amount <= 0) throw new Error("Amount must be greater than zero");
+  if (fromAccountId === toAccountId) throw new Error("Source and destination accounts must be different");
+
+  const Account = mongoose.model("Account");
+
+  const fromAccount = await Account.findOne({
+    user_id: userId,
+    $or: [
+      ...(mongoose.isValidObjectId(fromAccountId) ? [{ _id: fromAccountId }] : []),
+      { account_id: fromAccountId }
+    ]
+  });
+  if (!fromAccount) throw new Error("Source account not found");
+  if (fromAccount.current_balance < amount) throw new Error("Insufficient funds");
+
+  const toAccount = await Account.findOne({
+    user_id: userId,
+    $or: [
+      ...(mongoose.isValidObjectId(toAccountId) ? [{ _id: toAccountId }] : []),
+      { account_id: toAccountId }
+    ]
+  });
+  if (!toAccount) throw new Error("Destination account not found");
+
+  // Apply debit to fromAccount
+  const fromOpening = fromAccount.current_balance;
+  fromAccount.current_balance -= amount;
+  await fromAccount.save();
+
+  const fromLedger = new Ledger({
+    account_id: fromAccount._id,
+    user_id: userId,
+    change_in_balance: -amount,
+    opening_balance: fromOpening,
+    closing_balance: fromAccount.current_balance,
+    transaction_type: "TRANSFER_OUT",
+    description: description || `Transfer to account: ${toAccount.account_name}`
+  });
+  await fromLedger.save();
+
+  // Apply credit to toAccount
+  const toOpening = toAccount.current_balance;
+  toAccount.current_balance += amount;
+  await toAccount.save();
+
+  const toLedger = new Ledger({
+    account_id: toAccount._id,
+    user_id: userId,
+    change_in_balance: amount,
+    opening_balance: toOpening,
+    closing_balance: toAccount.current_balance,
+    transaction_type: "TRANSFER_IN",
+    description: description || `Transfer from account: ${fromAccount.account_name}`
+  });
+  await toLedger.save();
+
+  return { fromLedger, toLedger };
 };
