@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { 
-  DollarSign as DollarIcon, Activity as ActivityIcon, Percent as PercentIcon, 
+  IndianRupee as IndianRupeeIcon, Activity as ActivityIcon, Percent as PercentIcon, 
   ArrowUpRight as ArrowUpRightIcon, ArrowDownRight as ArrowDownRightIcon, 
   Play as PlayIcon, Pause as PauseIcon, Plus as PlusIcon, 
   ShieldCheck as ShieldCheckIcon, RefreshCw as RefreshCwIcon, 
@@ -188,7 +188,7 @@ export default function DashboardView({
             </p>
           </div>
           <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/10 text-indigo-400">
-            <DollarIcon className="w-5 h-5" />
+            <IndianRupeeIcon className="w-5 h-5" />
           </div>
         </div>
 
