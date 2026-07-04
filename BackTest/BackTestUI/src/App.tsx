@@ -130,9 +130,21 @@ export default function App() {
 
   // --- Dynamic Simulation & Mutation Handlers ---
   
-  const handleAddTransaction = (newTx: Transaction) => {
-    // Read-only / system-generated locally, but keep simulation sync if needed
-    setTransactions(prev => [newTx, ...prev]);
+  const handleAddTransaction = async (newTx: Transaction) => {
+    try {
+      await api.trades.create({
+        account_id: newTx.accountId,
+        symbol: newTx.symbol,
+        price: newTx.price,
+        quantity: newTx.quantity,
+        type_of_order: newTx.type,
+        deployment_id: newTx.strategyId,
+      });
+      await loadData();
+    } catch (err: any) {
+      alert(`Failed to execute trade: ${err.message}`);
+      throw err;
+    }
   };
 
   // Toggle API links to simulate disconnect audits
