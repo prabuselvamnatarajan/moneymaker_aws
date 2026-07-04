@@ -27,6 +27,7 @@ export interface Strategy {
   openPositions: number;
   symbols: string[]; // Tickers associated with this strategy
   description: string;
+  accountId?: string;
 }
 
 export interface SymbolData {

@@ -88,6 +88,7 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     openPositions: 0, // Fallback placeholder
     symbols: [backendDeployment.symbol || 'NSE_INDEX|Nifty 50'],
     description: backendDeployment.notes || 'Algorithmic deployment workload.',
+    accountId: backendDeployment.account_id,
   };
 }
 
