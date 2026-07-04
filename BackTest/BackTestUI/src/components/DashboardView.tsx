@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   IndianRupee as IndianRupeeIcon, Activity as ActivityIcon, Percent as PercentIcon, 
   ArrowUpRight as ArrowUpRightIcon, ArrowDownRight as ArrowDownRightIcon, 
@@ -19,7 +19,7 @@ interface DashboardViewProps {
   strategies: Strategy[];
   symbols: SymbolData[];
   transactions: Transaction[];
-  onAddTransaction: (newTx: Transaction) => void;
+  onAddTransaction: (newTx: Transaction) => Promise<void> | void;
   onToggleBrokerStatus: (accountId: string) => void;
   onNavigateToEntity: (type: 'account' | 'strategy' | 'symbol', id: string) => void;
   onSelectTransaction: (tx: Transaction) => void;
@@ -56,6 +56,42 @@ export default function DashboardView({
   const [tradeNotes, setTradeNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Synchronize initial selections based on first strategy
+  useEffect(() => {
+    if (strategies.length > 0 && !selectedStrat) {
+      const firstStrat = strategies[0];
+      setSelectedStrat(firstStrat.id);
+      if (firstStrat.accountId) {
+        setSelectedAcc(firstStrat.accountId);
+      }
+      if (firstStrat.symbols && firstStrat.symbols[0]) {
+        setSelectedSym(firstStrat.symbols[0]);
+        const matchedSym = symbols.find(s => s.ticker === firstStrat.symbols[0]);
+        if (matchedSym) {
+          setTradePrice(matchedSym.lastPrice.toString());
+        }
+      }
+    }
+  }, [strategies]);
+
+  const handleStrategyChange = (stratId: string) => {
+    setSelectedStrat(stratId);
+    const matchedStrat = strategies.find(s => s.id === stratId);
+    if (matchedStrat) {
+      if (matchedStrat.accountId) {
+        setSelectedAcc(matchedStrat.accountId);
+      }
+      if (matchedStrat.symbols && matchedStrat.symbols[0]) {
+        setSelectedSym(matchedStrat.symbols[0]);
+        // Also sync price for that symbol
+        const matchedSym = symbols.find(s => s.ticker === matchedStrat.symbols[0]);
+        if (matchedSym) {
+          setTradePrice(matchedSym.lastPrice.toString());
+        }
+      }
+    }
+  };
 
   // Calculate high-fidelity portfolio aggregate statistics
   const totalBalance = useMemo(() => accounts.reduce((acc, a) => acc + a.balance, 0), [accounts]);
@@ -97,43 +133,47 @@ export default function DashboardView({
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const generatedId = `TX-${Math.floor(10000 + Math.random() * 90000)}`;
-      const executionId = `EXE-${Math.random().toString(36).substring(2, 8)}`;
-      const orderId = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
-      const timestamp = new Date().toISOString();
+    const generatedId = `TX-${Math.floor(10000 + Math.random() * 90000)}`;
+    const executionId = `EXE-${Math.random().toString(36).substring(2, 8)}`;
+    const orderId = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
+    const timestamp = new Date().toISOString();
 
-      const newTx: Transaction = {
-        id: generatedId,
-        timestamp,
-        type: tradeType,
-        symbol: selectedSym,
-        strategyId: selectedStrat,
-        accountId: selectedAcc,
-        quantity: qty,
-        price: price,
-        fee: parseFloat((qty * price * 0.0001 + 1.5).toFixed(2)),
-        status: 'EXECUTED',
-        tradeId: executionId,
-        orderId: orderId,
-        filledQty: qty,
-        avgPrice: price,
-        notes: tradeNotes || 'Manual trading execution triggered via central operator console.',
-        flagged: false,
-        events: [
-          { time: new Date(Date.now() - 400).toISOString(), message: 'Manual trade order generated', type: 'info' },
-          { time: new Date(Date.now() - 200).toISOString(), message: `Order route submitted to ${matchedAccount?.broker}`, type: 'info' },
-          { time: timestamp, message: `Execution confirmed: Filled ${qty} ${selectedSym} @ ${price}`, type: 'success' },
-        ],
-      };
+    const newTx: Transaction = {
+      id: generatedId,
+      timestamp,
+      type: tradeType,
+      symbol: selectedSym,
+      strategyId: selectedStrat,
+      accountId: selectedAcc,
+      quantity: qty,
+      price: price,
+      fee: parseFloat((qty * price * 0.0001 + 1.5).toFixed(2)),
+      status: 'EXECUTED',
+      tradeId: executionId,
+      orderId: orderId,
+      filledQty: qty,
+      avgPrice: price,
+      notes: tradeNotes || 'Manual trading execution triggered via central operator console.',
+      flagged: false,
+      events: [
+        { time: new Date(Date.now() - 400).toISOString(), message: 'Manual trade order generated', type: 'info' },
+        { time: new Date(Date.now() - 200).toISOString(), message: `Order route submitted to ${matchedAccount?.broker}`, type: 'info' },
+        { time: timestamp, message: `Execution confirmed: Filled ${qty} ${selectedSym} @ ${price}`, type: 'success' },
+      ],
+    };
 
-      onAddTransaction(newTx);
-      setIsSubmitting(false);
-      setTradeNotes('');
-      setSuccessMsg(`Order ${orderId} successfully executed & settled via ${matchedAccount?.broker}!`);
-      
-      setTimeout(() => setSuccessMsg(''), 4000);
-    }, 600);
+    Promise.resolve(onAddTransaction(newTx))
+      .then(() => {
+        setTradeNotes('');
+        setSuccessMsg(`Order ${orderId} successfully executed & settled via ${matchedAccount?.broker}!`);
+        setTimeout(() => setSuccessMsg(''), 4000);
+      })
+      .catch((err) => {
+        console.error("Order submission failed:", err);
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
   };
 
   // Synchronize trade price with current selected symbol's lastPrice
@@ -422,7 +462,7 @@ export default function DashboardView({
                   <select
                     id="order-strategy-select"
                     value={selectedStrat}
-                    onChange={(e) => setSelectedStrat(e.target.value)}
+                    onChange={(e) => handleStrategyChange(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-800 rounded-md p-2 text-slate-200 focus:outline-hidden focus:border-indigo-500"
                   >
                     {strategies.map(strat => (
