@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Trade from "../models/trade.js";
 import Account from "../models/account.js";
 import Ledger from "../models/ledger.js";
+import Deployment from "../models/deployment.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 
 function buildAccountQuery(accountId) {
@@ -18,10 +19,29 @@ export const createTrade = async (tradeData) => {
   session.startTransaction();
 
   try {
-    const { account_id, price, quantity, type_of_order, user_id } = tradeData;
+    const { price, quantity, type_of_order, user_id } = tradeData;
 
     if (!user_id) {
       throw new Error("user_id is required");
+    }
+
+    if (tradeData.deployment_id) {
+      const deployment = await Deployment.findById(tradeData.deployment_id).session(session);
+      if (!deployment) {
+        throw new Error("Associated deployment not found");
+      }
+      tradeData.strategy_id = deployment.strategy_id;
+      tradeData.user_symbol_id = deployment.user_symbol_id;
+      tradeData.instrument_token = deployment.instrument_token;
+      tradeData.symbol = deployment.symbol;
+      if (!tradeData.account_id) {
+        tradeData.account_id = deployment.account_id;
+      }
+    }
+
+    const account_id = tradeData.account_id;
+    if (!account_id) {
+      throw new Error("account_id is required");
     }
 
     let account = await Account.findOne(buildAccountQuery(account_id)).session(session);
