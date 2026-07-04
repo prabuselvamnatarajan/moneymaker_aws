@@ -88,7 +88,11 @@ export function mapTrade(backendTrade: any): Transaction {
 // Map backend Ledger to UI Transaction
 export function mapLedger(backendLedger: any): Transaction {
   const accountId = backendLedger.account_id?._id || backendLedger.account_id;
-  const strategyId = backendLedger.strategy_id?._id || backendLedger.strategy_id || '';
+  // Use deployment_id as strategyId because in this UI "strategies" are deployments.
+  // strategy_id in the ledger points to the Strategy definition doc (different collection),
+  // while deployment_id matches what is loaded into the UI `strategies` state.
+  const strategyId = backendLedger.deployment_id?._id || backendLedger.deployment_id
+    || backendLedger.strategy_id?._id || backendLedger.strategy_id || '';
   const quantity = backendLedger.quantity || backendLedger.trade_id?.quantity || 0;
   const price = backendLedger.price || backendLedger.trade_id?.price || 0;
   const fee = backendLedger.trade_id?.commission || 0;
