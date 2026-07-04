@@ -23,7 +23,7 @@ async function ensureUserHasRole(user, roleId) {
   throw error;
 }
 
-async function createSession({ user, currentRoleId }) {
+async function createSession({ user, currentRoleId, device, os, browser, ip, location }) {
   const userId = user && (user._id || user.id);
   if (!userId || !currentRoleId) {
     const error = new Error("User and current role ID are required to create a session");
@@ -44,6 +44,11 @@ async function createSession({ user, currentRoleId }) {
   const session = new Session({
     user: userId,
     currentRole: currentRoleId,
+    device: device || "Unknown Device",
+    os: os || "Unknown OS",
+    browser: browser || "Unknown Browser",
+    ip: ip || "127.0.0.1",
+    location: location || "Unknown Location",
     roleHistory: [
       {
         role: currentRoleId,

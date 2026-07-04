@@ -131,60 +131,36 @@ export default function UserProfileView({ currentUser, onLogout, onProfileUpdate
   const [showNewPassword, setShowNewPassword] = useState(false);
 
   // Active sessions state
-  const [sessions, setSessions] = useState<ActiveSession[]>([
-    {
-      id: 'sess-1',
-      device: 'MacBook Pro 16"',
-      os: 'macOS Sequoia',
-      browser: 'Chrome 126.0',
-      ip: '192.168.1.15',
-      location: 'Singapore (SG)',
-      lastActive: 'Just now',
-      current: true
-    },
-    {
-      id: 'sess-2',
-      device: 'iPhone 15 Pro',
-      os: 'iOS 18.0',
-      browser: 'Safari Mobile',
-      ip: '112.199.43.102',
-      location: 'Singapore (SG)',
-      lastActive: '4 hours ago',
-      current: false
-    },
-    {
-      id: 'sess-3',
-      device: 'Ubuntu Server Workstation',
-      os: 'Ubuntu 24.04 LTS',
-      browser: 'CLI Agent Daemon v4.1',
-      ip: '52.76.21.198',
-      location: 'AWS Singapore (ap-southeast-1)',
-      lastActive: 'Yesterday',
-      current: false
-    }
-  ]);
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
 
   // API keys state
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([
-    {
-      id: 'key-1',
-      name: 'Binance Bot Endpoint Integration',
-      tokenPrefix: 'ct_live_7a9f...',
-      createdAt: '2026-05-15',
-      lastUsed: '10 mins ago'
-    },
-    {
-      id: 'key-2',
-      name: 'Local Backtester Python Daemon',
-      tokenPrefix: 'ct_test_b8d2...',
-      createdAt: '2026-06-01',
-      lastUsed: '2 hours ago'
-    }
-  ]);
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
 
   const [newKeyName, setNewKeyName] = useState('');
   const [showNewKeyModal, setShowNewKeyModal] = useState(false);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const loadSessionsAndKeys = async () => {
+      try {
+        const fetchedSessions = await api.auth.getSessions();
+        setSessions(fetchedSessions);
+      } catch (err: any) {
+        console.error("Failed to load sessions:", err);
+      }
+
+      try {
+        const fetchedKeys = await api.auth.getApiKeys();
+        setApiKeys(fetchedKeys);
+      } catch (err: any) {
+        console.error("Failed to load API keys:", err);
+      }
+    };
+
+    if (currentUser) {
+      loadSessionsAndKeys();
+    }
+  }, [currentUser]);
 
   // Handlers
   const handleSaveInfo = (e: React.FormEvent) => {
@@ -234,34 +210,49 @@ export default function UserProfileView({ currentUser, onLogout, onProfileUpdate
     }
   };
 
-  const handleRevokeSession = (sessionId: string) => {
-    setSessions(prev => prev.filter(s => s.id !== sessionId));
-    showToast('success', 'Session access revoked successfully');
+  const handleRevokeSession = async (sessionId: string) => {
+    try {
+      await api.auth.revokeSession(sessionId);
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      showToast('success', 'Session access revoked successfully');
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to revoke session');
+    }
   };
 
-  const handleCreateApiKey = (e: React.FormEvent) => {
+  const handleRevokeOtherSessions = async () => {
+    try {
+      await api.auth.revokeOtherSessions();
+      setSessions(prev => prev.filter(s => s.current));
+      showToast('success', 'Emergency sweep: all other sessions disconnected.');
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to revoke other sessions');
+    }
+  };
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKeyName) return;
 
-    const randomHex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    const fullKey = `ct_live_${randomHex}`;
-    
-    const newKey: ApiKey = {
-      id: `key-${apiKeys.length + 1}`,
-      name: newKeyName,
-      tokenPrefix: `${fullKey.substring(0, 12)}...`,
-      createdAt: new Date().toISOString().split('T')[0],
-      lastUsed: 'Never'
-    };
-
-    setApiKeys(prev => [newKey, ...prev]);
-    setGeneratedKey(fullKey);
-    setNewKeyName('');
+    try {
+      const res = await api.auth.createApiKey(newKeyName);
+      setApiKeys(prev => [res.key, ...prev]);
+      setGeneratedKey(res.key.token);
+      setNewKeyName('');
+      showToast('success', 'API access token generated successfully');
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to generate API key');
+    }
   };
 
-  const handleRevokeApiKey = (keyId: string) => {
-    setApiKeys(prev => prev.filter(k => k.id !== keyId));
-    showToast('success', 'API access token revoked');
+  const handleRevokeApiKey = async (keyId: string) => {
+    try {
+      await api.auth.revokeApiKey(keyId);
+      setApiKeys(prev => prev.filter(k => k.id !== keyId));
+      showToast('success', 'API access token revoked');
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to revoke API key');
+    }
   };
 
   const showToast = (type: 'success' | 'error', text: string) => {
@@ -394,10 +385,7 @@ export default function UserProfileView({ currentUser, onLogout, onProfileUpdate
                 <p className="text-[10px] text-slate-500">Revoke all sessions but current</p>
               </div>
               <button 
-                onClick={() => {
-                  setSessions(prev => prev.filter(s => s.current));
-                  showToast('success', 'Emergency sweep: all other sessions disconnected.');
-                }}
+                onClick={handleRevokeOtherSessions}
                 className="px-2 py-1 bg-rose-950/50 hover:bg-rose-900/60 border border-rose-900/40 text-rose-400 rounded text-[10px] font-mono uppercase tracking-wider font-semibold cursor-pointer transition-colors"
               >
                 Flush sessions

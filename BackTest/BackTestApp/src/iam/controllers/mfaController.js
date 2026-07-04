@@ -2,6 +2,7 @@ import * as authService from "../services/authService.js";
 import * as mfaService from "../services/mfaService.js";
 import * as sessionService from "../services/sessionService.js";
 import * as jwtService from "../utils/jwtService.js";
+import { parseUserAgent } from "../utils/userAgentParser.js";
 
 export async function setup(req, res, next) {
   try {
@@ -70,9 +71,14 @@ export async function loginVerify(req, res, next) {
       throw error;
     }
 
+    const ua = req.headers["user-agent"] || "";
+    const ip = req.headers["x-forwarded-for"] || req.ip || "127.0.0.1";
+    const parsedUa = parseUserAgent(ua, ip);
+
     const session = await sessionService.createSession({
       user: verifiedUser,
       currentRoleId: initialRoleId,
+      ...parsedUa,
     });
 
     const payload = {

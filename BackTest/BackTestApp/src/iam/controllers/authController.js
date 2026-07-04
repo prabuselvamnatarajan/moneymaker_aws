@@ -1,6 +1,7 @@
 import * as authService from "../services/authService.js";
 import * as jwtService from "../utils/jwtService.js";
 import * as sessionService from "../services/sessionService.js";
+import { parseUserAgent } from "../utils/userAgentParser.js";
 
 export async function signup(req, res, next) {
   try {
@@ -55,9 +56,14 @@ export async function login(req, res, next) {
       throw error;
     }
 
+    const ua = req.headers["user-agent"] || "";
+    const ip = req.headers["x-forwarded-for"] || req.ip || "127.0.0.1";
+    const parsedUa = parseUserAgent(ua, ip);
+
     const session = await sessionService.createSession({
       user,
       currentRoleId: initialRoleId,
+      ...parsedUa,
     });
 
     const payload = {

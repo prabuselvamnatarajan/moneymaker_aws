@@ -90,6 +90,55 @@ export const api = {
       });
       return handleResponse<{ message: string }>(res);
     },
+
+    async getSessions() {
+      const res = await fetch(`${BASE_URL}/auth/sessions`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<any[]>(res);
+    },
+
+    async revokeSession(sessionId: string) {
+      const res = await fetch(`${BASE_URL}/auth/sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+
+    async revokeOtherSessions() {
+      const res = await fetch(`${BASE_URL}/auth/sessions/others`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+
+    async getApiKeys() {
+      const res = await fetch(`${BASE_URL}/auth/api-keys`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<any[]>(res);
+    },
+
+    async createApiKey(name: string) {
+      const res = await fetch(`${BASE_URL}/auth/api-keys`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      return handleResponse<{ message: string; key: any }>(res);
+    },
+
+    async revokeApiKey(keyId: string) {
+      const res = await fetch(`${BASE_URL}/auth/api-keys/${keyId}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
   },
 
   // MFA API

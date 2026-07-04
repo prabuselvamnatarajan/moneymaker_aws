@@ -1,5 +1,6 @@
 import * as authService from "../services/authService.js";
 import * as jwtService from "../utils/jwtService.js";
+import PersonalAccessToken from "../models/personalAccessToken.js";
 
 export async function authenticate(req, res, next) {
   try {
@@ -11,6 +12,37 @@ export async function authenticate(req, res, next) {
     }
 
     const token = authHeader.split(" ")[1];
+    
+    // Check if it is a personal access token
+    if (token.startsWith("ct_live_") || token.startsWith("ct_test_")) {
+      const personalToken = await PersonalAccessToken.findOne({ token, active: true });
+      if (!personalToken) {
+        const error = new Error("Invalid or revoked personal access token");
+        error.statusCode = 401;
+        throw error;
+      }
+
+      personalToken.lastUsedAt = new Date();
+      personalToken.save().catch(err => console.error("Failed to update lastUsedAt for key:", err));
+
+      const user = await authService.findUserById(personalToken.user);
+      if (!user) {
+        const error = new Error("Invalid personal access token: user not found");
+        error.statusCode = 401;
+        throw error;
+      }
+
+      req.auth = {
+        userId: user._id.toString(),
+        email: user.email,
+        sessionID: "personal-access-token",
+        isMfaEnabled: false,
+      };
+      req.user = user;
+      return next();
+    }
+
+    // Default to JWT authentication
     let payload;
     try {
       payload = jwtService.verifyAccessToken(token);

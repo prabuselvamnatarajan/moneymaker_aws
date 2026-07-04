@@ -44,6 +44,26 @@ const sessionSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  device: {
+    type: String,
+    default: "Unknown Device",
+  },
+  os: {
+    type: String,
+    default: "Unknown OS",
+  },
+  browser: {
+    type: String,
+    default: "Unknown Browser",
+  },
+  ip: {
+    type: String,
+    default: "127.0.0.1",
+  },
+  location: {
+    type: String,
+    default: "Unknown Location",
+  },
   roleHistory: {
     type: [sessionHistorySchema],
     default: [],

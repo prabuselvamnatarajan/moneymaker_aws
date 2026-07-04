@@ -1,9 +1,12 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
+import crypto from "crypto";
 
 import { login, sessionService, jwtService, authService } from "../iam/index.js";
 import { initializeUserAccounts } from "../utils/accountInitializer.js";
+import Session from "../iam/models/session.js";
+import PersonalAccessToken from "../iam/models/personalAccessToken.js";
 
 export { login };
 
@@ -166,6 +169,125 @@ export const resetPassword = async (req, res, next) => {
     await user.save();
 
     res.status(200).json({ message: "Password reset successfully" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSessions = async (req, res, next) => {
+  try {
+    const sessions = await Session.find({ user: req.auth.userId, active: true }).sort({ startedAt: -1 });
+    const formattedSessions = sessions.map(s => ({
+      id: s._id.toString(),
+      device: s.device,
+      os: s.os,
+      browser: s.browser,
+      ip: s.ip,
+      location: s.location,
+      lastActive: "Just now",
+      current: s._id.toString() === req.auth.sessionID
+    }));
+    res.status(200).json(formattedSessions);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const revokeSession = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await Session.findOne({ _id: sessionId, user: req.auth.userId, active: true });
+    if (!session) {
+      return res.status(404).json({ message: "Session not found or already revoked" });
+    }
+    
+    session.active = false;
+    session.endedAt = new Date();
+    await session.save();
+
+    res.status(200).json({ message: "Session revoked successfully" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const revokeOtherSessions = async (req, res, next) => {
+  try {
+    await Session.updateMany(
+      { user: req.auth.userId, _id: { $ne: req.auth.sessionID }, active: true },
+      { $set: { active: false, endedAt: new Date() } }
+    );
+    res.status(200).json({ message: "All other sessions revoked successfully" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getApiKeys = async (req, res, next) => {
+  try {
+    const keys = await PersonalAccessToken.find({ user: req.auth.userId, active: true }).sort({ createdAt: -1 });
+    const formattedKeys = keys.map(k => ({
+      id: k._id.toString(),
+      name: k.name,
+      tokenPrefix: k.tokenPrefix,
+      createdAt: k.createdAt.toISOString().split('T')[0],
+      lastUsed: k.lastUsedAt ? "Recent" : "Never"
+    }));
+    res.status(200).json(formattedKeys);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createApiKey = async (req, res, next) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ message: "API key name is required" });
+    }
+
+    const randomHex = crypto.randomBytes(16).toString("hex");
+    const token = `ct_live_${randomHex}`;
+    const tokenPrefix = `${token.substring(0, 12)}...`;
+
+    const newKey = new PersonalAccessToken({
+      user: req.auth.userId,
+      name,
+      token,
+      tokenPrefix,
+      active: true
+    });
+
+    await newKey.save();
+
+    res.status(201).json({
+      message: "API key generated successfully",
+      key: {
+        id: newKey._id.toString(),
+        name: newKey.name,
+        token: token,
+        tokenPrefix: newKey.tokenPrefix,
+        createdAt: newKey.createdAt.toISOString().split('T')[0],
+        lastUsed: "Never"
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const revokeApiKey = async (req, res, next) => {
+  try {
+    const { keyId } = req.params;
+    const key = await PersonalAccessToken.findOne({ _id: keyId, user: req.auth.userId, active: true });
+    if (!key) {
+      return res.status(404).json({ message: "API key not found or already revoked" });
+    }
+
+    key.active = false;
+    await key.save();
+
+    res.status(200).json({ message: "API key revoked successfully" });
   } catch (error) {
     next(error);
   }
