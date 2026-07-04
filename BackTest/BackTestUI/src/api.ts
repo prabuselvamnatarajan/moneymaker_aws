@@ -362,6 +362,22 @@ export const api = {
       });
       return handleResponse<{ items: any[] }>(res);
     },
+
+    async create(tradeData: {
+      account_id: string;
+      symbol: string;
+      price: number;
+      quantity: number;
+      type_of_order: 'BUY' | 'SELL';
+      deployment_id?: string;
+    }) {
+      const res = await fetch(`${BASE_URL}/trades`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(tradeData),
+      });
+      return handleResponse<{ data: any; message: string }>(res);
+    },
   },
 
   // Ledger API
