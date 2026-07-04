@@ -16,6 +16,8 @@ export interface Account {
   commissionType?: 'PERCENTAGE' | 'FLAT';
   commissionRate?: number;
   brokerObj?: Broker;
+  accountType?: 'LIVE' | 'PAPER' | 'SIMULATION';
+  brokerId?: string;
 }
 
 export interface Strategy {

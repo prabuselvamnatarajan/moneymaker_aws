@@ -23,6 +23,8 @@ export function mapAccount(backendAcc: any): Account {
     commissionType: backendAcc.commission_type || 'PERCENTAGE',
     commissionRate: backendAcc.commission_rate || 0,
     brokerObj: backendAcc.broker_id || undefined,
+    accountType: backendAcc.account_type,
+    brokerId: typeof backendAcc.broker_id === 'object' ? backendAcc.broker_id?._id : backendAcc.broker_id,
   };
 }
 

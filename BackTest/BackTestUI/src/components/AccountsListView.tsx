@@ -1,17 +1,14 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, Search, Landmark, ShieldCheck, ShieldAlert, DollarSign, 
-  Activity, ArrowRight, ChevronRight, X, Sparkles 
+  Activity, ArrowRight, ChevronRight, X, Sparkles, Loader2, CheckCircle2
 } from 'lucide-react';
-import { Account } from '../types';
+import { Account, Broker } from '../types';
+import { api } from '../api';
 
 interface AccountsListViewProps {
   accounts: Account[];
+  brokers: Broker[];
   onAddAccount: (newAcc: Account) => void;
   onToggleBrokerStatus: (id: string) => void;
   onNavigateToEntity: (type: 'account', id: string) => void;
@@ -19,6 +16,7 @@ interface AccountsListViewProps {
 
 export default function AccountsListView({
   accounts,
+  brokers: initialBrokers,
   onAddAccount,
   onToggleBrokerStatus,
   onNavigateToEntity
@@ -36,6 +34,45 @@ export default function AccountsListView({
   const [commissionType, setCommissionType] = useState<'PERCENTAGE' | 'FLAT'>('PERCENTAGE');
   const [commissionRate, setCommissionRate] = useState('');
 
+  // Enhanced fields for Type and Broker selection
+  const [accountType, setAccountType] = useState<'LIVE' | 'PAPER' | 'SIMULATION'>('SIMULATION');
+  const [brokerId, setBrokerId] = useState('');
+  const [brokers, setBrokers] = useState<Broker[]>(initialBrokers);
+
+  // Inline broker registration
+  const [showInlineBrokerForm, setShowInlineBrokerForm] = useState(false);
+  const [inlineBrokerName, setInlineBrokerName] = useState('');
+  const [inlineBrokerSubmitting, setInlineBrokerSubmitting] = useState(false);
+  const [inlineBrokerError, setInlineBrokerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setBrokers(initialBrokers);
+  }, [initialBrokers]);
+
+  // Auto-select broker based on account type selection
+  useEffect(() => {
+    if (accountType === 'SIMULATION' || accountType === 'PAPER') {
+      const internalB = brokers.find(b => b.is_internal || b.name === 'Cobra Trades');
+      if (internalB) {
+        setBrokerId(internalB._id);
+        setBroker(internalB.name);
+      }
+    } else {
+      // For LIVE account, select first external broker if any, else default to internal
+      const externalB = brokers.find(b => !b.is_internal && b.name !== 'Cobra Trades');
+      if (externalB) {
+        setBrokerId(externalB._id);
+        setBroker(externalB.name);
+      } else {
+        const internalB = brokers.find(b => b.is_internal || b.name === 'Cobra Trades');
+        if (internalB) {
+          setBrokerId(internalB._id);
+          setBroker(internalB.name);
+        }
+      }
+    }
+  }, [accountType, brokers]);
+
   // Computed metrics
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
   const totalPnl = accounts.reduce((sum, a) => sum + a.pnl, 0);
@@ -47,17 +84,40 @@ export default function AccountsListView({
     a.id.toLowerCase().includes(search.toLowerCase())
   );
 
+  const handleCreateBrokerInline = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inlineBrokerName.trim()) return;
+
+    try {
+      setInlineBrokerSubmitting(true);
+      setInlineBrokerError(null);
+      const res = await api.brokers.create(inlineBrokerName.trim());
+      const newB = res.data;
+      setBrokers(prev => [...prev, newB]);
+      setBrokerId(newB._id);
+      setBroker(newB.name);
+      setInlineBrokerName('');
+      setShowInlineBrokerForm(false);
+    } catch (err: any) {
+      setInlineBrokerError(err.message || 'Failed to register broker');
+    } finally {
+      setInlineBrokerSubmitting(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !broker || !balance) return;
+    if (!name || !brokerId || !balance) return;
 
     const initialVal = parseFloat(balance);
     const marginVal = margin ? parseFloat(margin) : initialVal * 0.7;
 
+    const selectedB = brokers.find(b => b._id === brokerId);
+
     const newAcc: Account = {
       id: `ACC-00${accounts.length + 1}`,
       name,
-      broker,
+      broker: selectedB ? selectedB.name : 'Cobra Trades',
       balance: initialVal,
       margin: marginVal,
       initialBalance: initialVal,
@@ -66,18 +126,20 @@ export default function AccountsListView({
       status,
       commissionType,
       commissionRate: commissionRate ? parseFloat(commissionRate) : 0,
+      accountType,
+      brokerId,
     };
 
     onAddAccount(newAcc);
     
     // Reset form
     setName('');
-    setBroker('');
     setBalance('');
     setMargin('');
     setStatus('connected');
     setCommissionType('PERCENTAGE');
     setCommissionRate('');
+    setAccountType('SIMULATION');
     setShowAddForm(false);
   };
 
@@ -296,15 +358,79 @@ export default function AccountsListView({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">API Broker / Exchange</label>
-                <input
-                  type="text"
-                  required
-                  value={broker}
-                  onChange={(e) => setBroker(e.target.value)}
-                  placeholder="e.g. Interactive Brokers, Binance Pro"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
-                />
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Account Deployment Mode</label>
+                <select
+                  value={accountType}
+                  onChange={(e) => setAccountType(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                >
+                  <option value="SIMULATION">SIMULATION (Paper / Mock Execution)</option>
+                  <option value="PAPER">PAPER (Real-time Live Feed Mock Execution)</option>
+                  <option value="LIVE">LIVE (Real Funds Production Node)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Associated Broker</label>
+                  {accountType === 'LIVE' && (
+                    <button
+                      type="button"
+                      onClick={() => setShowInlineBrokerForm(!showInlineBrokerForm)}
+                      className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold"
+                    >
+                      {showInlineBrokerForm ? 'Cancel New' : '+ Register New Broker'}
+                    </button>
+                  )}
+                </div>
+
+                {showInlineBrokerForm && accountType === 'LIVE' ? (
+                  <div className="p-3 bg-slate-950/60 border border-indigo-950 rounded-lg space-y-2.5 mt-1">
+                    <p className="text-[10px] text-slate-400">Register new external broker instance directly to DB:</p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Broker name, e.g., Zerodha"
+                        value={inlineBrokerName}
+                        onChange={(e) => setInlineBrokerName(e.target.value)}
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-100 placeholder-slate-650 focus:outline-hidden focus:border-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCreateBrokerInline}
+                        disabled={inlineBrokerSubmitting || !inlineBrokerName.trim()}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-md text-xs disabled:opacity-50 flex items-center gap-1 shrink-0"
+                      >
+                        {inlineBrokerSubmitting ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          'Add'
+                        )}
+                      </button>
+                    </div>
+                    {inlineBrokerError && (
+                      <p className="text-[10px] text-rose-400 font-mono">{inlineBrokerError}</p>
+                    )}
+                  </div>
+                ) : (
+                  <select
+                    value={brokerId}
+                    onChange={(e) => setBrokerId(e.target.value)}
+                    disabled={accountType !== 'LIVE'}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500 disabled:opacity-75 disabled:text-slate-500"
+                  >
+                    {brokers.map((b) => (
+                      <option key={b._id} value={b._id}>
+                        {b.name} {b.is_internal ? '(Internal Only)' : '(External)'}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {(accountType === 'SIMULATION' || accountType === 'PAPER') && (
+                  <p className="text-[10px] text-slate-500 mt-1 italic leading-relaxed">
+                    * Paper and Simulation accounts are locked to the internal Cobra Trades brokerage definition. Only LIVE accounts can connect to custom external brokers.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Account, Strategy, SymbolData, Transaction, TransactionFilters, ViewScreen 
+  Account, Strategy, SymbolData, Transaction, TransactionFilters, ViewScreen, Broker
 } from './types';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
@@ -55,6 +55,7 @@ export default function App() {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [brokers, setBrokers] = useState<Broker[]>([]);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -93,6 +94,10 @@ export default function App() {
         })
       );
       setStrategies(mappedStrats);
+
+      // Fetch brokers
+      const brokersRes = await api.brokers.list();
+      setBrokers(brokersRes.items);
 
       // Fetch ledger (mapped as transactions in UI)
       const ledgerRes = await api.ledger.list();
@@ -236,14 +241,16 @@ export default function App() {
     try {
       const res = await api.accounts.create({
         account_name: newAcc.name,
-        account_type: 'SIMULATION',
+        account_type: newAcc.accountType || 'SIMULATION',
         initial_balance: newAcc.initialBalance,
         description: `broker:${newAcc.broker}`,
         commission_type: newAcc.commissionType,
         commission_rate: newAcc.commissionRate,
+        broker_id: newAcc.brokerId,
       });
       const mapped = mapAccount(res.data);
       setAccounts(prev => [...prev, mapped]);
+      loadData();
     } catch (err: any) {
       alert(`Failed to register account: ${err.message}`);
     }
@@ -396,6 +403,7 @@ export default function App() {
         return (
           <AccountsListView
             accounts={accounts}
+            brokers={brokers}
             onAddAccount={handleAddAccount}
             onToggleBrokerStatus={handleToggleBrokerStatus}
             onNavigateToEntity={handleSelectEntity}
