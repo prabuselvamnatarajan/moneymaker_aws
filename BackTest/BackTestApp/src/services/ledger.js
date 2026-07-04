@@ -100,6 +100,13 @@ export const depositBalance = async (userId, accountId, amount, description) => 
   account.current_balance += amount;
   await account.save();
 
+  const Deployment = mongoose.model("Deployment");
+  const manualDeployment = await Deployment.findOne({
+    user_id: userId,
+    account_id: account._id,
+    deployment_name: "Manual"
+  });
+
   const ledgerEntry = new Ledger({
     account_id: account._id,
     user_id: userId,
@@ -107,7 +114,13 @@ export const depositBalance = async (userId, accountId, amount, description) => 
     opening_balance: opening,
     closing_balance: account.current_balance,
     transaction_type: "DEPOSIT",
-    description: description || "Deposit transaction"
+    description: description || "Deposit transaction",
+    ...(manualDeployment ? {
+      deployment_id: manualDeployment._id,
+      strategy_id: manualDeployment.strategy_id,
+      user_symbol_id: manualDeployment.user_symbol_id,
+      symbol: manualDeployment.symbol
+    } : {})
   });
   return await ledgerEntry.save();
 };
@@ -129,6 +142,13 @@ export const withdrawBalance = async (userId, accountId, amount, description) =>
   account.current_balance -= amount;
   await account.save();
 
+  const Deployment = mongoose.model("Deployment");
+  const manualDeployment = await Deployment.findOne({
+    user_id: userId,
+    account_id: account._id,
+    deployment_name: "Manual"
+  });
+
   const ledgerEntry = new Ledger({
     account_id: account._id,
     user_id: userId,
@@ -136,7 +156,13 @@ export const withdrawBalance = async (userId, accountId, amount, description) =>
     opening_balance: opening,
     closing_balance: account.current_balance,
     transaction_type: "WITHDRAW",
-    description: description || "Withdrawal transaction"
+    description: description || "Withdrawal transaction",
+    ...(manualDeployment ? {
+      deployment_id: manualDeployment._id,
+      strategy_id: manualDeployment.strategy_id,
+      user_symbol_id: manualDeployment.user_symbol_id,
+      symbol: manualDeployment.symbol
+    } : {})
   });
   return await ledgerEntry.save();
 };
@@ -171,6 +197,13 @@ export const transferBalance = async (userId, fromAccountId, toAccountId, amount
   fromAccount.current_balance -= amount;
   await fromAccount.save();
 
+  const Deployment = mongoose.model("Deployment");
+  const fromManualDeployment = await Deployment.findOne({
+    user_id: userId,
+    account_id: fromAccount._id,
+    deployment_name: "Manual"
+  });
+
   const fromLedger = new Ledger({
     account_id: fromAccount._id,
     user_id: userId,
@@ -178,7 +211,13 @@ export const transferBalance = async (userId, fromAccountId, toAccountId, amount
     opening_balance: fromOpening,
     closing_balance: fromAccount.current_balance,
     transaction_type: "TRANSFER_OUT",
-    description: description || `Transfer to account: ${toAccount.account_name}`
+    description: description || `Transfer to account: ${toAccount.account_name}`,
+    ...(fromManualDeployment ? {
+      deployment_id: fromManualDeployment._id,
+      strategy_id: fromManualDeployment.strategy_id,
+      user_symbol_id: fromManualDeployment.user_symbol_id,
+      symbol: fromManualDeployment.symbol
+    } : {})
   });
   await fromLedger.save();
 
@@ -187,6 +226,12 @@ export const transferBalance = async (userId, fromAccountId, toAccountId, amount
   toAccount.current_balance += amount;
   await toAccount.save();
 
+  const toManualDeployment = await Deployment.findOne({
+    user_id: userId,
+    account_id: toAccount._id,
+    deployment_name: "Manual"
+  });
+
   const toLedger = new Ledger({
     account_id: toAccount._id,
     user_id: userId,
@@ -194,7 +239,13 @@ export const transferBalance = async (userId, fromAccountId, toAccountId, amount
     opening_balance: toOpening,
     closing_balance: toAccount.current_balance,
     transaction_type: "TRANSFER_IN",
-    description: description || `Transfer from account: ${fromAccount.account_name}`
+    description: description || `Transfer from account: ${fromAccount.account_name}`,
+    ...(toManualDeployment ? {
+      deployment_id: toManualDeployment._id,
+      strategy_id: toManualDeployment.strategy_id,
+      user_symbol_id: toManualDeployment.user_symbol_id,
+      symbol: toManualDeployment.symbol
+    } : {})
   });
   await toLedger.save();
 

@@ -127,7 +127,7 @@ export function mapLedger(backendLedger: any): Transaction {
 
 // Map backend Deployment + Metrics to UI Strategy
 export function mapDeployment(backendDeployment: any, metrics: any = null): Strategy {
-  const winRateStr = metrics?.win_rate || '50.0%';
+  const winRateStr = metrics?.win_rate || '100.0%';
   const winRateVal = parseFloat(winRateStr.replace('%', ''));
 
   let mappedStatus: 'active' | 'paused' | 'stopped' = 'stopped';
@@ -148,7 +148,7 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     status: mappedStatus,
     pnl: metrics?.total_pnl || 0,
     totalTrades: metrics?.total_trades || 0,
-    winRate: isNaN(winRateVal) ? 50.0 : winRateVal,
+    winRate: isNaN(winRateVal) ? 100.0 : winRateVal,
     lastDeployTime: backendDeployment.start_time || backendDeployment.created_at || new Date().toISOString(),
     openPositions: 0, // Fallback placeholder
     symbols: [backendDeployment.symbol || 'NSE_INDEX|Nifty 50'],

@@ -261,9 +261,23 @@ export default function StrategyDetailsView({
             <span className="text-xl font-bold font-mono text-slate-100">
               {strategy.winRate}%
             </span>
-            <span className="text-[10px] text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded font-bold font-mono">
-              High Win Edge
-            </span>
+            {strategy.totalTrades === 0 ? (
+              <span className="text-[10px] text-slate-400 bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-bold font-mono">
+                No Trades Yet
+              </span>
+            ) : strategy.winRate >= 60 ? (
+              <span className="text-[10px] text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded font-bold font-mono">
+                High Win Edge
+              </span>
+            ) : strategy.winRate >= 40 ? (
+              <span className="text-[10px] text-amber-400 bg-amber-950 px-1.5 py-0.5 rounded font-bold font-mono">
+                Moderate Edge
+              </span>
+            ) : (
+              <span className="text-[10px] text-rose-400 bg-rose-950 px-1.5 py-0.5 rounded font-bold font-mono">
+                Low Win Edge
+              </span>
+            )}
           </div>
           <span className="text-[10px] text-slate-500 mt-1 block font-sans">Out of {strategy.totalTrades} historical trades</span>
         </div>
