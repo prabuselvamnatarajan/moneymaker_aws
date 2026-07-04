@@ -309,6 +309,8 @@ export const api = {
       strategy_mode: string;
       deployment_name?: string;
       notes?: string;
+      backtest_date?: string;
+      backtest_speed?: number;
     }) {
       const res = await fetch(`${BASE_URL}/deployments`, {
         method: 'POST',

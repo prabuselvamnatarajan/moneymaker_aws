@@ -5,9 +5,24 @@ import { createClient } from "redis";
 
 const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed"];
 
+const triggerBacktestIfNeeded = (deployment) => {
+  if (deployment.strategy_mode === "BACKTEST" && deployment.current_status === "RUNNING") {
+    const symbolName = deployment.symbol;
+    const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
+    const timeMs = deployment.backtest_speed || 1000;
+    const triggerUrl = `${process.env.BACKTEST_CLIENT_URL || "http://backtest-client"}/?symbolName=${encodeURIComponent(symbolName)}&date=${encodeURIComponent(date)}&time_ms=${timeMs}`;
+    console.log(`[Backtest] Triggering backtest client: ${triggerUrl}`);
+    fetch(triggerUrl)
+      .then(res => res.text())
+      .then(body => console.log(`[Backtest] Trigger response: ${body}`))
+      .catch(err => console.error(`[Backtest] Error triggering backtest: ${err.message}`));
+  }
+};
+
 export const createDeployment = async (userId, deploymentData) => {
   const deployment = new Deployment({ ...deploymentData, user_id: userId });
   const result = await deployment.save();
+  triggerBacktestIfNeeded(result);
   await syncAllDeploymentsToRedis();
   return result;
 };
@@ -98,24 +113,13 @@ export const transitionDeployment = async (userId, id, action) => {
 
   if (action === "start" || action === "restart") {
     deployment.start_time = new Date();
-
-    if (deployment.strategy_mode === "BACKTEST") {
-      const symbolName = deployment.symbol;
-      const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
-      const timeMs = deployment.backtest_speed || 1000;
-      const triggerUrl = `${process.env.BACKTEST_CLIENT_URL || "http://backtest-client"}/?symbolName=${encodeURIComponent(symbolName)}&date=${encodeURIComponent(date)}&time_ms=${timeMs}`;
-      console.log(`[Backtest] Triggering backtest client: ${triggerUrl}`);
-      fetch(triggerUrl)
-        .then(res => res.text())
-        .then(body => console.log(`[Backtest] Trigger response: ${body}`))
-        .catch(err => console.error(`[Backtest] Error triggering backtest: ${err.message}`));
-    }
   }
   if (action === "stop") {
     deployment.end_time = new Date();
   }
 
   await deployment.save();
+  triggerBacktestIfNeeded(deployment);
   await syncAllDeploymentsToRedis();
   return deployment;
 };
@@ -145,25 +149,72 @@ export const getDeploymentMetrics = async (userId, id) => {
   if (!deployment) return null;
 
   const Trade = (await import("../models/trade.js")).default;
-  const trades = await Trade.find({ deployment_id: deployment._id });
+  const trades = await Trade.find({ deployment_id: deployment._id }).sort({ created_at: 1 });
 
   const totalTrades = trades.length;
   let totalPnL = 0;
   let wins = 0;
   let losses = 0;
 
+  let positionSize = 0;
+  let averageEntryPrice = 0;
+
   for (const trade of trades) {
-    const pnl = trade.pnl || 0;
-    totalPnL += pnl;
-    if (pnl > 0) wins++;
-    else if (pnl < 0) losses++;
+    const qty = trade.quantity || 0;
+    const price = trade.price || 0;
+    const isBuy = trade.type_of_order === "BUY";
+    const commission = trade.commission || 0;
+    let pnl = 0;
+
+    if (isBuy) {
+      if (positionSize >= 0) {
+        const newSize = positionSize + qty;
+        averageEntryPrice = newSize > 0 ? (averageEntryPrice * positionSize + price * qty + commission) / newSize : 0;
+        positionSize = newSize;
+      } else {
+        const coveredQty = Math.min(Math.abs(positionSize), qty);
+        pnl = (averageEntryPrice - price) * coveredQty - commission;
+        const remainingQty = qty - coveredQty;
+        positionSize += coveredQty;
+        if (remainingQty > 0) {
+          positionSize = remainingQty;
+          averageEntryPrice = price;
+        } else if (positionSize === 0) {
+          averageEntryPrice = 0;
+        }
+      }
+    } else {
+      if (positionSize <= 0) {
+        const newSize = positionSize - qty;
+        const absNewSize = Math.abs(newSize);
+        averageEntryPrice = absNewSize > 0 ? (averageEntryPrice * Math.abs(positionSize) + price * qty + commission) / absNewSize : 0;
+        positionSize = newSize;
+      } else {
+        const exitedQty = Math.min(positionSize, qty);
+        pnl = (price - averageEntryPrice) * exitedQty - commission;
+        const remainingQty = qty - exitedQty;
+        positionSize -= exitedQty;
+        if (remainingQty > 0) {
+          positionSize = -remainingQty;
+          averageEntryPrice = price;
+        } else if (positionSize === 0) {
+          averageEntryPrice = 0;
+        }
+      }
+    }
+
+    if (pnl !== 0) {
+      totalPnL += pnl;
+      if (pnl > 0) wins++;
+      else if (pnl < 0) losses++;
+    }
   }
 
   return {
     deployment_id: deployment._id,
     current_status: deployment.current_status,
     total_trades: totalTrades,
-    total_pnl: totalPnL,
+    total_pnl: parseFloat(totalPnL.toFixed(2)),
     wins,
     losses,
     win_rate: totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(2) + "%" : "100.00%",

@@ -26,7 +26,6 @@ export default function SymbolsListView({
   const [typeFilter, setTypeFilter] = useState<'all' | 'crypto' | 'equity' | 'forex'>('all');
   
   // Form fields
-  const [ticker, setTicker] = useState('');
   const [name, setName] = useState('');
   const [exchange, setExchange] = useState('NSE');
   const [instrumentToken, setInstrumentToken] = useState('');
@@ -53,17 +52,17 @@ export default function SymbolsListView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticker || !name || !exchange) return;
+    if (!instrumentToken || !name || !exchange) return;
 
     const newSym: SymbolData = {
-      ticker: ticker.trim(),
+      ticker: instrumentToken.trim(),
       name,
       exchange: exchange.toUpperCase(),
       lastPrice: 100.0,
       change24h: 0.0,
       volume24h: 100000,
       instrumentType: (instrumentClass.toLowerCase() === 'equity' || instrumentClass.toLowerCase() === 'index' ? 'equity' : instrumentClass.toLowerCase()) as any,
-      instrumentToken: ticker.trim(),
+      instrumentToken: instrumentToken.trim(),
       description,
       instrumentClass,
     };
@@ -71,7 +70,6 @@ export default function SymbolsListView({
     onAddSymbol(newSym);
     
     // Reset Form
-    setTicker('');
     setName('');
     setExchange('NSE');
     setInstrumentToken('');
@@ -284,12 +282,12 @@ export default function SymbolsListView({
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Ticker Symbol</label>
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Token</label>
                   <input
                     type="text"
                     required
-                    value={ticker}
-                    onChange={(e) => setTicker(e.target.value)}
+                    value={instrumentToken}
+                    onChange={(e) => setInstrumentToken(e.target.value)}
                     placeholder="e.g. INFy, AAPL, BTC/USD"
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
                   />

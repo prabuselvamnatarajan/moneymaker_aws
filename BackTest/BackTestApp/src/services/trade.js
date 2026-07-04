@@ -79,25 +79,78 @@ export const createTrade = async (tradeData) => {
     const change_in_balance = type_of_order === "BUY" ? -(tradeValue + commission) : (tradeValue - commission);
     const closing_balance = opening_balance + change_in_balance;
 
+    // Calculate P&L using chronological position-based simulation of previous trades
     let pnl = 0;
-    if (type_of_order === "SELL") {
-      const buyQuery = {
-        symbol: tradeData.symbol,
-        type_of_order: "BUY",
-      };
-      if (tradeData.deployment_id) {
-        buyQuery.deployment_id = tradeData.deployment_id;
-      } else {
-        buyQuery.account_id = account._id;
-      }
-      const lastBuyTrade = await Trade.findOne(buyQuery)
-        .sort({ created_at: -1 })
-        .session(session);
+    const prevTradesQuery = {};
+    if (tradeData.deployment_id) {
+      prevTradesQuery.deployment_id = tradeData.deployment_id;
+    } else {
+      prevTradesQuery.account_id = account._id;
+      prevTradesQuery.symbol = tradeData.symbol;
+    }
 
-      if (lastBuyTrade) {
-        const buyCost = lastBuyTrade.price * quantity + (lastBuyTrade.commission || 0);
-        const sellRevenue = price * quantity - commission;
-        pnl = parseFloat((sellRevenue - buyCost).toFixed(2));
+    const prevTrades = await Trade.find(prevTradesQuery)
+      .sort({ created_at: 1 })
+      .session(session);
+
+    let positionSize = 0;
+    let averageEntryPrice = 0;
+
+    for (const t of prevTrades) {
+      const qty = t.quantity || 0;
+      const priceVal = t.price || 0;
+      const isBuy = t.type_of_order === "BUY";
+      const comm = t.commission || 0;
+
+      if (isBuy) {
+        if (positionSize >= 0) {
+          const newSize = positionSize + qty;
+          averageEntryPrice = newSize > 0 ? (averageEntryPrice * positionSize + priceVal * qty + comm) / newSize : 0;
+          positionSize = newSize;
+        } else {
+          const coveredQty = Math.min(Math.abs(positionSize), qty);
+          const remainingQty = qty - coveredQty;
+          positionSize += coveredQty;
+          if (remainingQty > 0) {
+            positionSize = remainingQty;
+            averageEntryPrice = priceVal;
+          } else if (positionSize === 0) {
+            averageEntryPrice = 0;
+          }
+        }
+      } else {
+        if (positionSize <= 0) {
+          const newSize = positionSize - qty;
+          const absNewSize = Math.abs(newSize);
+          averageEntryPrice = absNewSize > 0 ? (averageEntryPrice * Math.abs(positionSize) + priceVal * qty + comm) / absNewSize : 0;
+          positionSize = newSize;
+        } else {
+          const exitedQty = Math.min(positionSize, qty);
+          const remainingQty = qty - exitedQty;
+          positionSize -= exitedQty;
+          if (remainingQty > 0) {
+            positionSize = -remainingQty;
+            averageEntryPrice = priceVal;
+          } else if (positionSize === 0) {
+            averageEntryPrice = 0;
+          }
+        }
+      }
+    }
+
+    // Now calculate P&L of the current trade
+    const isBuy = type_of_order === "BUY";
+    if (isBuy) {
+      if (positionSize < 0) {
+        // Covering short position
+        const coveredQty = Math.min(Math.abs(positionSize), quantity);
+        pnl = parseFloat(((averageEntryPrice - price) * coveredQty - commission).toFixed(2));
+      }
+    } else {
+      if (positionSize > 0) {
+        // Exiting long position
+        const exitedQty = Math.min(positionSize, quantity);
+        pnl = parseFloat(((price - averageEntryPrice) * exitedQty - commission).toFixed(2));
       }
     }
 

@@ -70,8 +70,7 @@ export default function StrategiesListView({
 
     let targetStrategyName = '';
     if (selectedStrategyId === 'NEW') {
-      if (!name) return;
-      targetStrategyName = name;
+      targetStrategyName = deploymentName;
     } else {
       const found = strategyDefinitions.find(s => s._id === selectedStrategyId);
       targetStrategyName = found ? found.strategy_name : 'Algorithmic Strategy';
@@ -344,19 +343,6 @@ export default function StrategiesListView({
                 </select>
               </div>
 
-              {selectedStrategyId === 'NEW' && (
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strategy Model Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Bollinger Bands MACD Scalp v1"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
-                  />
-                </div>
-              )}
 
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Deployment Display Name (User-friendly)</label>

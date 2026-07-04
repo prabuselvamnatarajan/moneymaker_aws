@@ -84,7 +84,7 @@ function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: 
 
 // ─── Single Toast Item ────────────────────────────────────────────────────────
 
-function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
+function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void; key?: string }) {
   const isError = toast.type === 'error';
 
   const baseStyle: React.CSSProperties = {
