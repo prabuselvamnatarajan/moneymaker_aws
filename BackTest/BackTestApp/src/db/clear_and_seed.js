@@ -8,6 +8,7 @@ import UserSymbol from "../models/userSymbol.js";
 import Deployment from "../models/deployment.js";
 import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
+import Broker from "../models/broker.js";
 import { syncAllDeploymentsToRedis } from "../services/deployment.js";
 
 const PermissionSchema = new mongoose.Schema({
@@ -33,6 +34,7 @@ export const clearAndSeedDB = async () => {
     // Clear collections
     await User.deleteMany({});
     await Account.deleteMany({});
+    await Broker.deleteMany({});
     await Strategy.deleteMany({});
     await UserSymbol.deleteMany({});
     await Deployment.deleteMany({});
@@ -94,7 +96,7 @@ export const clearAndSeedDB = async () => {
     const hashedAdminPassword = await bcrypt.hash("adminpassword123", 10);
     const adminUser = new User({
       username: "admin",
-      email: "admin@moneymaker.com",
+      email: "admin@cobratrades.com",
       password: hashedAdminPassword,
       name: "Admin User",
       roles: [adminRole._id],
@@ -105,7 +107,7 @@ export const clearAndSeedDB = async () => {
     const hashedUserPassword = await bcrypt.hash("userpassword123", 10);
     const standardUser = new User({
       username: "standarduser",
-      email: "user@moneymaker.com",
+      email: "user@cobratrades.com",
       password: hashedUserPassword,
       name: "Standard User",
       roles: [userRole._id],
@@ -113,6 +115,17 @@ export const clearAndSeedDB = async () => {
     });
     await standardUser.save();
     console.log("Created users.");
+
+    // Seed brokers
+    const internalBroker = new Broker({ name: "Cobra Trades", is_internal: true });
+    await internalBroker.save();
+
+    const interactiveBroker = new Broker({ name: "Interactive Brokers" });
+    await interactiveBroker.save();
+
+    const zerodhaBroker = new Broker({ name: "Zerodha" });
+    await zerodhaBroker.save();
+    console.log("Created brokers.");
 
     // 4. Create accounts
     const accountsData = [
@@ -123,7 +136,8 @@ export const clearAndSeedDB = async () => {
         initial_balance: 10000000,
         current_balance: 10002500,
         description: "Primary simulation environment for testing strategies",
-        is_active: true
+        is_active: true,
+        broker_id: internalBroker._id
       },
       {
         user_id: standardUser._id,
@@ -132,7 +146,8 @@ export const clearAndSeedDB = async () => {
         initial_balance: 5000000,
         current_balance: 5000000,
         description: "Secondary paper trading account",
-        is_active: true
+        is_active: true,
+        broker_id: internalBroker._id
       },
       {
         user_id: adminUser._id,
@@ -141,7 +156,8 @@ export const clearAndSeedDB = async () => {
         initial_balance: 25000000,
         current_balance: 25000000,
         description: "Admin production trading account",
-        is_active: true
+        is_active: true,
+        broker_id: zerodhaBroker._id
       },
       {
         user_id: adminUser._id,
@@ -150,7 +166,8 @@ export const clearAndSeedDB = async () => {
         initial_balance: 7500000,
         current_balance: 7500000,
         description: "Admin paper testing account",
-        is_active: true
+        is_active: true,
+        broker_id: internalBroker._id
       }
     ];
     const seededAccounts = await Account.insertMany(accountsData);

@@ -87,35 +87,35 @@ export const seedDB = async () => {
       );
     }
 
-    let adminUser = await User.findOne({ email: "admin@moneymaker.com" });
+    let adminUser = await User.findOne({ email: "admin@cobratrades.com" });
     if (!adminUser) {
       const hashedAdminPassword = await bcrypt.hash(adminPassword, 10);
       adminUser = new User({
         username: "admin",
-        email: "admin@moneymaker.com",
+        email: "admin@cobratrades.com",
         password: hashedAdminPassword,
         name: "Admin User",
         roles: [adminRole._id],
         is_active: true
       });
       await adminUser.save();
-      console.log("Admin user created (admin@moneymaker.com).");
+      console.log("Admin user created (admin@cobratrades.com).");
     }
 
     // 4. Create standard user
-    let standardUser = await User.findOne({ email: "user@moneymaker.com" });
+    let standardUser = await User.findOne({ email: "user@cobratrades.com" });
     if (!standardUser) {
       const hashedUserPassword = await bcrypt.hash(userPassword, 10);
       standardUser = new User({
         username: "standarduser",
-        email: "user@moneymaker.com",
+        email: "user@cobratrades.com",
         password: hashedUserPassword,
         name: "Standard User",
         roles: [userRole._id],
         is_active: true
       });
       await standardUser.save();
-      console.log("Standard user created (user@moneymaker.com).");
+      console.log("Standard user created (user@cobratrades.com).");
     }
 
     console.log("✅ Database seeding completed successfully!");

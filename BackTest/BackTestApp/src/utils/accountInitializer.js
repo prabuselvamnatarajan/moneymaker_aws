@@ -1,5 +1,6 @@
 import Account from "../models/account.js";
 import Strategy from "../models/strategy.js";
+import Broker from "../models/broker.js";
 
 /**
  * Initializes predefined accounts (paper and simulation) and strategies for a new user.
@@ -8,6 +9,11 @@ import Strategy from "../models/strategy.js";
 export const initializeUserAccounts = async (userId) => {
   if (!userId) return;
 
+  let internalBroker = await Broker.findOne({ is_internal: true });
+  if (!internalBroker) {
+    internalBroker = await Broker.create({ name: "Cobra Trades", is_internal: true });
+  }
+
   const predefinedAccounts = [
     {
       account_name: "paper",
@@ -15,7 +21,8 @@ export const initializeUserAccounts = async (userId) => {
       initial_balance: 100000,
       current_balance: 100000,
       description: "Predefined paper trading account",
-      is_active: true
+      is_active: true,
+      broker_id: internalBroker._id,
     },
     {
       account_name: "simulation",
@@ -23,7 +30,8 @@ export const initializeUserAccounts = async (userId) => {
       initial_balance: 100000,
       current_balance: 100000,
       description: "Predefined simulation trading account",
-      is_active: true
+      is_active: true,
+      broker_id: internalBroker._id,
     }
   ];
 
