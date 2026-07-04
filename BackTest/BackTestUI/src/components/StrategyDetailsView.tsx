@@ -43,6 +43,81 @@ export default function StrategyDetailsView({
 
   const isPositive = strategy.pnl >= 0;
 
+  // Reconstruct active positions from transaction history for this specific strategy
+  const calculatedPositions = React.useMemo(() => {
+    const tradeTxs = filteredTxs.filter((tx) => tx.transactionType === 'TRADE');
+    const assetGroups: Record<string, { size: number; totalCost: number }> = {};
+
+    const sortedTrades = [...tradeTxs].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    sortedTrades.forEach((tx) => {
+      const symbol = tx.symbol || 'UNKNOWN';
+      const qty = tx.quantity || 0;
+      const price = tx.price || 0;
+      const isBuy = tx.type === 'BUY';
+
+      if (!assetGroups[symbol]) {
+        assetGroups[symbol] = { size: 0, totalCost: 0 };
+      }
+
+      const group = assetGroups[symbol];
+
+      if (isBuy) {
+        const newSize = group.size + qty;
+        if (newSize > 0) {
+          group.totalCost = (group.totalCost * group.size + price * qty) / newSize;
+        } else {
+          group.totalCost = 0;
+        }
+        group.size = newSize;
+      } else {
+        const newSize = group.size - qty;
+        if (newSize <= 0) {
+          group.totalCost = 0;
+          group.size = 0;
+        } else {
+          group.size = newSize;
+        }
+      }
+    });
+
+    return Object.keys(assetGroups)
+      .map((ticker) => {
+        const group = assetGroups[ticker];
+        const currentPrice = 100.0; // Fallback price
+        const marketValue = group.size * currentPrice;
+        const totalCost = group.size * group.totalCost;
+        const pnl = parseFloat((marketValue - totalCost).toFixed(2));
+
+        return {
+          ticker,
+          size: group.size,
+          avgEntry: parseFloat(group.totalCost.toFixed(2)),
+          currentPrice,
+          marketValue: parseFloat(marketValue.toFixed(2)),
+          pnl,
+        };
+      })
+      .filter((pos) => pos.size > 0);
+  }, [filteredTxs]);
+
+  const getMockPositions = () => {
+    if (strategy.id.includes('MeanReversion') || strategy.name.toLowerCase().includes('mean reversion')) {
+      return [
+        { ticker: 'NSE_INDEX|Nifty 50', size: 50, avgEntry: 24300.00, currentPrice: 24350.00, marketValue: 1217500, pnl: 2500 },
+      ];
+    } else if (strategy.id.includes('Momentum') || strategy.name.toLowerCase().includes('momentum')) {
+      return [
+        { ticker: 'NSE_INDEX|Nifty Bank', size: 25, avgEntry: 52000.00, currentPrice: 52100.00, marketValue: 1302500, pnl: 2500 },
+      ];
+    }
+    return [];
+  };
+
+  const positions = calculatedPositions.length > 0 ? calculatedPositions : getMockPositions();
+
   const formatDate = (isoString: string) => {
     try {
       const date = new Date(isoString);
@@ -238,38 +313,53 @@ export default function StrategyDetailsView({
           </div>
         </div>
 
-        {/* Server Deployments Telemetry (Visual representation) */}
+        {/* Strategy Portfolio Positions */}
         <div className="md:col-span-2 bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4">
           <div>
-            <h3 className="text-sm font-bold text-slate-200">Container Deployment Clusters</h3>
-            <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Active cloud engines running container workloads of this algorithm.</p>
+            <h3 className="text-sm font-bold text-slate-200">Strategy Portfolio Positions</h3>
+            <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Security holdings and exposures managed dynamically by this algorithm.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg flex items-start gap-3">
-              <span className={`w-2.5 h-2.5 rounded-full mt-1 ${strategy.status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
-              <div>
-                <h4 className="text-xs font-bold text-slate-200 font-mono">AWS-US-EAST-2 (PROD-01)</h4>
-                <p className="text-[10px] text-slate-500 font-sans mt-0.5">Primary execution node. Region latency: 12ms.</p>
-                <div className="mt-3 flex gap-2 font-mono text-[9px]">
-                  <span className="bg-slate-950 text-slate-400 border border-slate-800 px-1.5 py-0.5 rounded">CPU: 4.2%</span>
-                  <span className="bg-slate-950 text-slate-400 border border-slate-800 px-1.5 py-0.5 rounded">MEM: 124MB</span>
-                </div>
-              </div>
+          {positions.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-sans divide-y divide-slate-850 border border-slate-800 rounded-lg overflow-hidden">
+                <thead className="bg-slate-900/50 text-slate-500 uppercase font-semibold font-mono text-[10px] border-b border-slate-800">
+                  <tr>
+                    <th className="p-3">Asset</th>
+                    <th className="p-3 text-right">Size</th>
+                    <th className="p-3 text-right">Avg Cost</th>
+                    <th className="p-3 text-right">Current Price</th>
+                    <th className="p-3 text-right">Market Value</th>
+                    <th className="p-3 text-right">Unrealized profit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/50">
+                  {positions.map((pos) => {
+                    const posGain = pos.pnl >= 0;
+                    return (
+                      <tr key={pos.ticker} className="hover:bg-indigo-600/5 transition-colors">
+                        <td className="p-3 font-bold font-mono text-slate-200">{pos.ticker}</td>
+                        <td className="p-3 text-right text-slate-300 font-mono">{pos.size}</td>
+                        <td className="p-3 text-right text-slate-400 font-mono">₹{pos.avgEntry.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="p-3 text-right text-slate-200 font-mono">₹{pos.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="p-3 text-right text-slate-300 font-mono font-semibold">₹{pos.marketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className={`p-3 text-right font-mono font-bold ${posGain ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {posGain ? '+' : ''}₹{pos.pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg flex items-start gap-3">
-              <span className={`w-2.5 h-2.5 rounded-full mt-1 ${strategy.status === 'active' ? 'bg-indigo-500 animate-pulse' : 'bg-slate-600'}`} />
-              <div>
-                <h4 className="text-xs font-bold text-slate-200 font-mono">GCP-EUROPE-WEST-1 (STANDBY)</h4>
-                <p className="text-[10px] text-slate-500 font-sans mt-0.5">High availability standby. Hot-swap synchronized.</p>
-                <div className="mt-3 flex gap-2 font-mono text-[9px]">
-                  <span className="bg-slate-950 text-slate-400 border border-slate-800 px-1.5 py-0.5 rounded">CPU: 1.1%</span>
-                  <span className="bg-slate-950 text-slate-400 border border-slate-800 px-1.5 py-0.5 rounded">MEM: 82MB</span>
-                </div>
-              </div>
+          ) : (
+            <div className="p-8 text-center text-slate-500 bg-slate-900/10 border border-slate-800/40 rounded-lg">
+              <p className="text-xs font-semibold">No active exposed positions currently loaded</p>
+              <p className="text-[11px] text-slate-605 mt-1">
+                This strategy does not have any active inventory positions allocated.
+              </p>
             </div>
-          </div>
+          )}
         </div>
 
       </div>

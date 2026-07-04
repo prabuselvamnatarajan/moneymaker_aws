@@ -87,6 +87,19 @@ export default function Sidebar({
             <TableProperties className="w-4 h-4 text-emerald-400" />
             <span>Transactions Ledger</span>
           </button>
+
+          <button
+            id="nav-brokers-btn"
+            onClick={() => onNavigate('brokers-list')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-semibold transition-all ${
+              activeScreen === 'brokers-list' 
+                ? 'bg-slate-900 text-white shadow-xs border-l-2 border-indigo-500 pl-2.5' 
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+            }`}
+          >
+            <Globe className="w-4 h-4 text-amber-400" />
+            <span>Brokers Directory</span>
+          </button>
         </div>
 
         {/* Quick Lists / Drilldown Shortcuts */}

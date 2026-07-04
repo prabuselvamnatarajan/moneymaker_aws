@@ -119,6 +119,54 @@ export default function DashboardView({
     return activeStrats.reduce((acc, s) => acc + s.winRate, 0) / activeStrats.length;
   }, [strategies]);
 
+  const chartData = useMemo(() => {
+    if (!transactions || transactions.length === 0) {
+      return PERFORMANCE_HISTORY;
+    }
+
+    const sortedTx = [...transactions]
+      .filter(tx => tx.transactionType === 'TRADE')
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    if (sortedTx.length === 0) {
+      return PERFORMANCE_HISTORY;
+    }
+
+    const strategyPnls: Record<string, number> = {};
+    const points: any[] = [];
+
+    strategies.forEach(s => {
+      strategyPnls[s.id] = 0;
+    });
+
+    // Add starting point
+    const startPoint: any = { time: 'Start' };
+    strategies.forEach(s => {
+      startPoint[s.name.replace(/\s+/g, '')] = 0;
+    });
+    points.push(startPoint);
+
+    sortedTx.forEach((tx) => {
+      const stratId = tx.strategyId;
+      if (stratId) {
+        const change = tx.changeInBalance || 0;
+        strategyPnls[stratId] = (strategyPnls[stratId] || 0) + change;
+      }
+      
+      const date = new Date(tx.timestamp);
+      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      const point: any = { time: timeStr };
+      strategies.forEach(s => {
+        const cleanName = s.name.replace(/\s+/g, '');
+        point[cleanName] = parseFloat((strategyPnls[s.id] || 0).toFixed(2));
+      });
+      points.push(point);
+    });
+
+    return points;
+  }, [transactions, strategies]);
+
   // Handle manual order placement
   const handlePlaceOrder = (e: React.FormEvent) => {
     e.preventDefault();
@@ -310,23 +358,12 @@ export default function DashboardView({
               </span>
             </div>
 
-            {/* Recharts Temporal Progression */}
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
-                  data={PERFORMANCE_HISTORY}
+                  data={chartData}
                   margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                 >
-                  <defs>
-                    <linearGradient id="pnlMeanReversion" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#818cf8" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="pnlMomentum" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                   <XAxis 
                     dataKey="time" 
@@ -347,24 +384,23 @@ export default function DashboardView({
                     labelStyle={{ fontFamily: 'monospace', color: '#94a3b8', fontSize: '11px' }}
                     itemStyle={{ fontSize: '11px', fontFamily: 'sans-serif' }}
                   />
-                  <Area 
-                    name="Mean Reversion"
-                    type="monotone" 
-                    dataKey="MeanReversion" 
-                    stroke="#818cf8" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#pnlMeanReversion)" 
-                  />
-                  <Area 
-                    name="Momentum Scalper"
-                    type="monotone" 
-                    dataKey="Momentum" 
-                    stroke="#10b981" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#pnlMomentum)" 
-                  />
+                  {strategies.map((s, idx) => {
+                    const cleanName = s.name.replace(/\s+/g, '');
+                    const colors = ['#818cf8', '#10b981', '#fbbf24', '#f87171', '#22d3ee', '#a78bfa'];
+                    const color = colors[idx % colors.length];
+                    return (
+                      <Area 
+                        key={s.id}
+                        name={s.name}
+                        type="monotone" 
+                        dataKey={cleanName} 
+                        stroke={color} 
+                        strokeWidth={2}
+                        fillOpacity={0.05} 
+                        fill={color}
+                      />
+                    );
+                  })}
                 </AreaChart>
               </ResponsiveContainer>
             </div>

@@ -198,6 +198,7 @@ export const api = {
       description?: string;
       commission_type?: 'PERCENTAGE' | 'FLAT';
       commission_rate?: number;
+      broker_id?: string;
     }) {
       const res = await fetch(`${BASE_URL}/accounts`, {
         method: 'POST',
@@ -213,6 +214,7 @@ export const api = {
       is_active?: boolean;
       commission_type?: 'PERCENTAGE' | 'FLAT';
       commission_rate?: number;
+      broker_id?: string;
     }) {
       const res = await fetch(`${BASE_URL}/accounts/${id}`, {
         method: 'PATCH',
@@ -408,6 +410,53 @@ export const api = {
         headers: getHeaders(),
       });
       return handleResponse<{ items: any[] }>(res);
+    },
+
+    async deposit(accountId: string, amount: number, description?: string) {
+      const res = await fetch(`${BASE_URL}/ledger/deposit`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ accountId, amount, description }),
+      });
+      return handleResponse<{ data: any; message: string }>(res);
+    },
+
+    async withdraw(accountId: string, amount: number, description?: string) {
+      const res = await fetch(`${BASE_URL}/ledger/withdraw`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ accountId, amount, description }),
+      });
+      return handleResponse<{ data: any; message: string }>(res);
+    },
+
+    async transfer(fromAccountId: string, toAccountId: string, amount: number, description?: string) {
+      const res = await fetch(`${BASE_URL}/ledger/transfer`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ fromAccountId, toAccountId, amount, description }),
+      });
+      return handleResponse<{ data: any; message: string }>(res);
+    },
+  },
+
+  // Brokers API
+  brokers: {
+    async list() {
+      const res = await fetch(`${BASE_URL}/brokers`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    async create(name: string) {
+      const res = await fetch(`${BASE_URL}/brokers`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      return handleResponse<{ data: any; message: string }>(res);
     },
   },
 };

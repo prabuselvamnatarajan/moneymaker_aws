@@ -11,8 +11,11 @@ import {
 import { Account, Transaction, Strategy } from '../types';
 import TransactionList from './TransactionList';
 
+import { api } from '../api';
+
 interface AccountDetailsViewProps {
   account: Account;
+  accounts: Account[];
   transactions: Transaction[];
   strategies: Strategy[];
   onBackToDashboard: () => void;
@@ -20,10 +23,12 @@ interface AccountDetailsViewProps {
   onSelectTransaction: (tx: Transaction) => void;
   onDrilldownToTransactions: (filterKey: 'accountId', filterValue: string) => void;
   timezone: string;
+  onRefreshData?: () => void;
 }
 
 export default function AccountDetailsView({
   account,
+  accounts,
   transactions,
   strategies,
   onBackToDashboard,
@@ -31,15 +36,122 @@ export default function AccountDetailsView({
   onSelectTransaction,
   onDrilldownToTransactions,
   timezone,
+  onRefreshData,
 }: AccountDetailsViewProps) {
 
   // Filter transactions belonging to this account
   const filteredTxs = transactions.filter((tx) => tx.accountId === account.id);
 
-  const isPositive = account.pnl >= 0;
-  const isConnected = account.status === 'connected';
+  // Form states for ledger balance management
+  const [manageType, setManageType] = React.useState<'DEPOSIT' | 'WITHDRAW' | 'TRANSFER'>('DEPOSIT');
+  const [amount, setAmount] = React.useState('');
+  const [description, setDescription] = React.useState('');
+  const [targetAccountId, setTargetAccountId] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
-  // Generate mock active positions based on account type to make the view feel rich
+  // Reconstruct active positions from transaction history
+  const calculatedPositions = React.useMemo(() => {
+    const tradeTxs = filteredTxs.filter((tx) => tx.transactionType === 'TRADE');
+    const assetGroups: Record<string, { size: number; totalCost: number }> = {};
+
+    const sortedTrades = [...tradeTxs].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    sortedTrades.forEach((tx) => {
+      const symbol = tx.symbol || 'UNKNOWN';
+      const qty = tx.quantity || 0;
+      const price = tx.price || 0;
+      const isBuy = tx.type === 'BUY';
+
+      if (!assetGroups[symbol]) {
+        assetGroups[symbol] = { size: 0, totalCost: 0 };
+      }
+
+      const group = assetGroups[symbol];
+
+      if (isBuy) {
+        const newSize = group.size + qty;
+        if (newSize > 0) {
+          group.totalCost = (group.totalCost * group.size + price * qty) / newSize;
+        } else {
+          group.totalCost = 0;
+        }
+        group.size = newSize;
+      } else {
+        const newSize = group.size - qty;
+        if (newSize <= 0) {
+          group.totalCost = 0;
+          group.size = 0;
+        } else {
+          group.size = newSize;
+        }
+      }
+    });
+
+    return Object.keys(assetGroups)
+      .map((ticker) => {
+        const group = assetGroups[ticker];
+        const currentPrice = 100.0; // Fallback price
+        const marketValue = group.size * currentPrice;
+        const totalCost = group.size * group.totalCost;
+        const pnl = parseFloat((marketValue - totalCost).toFixed(2));
+
+        return {
+          ticker,
+          size: group.size,
+          avgEntry: parseFloat(group.totalCost.toFixed(2)),
+          currentPrice,
+          marketValue: parseFloat(marketValue.toFixed(2)),
+          pnl,
+        };
+      })
+      .filter((pos) => pos.size > 0);
+  }, [filteredTxs]);
+
+  const handleBalanceManage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseFloat(amount);
+    if (isNaN(val) || val <= 0) {
+      setErrorMsg('Please specify a valid numeric amount greater than zero.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setErrorMsg(null);
+      setSuccessMsg(null);
+
+      if (manageType === 'DEPOSIT') {
+        await api.ledger.deposit(account.id, val, description);
+        setSuccessMsg(`Successfully deposited ₹${val.toLocaleString()} to ${account.name}.`);
+      } else if (manageType === 'WITHDRAW') {
+        await api.ledger.withdraw(account.id, val, description);
+        setSuccessMsg(`Successfully withdrew ₹${val.toLocaleString()} from ${account.name}.`);
+      } else if (manageType === 'TRANSFER') {
+        if (!targetAccountId) {
+          setErrorMsg('Please select a destination account.');
+          setLoading(false);
+          return;
+        }
+        await api.ledger.transfer(account.id, targetAccountId, val, description);
+        setSuccessMsg(`Successfully transferred ₹${val.toLocaleString()} to destination account.`);
+      }
+
+      setAmount('');
+      setDescription('');
+      if (onRefreshData) {
+        onRefreshData();
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Ledger action failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getMockPositions = () => {
     if (account.id === 'ACC-001') {
       return [
@@ -55,10 +167,12 @@ export default function AccountDetailsView({
         { ticker: 'NSE_INDEX|Nifty Bank', size: 25, avgEntry: 52000.00, currentPrice: 52100.00, marketValue: 1302500, pnl: 2500 },
       ];
     }
-    return []; // Disconnected or options account
+    return [];
   };
 
-  const positions = getMockPositions();
+  const positions = calculatedPositions.length > 0 ? calculatedPositions : getMockPositions();
+  const isPositive = account.pnl >= 0;
+  const isConnected = account.status === 'connected';
 
   return (
     <div className="space-y-6">
@@ -176,53 +290,149 @@ export default function AccountDetailsView({
         </div>
       </div>
 
-      {/* Active Portfolio Positions holdings table */}
-      <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4 font-sans">
-        <div>
-          <h3 className="text-sm font-bold text-slate-200">Active Live Portfolio Positions</h3>
-          <p className="text-[10px] text-slate-500 mt-0.5">Aggregated security inventory currently exposed in the market.</p>
+      {/* Active Portfolio Positions & Balance Management Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-sans">
+        {/* Active Portfolio Positions holdings table (2 columns) */}
+        <div className="lg:col-span-2 bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-slate-200">Active Live Portfolio Positions</h3>
+            <p className="text-[10px] text-slate-500 mt-0.5">Aggregated security inventory currently exposed in the market.</p>
+          </div>
+
+          {positions.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-sans divide-y divide-slate-850 border border-slate-800 rounded-lg overflow-hidden">
+                <thead className="bg-slate-900/50 text-slate-500 uppercase font-semibold font-mono text-[10px] border-b border-slate-800">
+                  <tr>
+                    <th className="p-3">Asset</th>
+                    <th className="p-3 text-right">Size</th>
+                    <th className="p-3 text-right">Avg Cost</th>
+                    <th className="p-3 text-right">Current Price</th>
+                    <th className="p-3 text-right">Market Value</th>
+                    <th className="p-3 text-right">Unrealized profit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/50">
+                  {positions.map((pos) => {
+                    const posGain = pos.pnl >= 0;
+                    return (
+                      <tr key={pos.ticker} className="hover:bg-indigo-600/5 transition-colors">
+                        <td className="p-3 font-bold font-mono text-slate-200">{pos.ticker}</td>
+                        <td className="p-3 text-right text-slate-300 font-mono">{pos.size}</td>
+                        <td className="p-3 text-right text-slate-400 font-mono">₹{pos.avgEntry.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="p-3 text-right text-slate-200 font-mono">₹{pos.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className="p-3 text-right text-slate-300 font-mono font-semibold">₹{pos.marketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td className={`p-3 text-right font-mono font-bold ${posGain ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {posGain ? '+' : ''}₹{pos.pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-8 text-center text-slate-500 bg-slate-900/10 border border-slate-800/40 rounded-lg">
+              <p className="text-xs font-semibold">No active exposed positions currently loaded</p>
+              <p className="text-[11px] text-slate-600 mt-1">
+                {isConnected ? 'No strategy signals have deployed inventory allocation yet.' : 'Please authorize the broker API first to fetch active inventories.'}
+              </p>
+            </div>
+          )}
         </div>
 
-        {positions.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-sans divide-y divide-slate-850 border border-slate-800 rounded-lg overflow-hidden">
-              <thead className="bg-slate-900/50 text-slate-500 uppercase font-semibold font-mono text-[10px] border-b border-slate-800">
-                <tr>
-                  <th className="p-3">Asset</th>
-                  <th className="p-3 text-right">Size</th>
-                  <th className="p-3 text-right">Avg Cost</th>
-                  <th className="p-3 text-right">Current Price</th>
-                  <th className="p-3 text-right">Market Value</th>
-                  <th className="p-3 text-right">Unrealized profit</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/50">
-                {positions.map((pos) => {
-                  const posGain = pos.pnl >= 0;
-                  return (
-                    <tr key={pos.ticker} className="hover:bg-indigo-600/5 transition-colors">
-                      <td className="p-3 font-bold font-mono text-slate-200">{pos.ticker}</td>
-                      <td className="p-3 text-right text-slate-300 font-mono">{pos.size}</td>
-                      <td className="p-3 text-right text-slate-400 font-mono">₹{pos.avgEntry.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      <td className="p-3 text-right text-slate-200 font-mono">₹{pos.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      <td className="p-3 text-right text-slate-300 font-mono font-semibold">₹{pos.marketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      <td className={`p-3 text-right font-mono font-bold ${posGain ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {posGain ? '+' : ''}₹{pos.pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        {/* Balance Management Console (1 column) */}
+        <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4 flex flex-col justify-between">
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-200">Balance Management</h3>
+              <p className="text-[10px] text-slate-500 mt-0.5">Modify account equity blocks via deposit, withdraw, or transfer.</p>
+            </div>
+
+            {successMsg && (
+              <div className="p-3 bg-emerald-950/70 border border-emerald-500/30 text-[11px] text-emerald-400 rounded-lg">
+                {successMsg}
+              </div>
+            )}
+
+            {errorMsg && (
+              <div className="p-3 bg-rose-950/70 border border-rose-500/30 text-[11px] text-rose-400 rounded-lg">
+                {errorMsg}
+              </div>
+            )}
+
+            {/* Toggle tabs for Deposit / Withdraw / Transfer */}
+            <div className="grid grid-cols-3 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+              {(['DEPOSIT', 'WITHDRAW', 'TRANSFER'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    setManageType(t);
+                    setSuccessMsg(null);
+                    setErrorMsg(null);
+                  }}
+                  className={`py-1.5 rounded-md text-[10px] font-mono font-bold transition-all ${
+                    manageType === t 
+                      ? 'bg-indigo-600 text-white' 
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={handleBalanceManage} className="space-y-3.5 text-xs text-slate-300">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-semibold">Amount (INR)</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-md p-2 text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                />
+              </div>
+
+              {manageType === 'TRANSFER' && (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-semibold">Destination Account</label>
+                  <select
+                    value={targetAccountId}
+                    onChange={(e) => setTargetAccountId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-md p-2 text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                  >
+                    <option value="">Select Account...</option>
+                    {accounts.filter(a => a.id !== account.id).map(a => (
+                      <option key={a.id} value={a.id}>{a.name} (₹{a.balance.toLocaleString()})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-semibold">Description / Remarks</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Weekly funding allocation"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-md p-2 text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md disabled:opacity-50"
+              >
+                {loading ? 'Processing...' : `Execute ${manageType.toLowerCase()}`}
+              </button>
+            </form>
           </div>
-        ) : (
-          <div className="p-8 text-center text-slate-500 bg-slate-900/10 border border-slate-800/40 rounded-lg">
-            <p className="text-xs font-semibold">No active exposed positions currently loaded</p>
-            <p className="text-[11px] text-slate-600 mt-1">
-              {isConnected ? 'No strategy signals have deployed inventory allocation yet.' : 'Please authorize the broker API first to fetch active inventories.'}
-            </p>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Transactions list section */}

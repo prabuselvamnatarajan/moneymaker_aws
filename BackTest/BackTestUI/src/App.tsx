@@ -19,8 +19,9 @@ import StrategiesListView from './components/StrategiesListView';
 import SymbolsListView from './components/SymbolsListView';
 import UserProfileView from './components/UserProfileView';
 import LoginView from './components/LoginView';
+import BrokersListView from './components/BrokersListView';
 import { api } from './api';
-import { mapAccount, mapSymbol, mapTrade, mapDeployment } from './adapters';
+import { mapAccount, mapSymbol, mapTrade, mapDeployment, mapLedger } from './adapters';
 
 const INITIAL_FILTERS: TransactionFilters = {
   search: '',
@@ -93,9 +94,9 @@ export default function App() {
       );
       setStrategies(mappedStrats);
 
-      // Fetch trades (mapped as transactions in UI)
-      const tradesRes = await api.trades.list();
-      setTransactions(tradesRes.items.map(mapTrade));
+      // Fetch ledger (mapped as transactions in UI)
+      const ledgerRes = await api.ledger.list();
+      setTransactions(ledgerRes.items.map(mapLedger));
     } catch (err) {
       console.error('Error loading API data:', err);
     } finally {
@@ -439,6 +440,7 @@ export default function App() {
         return (
           <AccountDetailsView
             account={matchedAcc}
+            accounts={accounts}
             transactions={transactions}
             strategies={strategies}
             onBackToDashboard={() => setActiveScreen('dashboard')}
@@ -446,6 +448,7 @@ export default function App() {
             onSelectTransaction={setSelectedTransaction}
             onDrilldownToTransactions={(key, val) => handleDrilldownToTransactions(key, val)}
             timezone={timezone}
+            onRefreshData={loadData}
           />
         );
       case 'symbol-detail':
@@ -465,6 +468,10 @@ export default function App() {
       case 'profile':
         return (
           <UserProfileView currentUser={currentUser} onLogout={handleLogout} onProfileUpdate={handleProfileUpdate} />
+        );
+      case 'brokers-list':
+        return (
+          <BrokersListView />
         );
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;

@@ -15,6 +15,7 @@ export interface Account {
   status: 'connected' | 'disconnected';
   commissionType?: 'PERCENTAGE' | 'FLAT';
   commissionRate?: number;
+  brokerObj?: Broker;
 }
 
 export interface Strategy {
@@ -51,24 +52,35 @@ export interface AuditTrailEvent {
   type: 'info' | 'success' | 'warning' | 'error';
 }
 
+export interface Broker {
+  _id: string;
+  name: string;
+  is_internal: boolean;
+  created_at: string;
+}
+
 export interface Transaction {
   id: string; // Internal system UUID or Trade/Execution ID
   timestamp: string; // ISO 8601 string
-  type: 'BUY' | 'SELL';
+  type?: 'BUY' | 'SELL';
   symbol: string;
   strategyId: string;
   accountId: string;
-  quantity: number;
-  price: number;
+  quantity?: number;
+  price?: number;
   fee: number;
-  status: 'EXECUTED' | 'PENDING' | 'CANCELLED';
-  tradeId: string; // Outer broker-reported execution ID
-  orderId: string;
-  filledQty: number;
-  avgPrice: number;
+  status?: 'EXECUTED' | 'PENDING' | 'CANCELLED';
+  tradeId?: string; // Outer broker-reported execution ID
+  orderId?: string;
+  filledQty?: number;
+  avgPrice?: number;
   notes: string;
   flagged: boolean;
   events: AuditTrailEvent[];
+  transactionType?: 'TRADE' | 'DEPOSIT' | 'WITHDRAW' | 'TRANSFER_IN' | 'TRANSFER_OUT';
+  changeInBalance?: number;
+  openingBalance?: number;
+  closingBalance?: number;
 }
 
 export interface ColumnPreference {
@@ -98,4 +110,5 @@ export type ViewScreen =
   | 'strategy-detail' 
   | 'account-detail' 
   | 'symbol-detail'
-  | 'profile';
+  | 'profile'
+  | 'brokers-list';

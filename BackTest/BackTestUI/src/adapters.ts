@@ -13,7 +13,7 @@ export function mapAccount(backendAcc: any): Account {
   return {
     id: backendAcc._id || backendAcc.account_id,
     name: backendAcc.account_name || 'Unnamed Account',
-    broker: backendAcc.description ? parseBrokerFromDescription(backendAcc.description) : 'Simulation Broker',
+    broker: backendAcc.broker_id?.name || (backendAcc.description ? parseBrokerFromDescription(backendAcc.description) : 'Cobra Trades'),
     balance: current,
     margin: Math.round(current * 0.7), // Assume 70% margin
     initialBalance: initial,
@@ -22,6 +22,7 @@ export function mapAccount(backendAcc: any): Account {
     status: backendAcc.is_active ? 'connected' : 'disconnected',
     commissionType: backendAcc.commission_type || 'PERCENTAGE',
     commissionRate: backendAcc.commission_rate || 0,
+    brokerObj: backendAcc.broker_id || undefined,
   };
 }
 
@@ -74,7 +75,47 @@ export function mapTrade(backendTrade: any): Transaction {
     flagged: false,
     events: [
       { time: backendTrade.created_at, message: `Trade processed: ${backendTrade.type_of_order} ${qty} @ ${prc}`, type: 'info' }
-    ]
+    ],
+    transactionType: 'TRADE',
+    changeInBalance: backendTrade.type_of_order === 'SELL' ? (qty * prc) : -(qty * prc),
+    openingBalance: 0,
+    closingBalance: 0
+  };
+}
+
+// Map backend Ledger to UI Transaction
+export function mapLedger(backendLedger: any): Transaction {
+  const accountId = backendLedger.account_id?._id || backendLedger.account_id;
+  const strategyId = backendLedger.strategy_id?._id || backendLedger.strategy_id || '';
+  const quantity = backendLedger.quantity || backendLedger.trade_id?.quantity || 0;
+  const price = backendLedger.price || backendLedger.trade_id?.price || 0;
+  const fee = backendLedger.trade_id?.commission || 0;
+  const isSell = backendLedger.order_type === 'SELL' || backendLedger.trade_id?.type_of_order === 'SELL';
+  
+  return {
+    id: backendLedger._id,
+    timestamp: backendLedger.created_on || new Date().toISOString(),
+    type: backendLedger.transaction_type === 'TRADE' ? (isSell ? 'SELL' : 'BUY') : undefined,
+    symbol: backendLedger.symbol || '',
+    strategyId,
+    accountId,
+    quantity,
+    price,
+    fee,
+    status: 'EXECUTED',
+    tradeId: backendLedger.trade_id?._id || backendLedger.trade_id || undefined,
+    orderId: backendLedger.trade_id?._id || backendLedger.trade_id || undefined,
+    filledQty: quantity,
+    avgPrice: price,
+    notes: backendLedger.description || (backendLedger.transaction_type === 'TRADE' ? 'System executed trade.' : 'Ledger movement'),
+    flagged: false,
+    events: [
+      { time: backendLedger.created_on, message: backendLedger.description || `Processed: ${backendLedger.transaction_type}`, type: 'info' }
+    ],
+    transactionType: backendLedger.transaction_type || 'TRADE',
+    changeInBalance: backendLedger.change_in_balance || 0,
+    openingBalance: backendLedger.opening_balance || 0,
+    closingBalance: backendLedger.closing_balance || 0,
   };
 }
 

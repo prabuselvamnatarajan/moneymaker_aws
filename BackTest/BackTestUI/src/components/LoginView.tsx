@@ -189,7 +189,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 <Cpu className="w-6 h-6 animate-spin-slow" />
               </div>
               <h1 className="text-2xl font-black text-white tracking-tight flex items-center justify-center gap-1.5">
-                MoneyMaker <span className="text-indigo-400 text-sm font-mono font-bold bg-indigo-950 px-2 py-0.5 rounded border border-indigo-900">BackTest</span>
+                Cobra Trades <span className="text-indigo-400 text-sm font-mono font-bold bg-indigo-950 px-2 py-0.5 rounded border border-indigo-900">BackTest</span>
               </h1>
               <p className="text-xs text-slate-400">
                 {isLogin ? 'Sign in to access your quantitative analytics engine' : 'Create an account to deploy custom algorithms'}
@@ -299,20 +299,20 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => handleQuickFill('admin@moneymaker.com', 'adminpassword123')}
+                    onClick={() => handleQuickFill('admin@cobratrades.com', 'adminpassword123')}
                     className="bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-left transition-colors cursor-pointer group"
                   >
                     <span className="text-[10px] font-bold text-slate-200 block group-hover:text-indigo-400 transition-colors">Admin Profile</span>
-                    <span className="text-[9px] text-slate-500 font-mono mt-0.5 block">admin@moneymaker.com</span>
+                    <span className="text-[9px] text-slate-500 font-mono mt-0.5 block">admin@cobratrades.com</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => handleQuickFill('user@moneymaker.com', 'userpassword123')}
+                    onClick={() => handleQuickFill('user@cobratrades.com', 'userpassword123')}
                     className="bg-slate-950/80 hover:bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-left transition-colors cursor-pointer group"
                   >
                     <span className="text-[10px] font-bold text-slate-200 block group-hover:text-indigo-400 transition-colors">Standard User</span>
-                    <span className="text-[9px] text-slate-500 font-mono mt-0.5 block">user@moneymaker.com</span>
+                    <span className="text-[9px] text-slate-500 font-mono mt-0.5 block">user@cobratrades.com</span>
                   </button>
                 </div>
               </div>
