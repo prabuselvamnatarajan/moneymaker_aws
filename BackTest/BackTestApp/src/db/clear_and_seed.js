@@ -120,8 +120,8 @@ export const clearAndSeedDB = async () => {
         user_id: standardUser._id,
         account_name: "simulation",
         account_type: "SIMULATION",
-        initial_balance: 100000,
-        current_balance: 100500,
+        initial_balance: 10000000,
+        current_balance: 10002500,
         description: "Primary simulation environment for testing strategies",
         is_active: true
       },
@@ -129,8 +129,8 @@ export const clearAndSeedDB = async () => {
         user_id: standardUser._id,
         account_name: "Test 1",
         account_type: "PAPER",
-        initial_balance: 50000,
-        current_balance: 50000,
+        initial_balance: 5000000,
+        current_balance: 5000000,
         description: "Secondary paper trading account",
         is_active: true
       },
@@ -138,8 +138,8 @@ export const clearAndSeedDB = async () => {
         user_id: adminUser._id,
         account_name: "Admin Live",
         account_type: "LIVE",
-        initial_balance: 250000,
-        current_balance: 250000,
+        initial_balance: 25000000,
+        current_balance: 25000000,
         description: "Admin production trading account",
         is_active: true
       },
@@ -147,8 +147,8 @@ export const clearAndSeedDB = async () => {
         user_id: adminUser._id,
         account_name: "Admin Paper",
         account_type: "PAPER",
-        initial_balance: 75000,
-        current_balance: 75000,
+        initial_balance: 7500000,
+        current_balance: 7500000,
         description: "Admin paper testing account",
         is_active: true
       }
@@ -194,12 +194,10 @@ export const clearAndSeedDB = async () => {
 
     // 6. Create watchlisted user symbols
     const symbolsData = [
-      { user_id: standardUser._id, instrument_token: "BTC-USD", symbol: "BTC/USD", exchange: "NSE", is_active: true },
-      { user_id: standardUser._id, instrument_token: "AAPL", symbol: "AAPL", exchange: "NSE", is_active: true },
-      { user_id: standardUser._id, instrument_token: "EUR-USD", symbol: "EUR/USD", exchange: "NSE", is_active: true },
-      { user_id: standardUser._id, instrument_token: "TSLA", symbol: "TSLA", exchange: "NSE", is_active: true },
-      { user_id: adminUser._id, instrument_token: "BTC-USD", symbol: "BTC/USD", exchange: "NSE", is_active: true },
-      { user_id: adminUser._id, instrument_token: "AAPL", symbol: "AAPL", exchange: "NSE", is_active: true }
+      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", exchange: "NSE", is_active: true },
+      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", exchange: "NSE", is_active: true },
+      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", exchange: "NSE", is_active: true },
+      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", exchange: "NSE", is_active: true }
     ];
     const seededSymbols = await UserSymbol.insertMany(symbolsData);
     console.log(`Created ${seededSymbols.length} user symbols.`);
@@ -212,18 +210,17 @@ export const clearAndSeedDB = async () => {
     const momentumStrat = seededStrategies.find(s => s.strategy_name === "Momentum Scalper" && s.user_id.equals(standardUser._id));
     const gridStrat = seededStrategies.find(s => s.strategy_name === "Grid Bot Alpha" && s.user_id.equals(standardUser._id));
     
-    const btcSymbol = seededSymbols.find(sym => sym.symbol === "BTC/USD" && sym.user_id.equals(standardUser._id));
-    const aaplSymbol = seededSymbols.find(sym => sym.symbol === "AAPL" && sym.user_id.equals(standardUser._id));
-    const eurSymbol = seededSymbols.find(sym => sym.symbol === "EUR/USD" && sym.user_id.equals(standardUser._id));
+    const nifty50Symbol = seededSymbols.find(sym => sym.symbol.toUpperCase() === "NSE_INDEX|NIFTY 50" && sym.user_id.equals(standardUser._id));
+    const niftyBankSymbol = seededSymbols.find(sym => sym.symbol.toUpperCase() === "NSE_INDEX|NIFTY BANK" && sym.user_id.equals(standardUser._id));
 
     const deploymentsData = [
       {
         user_id: standardUser._id,
         strategy_id: meanReversionStrat._id,
         account_id: standardSimAcc._id,
-        user_symbol_id: btcSymbol._id,
-        instrument_token: "BTC-USD",
-        symbol: "BTC/USD",
+        user_symbol_id: nifty50Symbol._id,
+        instrument_token: "NSE_INDEX|Nifty 50",
+        symbol: "NSE_INDEX|Nifty 50",
         start_time: new Date(Date.now() - 24 * 60 * 60 * 1000), // 24 hours ago
         current_status: "RUNNING",
         strategy_mode: "TEST",
@@ -234,9 +231,9 @@ export const clearAndSeedDB = async () => {
         user_id: standardUser._id,
         strategy_id: momentumStrat._id,
         account_id: standardSimAcc._id,
-        user_symbol_id: aaplSymbol._id,
-        instrument_token: "AAPL",
-        symbol: "AAPL",
+        user_symbol_id: niftyBankSymbol._id,
+        instrument_token: "NSE_INDEX|Nifty Bank",
+        symbol: "NSE_INDEX|Nifty Bank",
         start_time: new Date(Date.now() - 12 * 60 * 60 * 1000), // 12 hours ago
         current_status: "RUNNING",
         strategy_mode: "TEST",
@@ -247,9 +244,9 @@ export const clearAndSeedDB = async () => {
         user_id: standardUser._id,
         strategy_id: gridStrat._id,
         account_id: standardPaperAcc._id,
-        user_symbol_id: eurSymbol._id,
-        instrument_token: "EUR-USD",
-        symbol: "EUR/USD",
+        user_symbol_id: nifty50Symbol._id,
+        instrument_token: "NSE_INDEX|Nifty 50",
+        symbol: "NSE_INDEX|Nifty 50",
         start_time: new Date(Date.now() - 48 * 60 * 60 * 1000), // 48 hours ago
         current_status: "PAUSED",
         strategy_mode: "TEST",
@@ -261,19 +258,19 @@ export const clearAndSeedDB = async () => {
     console.log(`Created ${seededDeployments.length} deployments.`);
 
     // 8. Create some sample trades and ledgers to generate yield history
-    const btcDeployment = seededDeployments.find(d => d.symbol === "BTC/USD");
+    const nifty50Deployment = seededDeployments.find(d => d.symbol.toUpperCase() === "NSE_INDEX|NIFTY 50");
     
     // Trade 1: Buy
     const buyTrade = new Trade({
-      deployment_id: btcDeployment._id,
+      deployment_id: nifty50Deployment._id,
       user_id: standardUser._id,
       strategy_id: meanReversionStrat._id,
       account_id: standardSimAcc._id,
-      user_symbol_id: btcSymbol._id,
-      instrument_token: "BTC-USD",
-      symbol: "BTC/USD",
-      price: 100,
-      quantity: 10,
+      user_symbol_id: nifty50Symbol._id,
+      instrument_token: "NSE_INDEX|Nifty 50",
+      symbol: "NSE_INDEX|Nifty 50",
+      price: 24300,
+      quantity: 50,
       type_of_order: "BUY",
       status: "EXECUTED",
       created_at: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
@@ -284,32 +281,32 @@ export const clearAndSeedDB = async () => {
     const buyLedger = new Ledger({
       account_id: standardSimAcc._id,
       trade_id: buyTrade._id,
-      deployment_id: btcDeployment._id,
+      deployment_id: nifty50Deployment._id,
       user_id: standardUser._id,
       strategy_id: meanReversionStrat._id,
-      user_symbol_id: btcSymbol._id,
-      change_in_balance: -1000,
-      opening_balance: 100000,
-      closing_balance: 99000,
-      symbol: "BTC/USD",
+      user_symbol_id: nifty50Symbol._id,
+      change_in_balance: -1215000,
+      opening_balance: 10000000,
+      closing_balance: 8785000,
+      symbol: "NSE_INDEX|Nifty 50",
       order_type: "BUY",
-      quantity: 10,
-      price: 100,
+      quantity: 50,
+      price: 24300,
       created_on: new Date(Date.now() - 2 * 60 * 60 * 1000)
     });
     await buyLedger.save();
 
     // Trade 2: Sell at profit
     const sellTrade = new Trade({
-      deployment_id: btcDeployment._id,
+      deployment_id: nifty50Deployment._id,
       user_id: standardUser._id,
       strategy_id: meanReversionStrat._id,
       account_id: standardSimAcc._id,
-      user_symbol_id: btcSymbol._id,
-      instrument_token: "BTC-USD",
-      symbol: "BTC/USD",
-      price: 150,
-      quantity: 10,
+      user_symbol_id: nifty50Symbol._id,
+      instrument_token: "NSE_INDEX|Nifty 50",
+      symbol: "NSE_INDEX|Nifty 50",
+      price: 24350,
+      quantity: 50,
       type_of_order: "SELL",
       status: "EXECUTED",
       created_at: new Date(Date.now() - 1 * 60 * 60 * 1000), // 1 hour ago
@@ -320,17 +317,17 @@ export const clearAndSeedDB = async () => {
     const sellLedger = new Ledger({
       account_id: standardSimAcc._id,
       trade_id: sellTrade._id,
-      deployment_id: btcDeployment._id,
+      deployment_id: nifty50Deployment._id,
       user_id: standardUser._id,
       strategy_id: meanReversionStrat._id,
-      user_symbol_id: btcSymbol._id,
-      change_in_balance: 1500,
-      opening_balance: 99000,
-      closing_balance: 100500,
-      symbol: "BTC/USD",
+      user_symbol_id: nifty50Symbol._id,
+      change_in_balance: 1217500,
+      opening_balance: 8785000,
+      closing_balance: 10002500,
+      symbol: "NSE_INDEX|Nifty 50",
       order_type: "SELL",
-      quantity: 10,
-      price: 150,
+      quantity: 50,
+      price: 24350,
       created_on: new Date(Date.now() - 1 * 60 * 60 * 1000)
     });
     await sellLedger.save();

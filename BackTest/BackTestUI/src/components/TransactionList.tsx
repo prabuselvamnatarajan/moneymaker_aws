@@ -492,7 +492,7 @@ export default function TransactionList({
 
                       {columns.find(c => c.id === 'fee')?.visible && (
                         <td className="p-4 font-mono text-right text-slate-500 whitespace-nowrap">
-                          ${tx.fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          ₹{tx.fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
                       )}
 

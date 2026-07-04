@@ -148,7 +148,7 @@ export default function StrategyDetailsView({
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Total Cumulative Return</p>
           <div className="flex items-baseline gap-2 mt-1.5">
             <span className={`text-xl font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {isPositive ? '+' : ''}${strategy.pnl.toLocaleString()}
+              {isPositive ? '+' : ''}₹{strategy.pnl.toLocaleString()}
             </span>
           </div>
           <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-1 font-sans">
@@ -216,7 +216,7 @@ export default function StrategyDetailsView({
 
                   <div className="flex items-center gap-3">
                     <div className="text-right font-mono text-xs">
-                      <span className="text-slate-200 font-semibold">${sym.lastPrice.toLocaleString()}</span>
+                      <span className="text-slate-200 font-semibold">₹{sym.lastPrice.toLocaleString()}</span>
                       <span className={`text-[10px] block ${isGain ? 'text-emerald-500' : 'text-rose-500'}`}>
                         {isGain ? '+' : ''}{sym.change24h}%
                       </span>

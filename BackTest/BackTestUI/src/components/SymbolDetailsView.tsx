@@ -89,7 +89,7 @@ export default function SymbolDetailsView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Current Execution Quote</p>
           <p className="text-xl font-black font-mono text-slate-100 mt-1.5">
-            ${symbol.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+            ₹{symbol.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
           </p>
           <span className="text-[10px] text-slate-500 mt-1 block">Live pricing from centralized engine book</span>
         </div>
@@ -112,7 +112,7 @@ export default function SymbolDetailsView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Estimated Liquidity Volume (24h)</p>
           <p className="text-xl font-bold font-mono text-slate-100 mt-1.5">
-            ${symbol.volume24h.toLocaleString()}
+            ₹{symbol.volume24h.toLocaleString()}
           </p>
           <span className="text-[10px] text-slate-500 mt-1 block">Aggregated market-wide activity</span>
         </div>
@@ -155,7 +155,7 @@ export default function SymbolDetailsView({
 
                   <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between">
                     <span className={`text-[10px] font-mono font-bold ${strat.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      P&L: {strat.pnl >= 0 ? '+' : ''}${strat.pnl.toLocaleString()}
+                      P&L: {strat.pnl >= 0 ? '+' : ''}₹{strat.pnl.toLocaleString()}
                     </span>
                     <button
                       id={`sym-strat-link-${strat.id}`}

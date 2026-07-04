@@ -181,10 +181,10 @@ export default function DashboardView({
           <div className="space-y-1">
             <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Assets Under Audit (AUM)</p>
             <h3 className="text-xl font-black text-slate-100 tracking-tight font-mono">
-              ${totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              ₹{totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </h3>
             <p className="text-[10px] text-slate-500 font-sans">
-              Connected leverage capacity: <strong className="font-mono text-slate-400">${totalMargin.toLocaleString()}</strong>
+              Connected leverage capacity: <strong className="font-mono text-slate-400">₹{totalMargin.toLocaleString()}</strong>
             </p>
           </div>
           <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/10 text-indigo-400">
@@ -198,7 +198,7 @@ export default function DashboardView({
             <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Active Algorithmic Yield</p>
             <div className="flex items-center gap-1.5">
               <h3 className={`text-xl font-black tracking-tight font-mono ${totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {totalPnl >= 0 ? '+' : ''}${totalPnl.toLocaleString()}
+                {totalPnl >= 0 ? '+' : ''}₹{totalPnl.toLocaleString()}
               </h3>
               <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-0.5 font-bold ${
                 totalPnl >= 0 ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950/80 text-rose-400'
@@ -259,7 +259,7 @@ export default function DashboardView({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-200">Deployed Strategy Yield Progression</h3>
-                <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Temporal charting of active automated strategies (Cumulative USD return)</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Temporal charting of active automated strategies (Cumulative INR return)</p>
               </div>
               <span className="text-[10px] text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded font-mono border border-indigo-500/10">
                 15m Intervals
@@ -296,7 +296,7 @@ export default function DashboardView({
                     fontSize={10} 
                     fontFamily="monospace"
                     tickLine={false}
-                    tickFormatter={(v) => `$${v}`}
+                    tickFormatter={(v) => `₹${v}`}
                   />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#020617', borderColor: '#1e293b', borderRadius: '8px' }}

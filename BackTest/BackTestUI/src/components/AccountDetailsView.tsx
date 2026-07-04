@@ -43,16 +43,16 @@ export default function AccountDetailsView({
   const getMockPositions = () => {
     if (account.id === 'ACC-001') {
       return [
-        { ticker: 'AAPL', size: 120, avgEntry: 220.50, currentPrice: 224.50, marketValue: 26940, pnl: 480 },
-        { ticker: 'NVDA', size: 100, avgEntry: 125.80, currentPrice: 127.40, marketValue: 12740, pnl: 160 },
+        { ticker: 'NSE_INDEX|Nifty 50', size: 50, avgEntry: 24300.00, currentPrice: 24350.00, marketValue: 1217500, pnl: 2500 },
+        { ticker: 'NSE_INDEX|Nifty Bank', size: 25, avgEntry: 52000.00, currentPrice: 52100.00, marketValue: 1302500, pnl: 2500 },
       ];
     } else if (account.id === 'ACC-002') {
       return [
-        { ticker: 'BTC/USD', size: 1.5, avgEntry: 94120.00, currentPrice: 94250.00, marketValue: 141375, pnl: 195 },
+        { ticker: 'NSE_INDEX|Nifty 50', size: 50, avgEntry: 24300.00, currentPrice: 24350.00, marketValue: 1217500, pnl: 2500 },
       ];
     } else if (account.id === 'ACC-003') {
       return [
-        { ticker: 'TSLA', size: 50, avgEntry: 189.50, currentPrice: 198.20, marketValue: 9910, pnl: 435 },
+        { ticker: 'NSE_INDEX|Nifty Bank', size: 25, avgEntry: 52000.00, currentPrice: 52100.00, marketValue: 1302500, pnl: 2500 },
       ];
     }
     return []; // Disconnected or options account
@@ -125,7 +125,7 @@ export default function AccountDetailsView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Net Liquid Asset Valuation</p>
           <p className="text-xl font-black font-mono text-slate-100 mt-1.5">
-            ${account.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            ₹{account.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
           <span className="text-[10px] text-slate-500 mt-1.5 block">Settled currency: <strong className="font-mono text-slate-400">{account.currency}</strong></span>
         </div>
@@ -134,7 +134,7 @@ export default function AccountDetailsView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Available Margin (Leverage)</p>
           <p className="text-xl font-bold font-mono text-slate-100 mt-1.5">
-            ${account.margin.toLocaleString()}
+            ₹{account.margin.toLocaleString()}
           </p>
           <span className="text-[10px] text-slate-500 mt-1.5 block">Risk threshold: <strong className="font-mono text-slate-400">4.0x Ratio</strong></span>
         </div>
@@ -143,9 +143,9 @@ export default function AccountDetailsView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Realized Capital Yield</p>
           <p className={`text-xl font-bold font-mono mt-1.5 ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {isPositive ? '+' : ''}${account.pnl.toLocaleString()}
+            {isPositive ? '+' : ''}₹{account.pnl.toLocaleString()}
           </p>
-          <span className="text-[10px] text-slate-500 mt-1.5 block">Based on initial equity block: <strong className="font-mono text-slate-400">${account.initialBalance.toLocaleString()}</strong></span>
+          <span className="text-[10px] text-slate-500 mt-1.5 block">Based on initial equity block: <strong className="font-mono text-slate-400">₹{account.initialBalance.toLocaleString()}</strong></span>
         </div>
 
         {/* Growth Ratio */}
@@ -190,11 +190,11 @@ export default function AccountDetailsView({
                     <tr key={pos.ticker} className="hover:bg-indigo-600/5 transition-colors">
                       <td className="p-3 font-bold font-mono text-slate-200">{pos.ticker}</td>
                       <td className="p-3 text-right text-slate-300 font-mono">{pos.size}</td>
-                      <td className="p-3 text-right text-slate-400 font-mono">${pos.avgEntry.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      <td className="p-3 text-right text-slate-200 font-mono">${pos.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                      <td className="p-3 text-right text-slate-300 font-mono font-semibold">${pos.marketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="p-3 text-right text-slate-400 font-mono">₹{pos.avgEntry.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="p-3 text-right text-slate-200 font-mono">₹{pos.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="p-3 text-right text-slate-300 font-mono font-semibold">₹{pos.marketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                       <td className={`p-3 text-right font-mono font-bold ${posGain ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {posGain ? '+' : ''}${pos.pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {posGain ? '+' : ''}₹{pos.pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                   );

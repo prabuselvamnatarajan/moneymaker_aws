@@ -72,11 +72,11 @@ export default function StrategiesListView({
       winRate: 50.0, // starts flat
       lastDeployTime: new Date().toISOString(),
       openPositions: 0,
-      symbols: selectedSymbols.length > 0 ? selectedSymbols : ['BTC/USD'],
+      symbols: selectedSymbols.length > 0 ? selectedSymbols : ['NSE_INDEX|Nifty 50'],
       description
     };
 
-    const targetSymbol = selectedSymbols.length > 0 ? selectedSymbols[0] : 'BTC/USD';
+    const targetSymbol = selectedSymbols.length > 0 ? selectedSymbols[0] : 'NSE_INDEX|Nifty 50';
     onAddStrategy(newStrat, selectedAccountId, targetSymbol);
     
     // Reset Form
@@ -119,7 +119,7 @@ export default function StrategiesListView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Total Cumulative Yield</p>
           <p className={`text-xl font-black font-mono mt-1.5 ${totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {totalPnl >= 0 ? '+' : ''}${totalPnl.toLocaleString(undefined, { minimumFractionDigits: 0 })}
+            {totalPnl >= 0 ? '+' : ''}₹{totalPnl.toLocaleString(undefined, { minimumFractionDigits: 0 })}
           </p>
         </div>
 
@@ -255,7 +255,7 @@ export default function StrategiesListView({
                   <div className="space-y-0.5">
                     <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Workload Return</p>
                     <p className={`text-sm font-bold font-mono ${isPnlPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {isPnlPositive ? '+' : ''}${strat.pnl.toLocaleString(undefined, { minimumFractionDigits: 0 })}
+                      {isPnlPositive ? '+' : ''}₹{strat.pnl.toLocaleString(undefined, { minimumFractionDigits: 0 })}
                     </p>
                   </div>
 
@@ -344,7 +344,7 @@ export default function StrategiesListView({
                   <option value="">Select Account...</option>
                   {accounts.map(acc => (
                     <option key={acc.id} value={acc.id}>
-                      {acc.name} (${acc.balance.toLocaleString()})
+                      {acc.name} (₹{acc.balance.toLocaleString()})
                     </option>
                   ))}
                 </select>

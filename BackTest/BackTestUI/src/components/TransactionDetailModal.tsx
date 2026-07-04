@@ -123,13 +123,13 @@ export default function TransactionDetailModal({
             <div>
               <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold font-mono">Total Value</p>
               <p className="text-sm font-bold text-emerald-400 mt-1">
-                ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                ₹{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
               </p>
             </div>
             <div>
               <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold font-mono font-sans">Broker Commission</p>
               <p className="text-sm font-medium text-slate-200 mt-1 font-mono">
-                ${transaction.fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ₹{transaction.fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -215,7 +215,7 @@ export default function TransactionDetailModal({
               <div className="grid grid-cols-2 p-3 text-xs">
                 <span className="text-slate-400">Execution Price</span>
                 <span className="text-right text-slate-200 font-semibold">
-                  ${transaction.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                  ₹{transaction.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                 </span>
               </div>
               <div className="grid grid-cols-2 p-3 text-xs">
@@ -227,7 +227,7 @@ export default function TransactionDetailModal({
               <div className="grid grid-cols-2 p-3 text-xs">
                 <span className="text-slate-400">Average Fill Price</span>
                 <span className="text-right text-slate-200 font-semibold">
-                  ${transaction.avgPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                  ₹{transaction.avgPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                 </span>
               </div>
             </div>

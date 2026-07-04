@@ -31,7 +31,7 @@ export default function AccountsListView({
   const [broker, setBroker] = useState('');
   const [balance, setBalance] = useState('');
   const [margin, setMargin] = useState('');
-  const [currency, setCurrency] = useState('USD');
+  const [currency, setCurrency] = useState('INR');
   const [status, setStatus] = useState<'connected' | 'disconnected'>('connected');
 
   // Computed metrics
@@ -105,14 +105,14 @@ export default function AccountsListView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Total Net Liquidation</p>
           <p className="text-xl font-black font-mono text-slate-100 mt-1.5">
-            ${totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ₹{totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
         </div>
 
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Overall Capital P&L</p>
           <p className={`text-xl font-black font-mono mt-1.5 ${totalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {totalPnl >= 0 ? '+' : ''}${totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            {totalPnl >= 0 ? '+' : ''}₹{totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>
 
@@ -126,7 +126,7 @@ export default function AccountsListView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Average Capital Density</p>
           <p className="text-xl font-bold font-mono text-indigo-400 mt-1.5">
-            ${(totalBalance / (accounts.length || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            ₹{(totalBalance / (accounts.length || 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
           </p>
         </div>
 
@@ -207,7 +207,7 @@ export default function AccountsListView({
                     <div className="space-y-0.5 min-w-[100px]">
                       <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Total Balance</p>
                       <p className="text-sm font-bold font-mono text-slate-200">
-                        ${acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ₹{acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                     </div>
 
@@ -215,7 +215,7 @@ export default function AccountsListView({
                     <div className="space-y-0.5 min-w-[100px]">
                       <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Available Margin</p>
                       <p className="text-xs font-semibold font-mono text-slate-400">
-                        ${acc.margin.toLocaleString(undefined, { minimumFractionDigits: 0 })}
+                        ₹{acc.margin.toLocaleString(undefined, { minimumFractionDigits: 0 })}
                       </p>
                     </div>
 
@@ -223,7 +223,7 @@ export default function AccountsListView({
                     <div className="space-y-0.5 min-w-[100px]">
                       <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">Account P&L</p>
                       <p className={`text-sm font-bold font-mono ${isPnlPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {isPnlPositive ? '+' : ''}${acc.pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {isPnlPositive ? '+' : ''}₹{acc.pnl.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                     </div>
 
@@ -293,7 +293,7 @@ export default function AccountsListView({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Initial Deposit (USD)</label>
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Initial Deposit (INR)</label>
                   <input
                     type="number"
                     required
@@ -306,7 +306,7 @@ export default function AccountsListView({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Available Margin (USD)</label>
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Available Margin (INR)</label>
                   <input
                     type="number"
                     min="0"
@@ -326,10 +326,7 @@ export default function AccountsListView({
                     onChange={(e) => setCurrency(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                   >
-                    <option value="USD">USD ($)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="GBP">GBP (£)</option>
-                    <option value="BTC">BTC (₿)</option>
+                    <option value="INR">INR (₹)</option>
                   </select>
                 </div>
 

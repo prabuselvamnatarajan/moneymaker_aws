@@ -18,7 +18,7 @@ export function mapAccount(backendAcc: any): Account {
     margin: Math.round(current * 0.7), // Assume 70% margin
     initialBalance: initial,
     pnl: parseFloat((current - initial).toFixed(2)),
-    currency: 'USD',
+    currency: 'INR',
     status: backendAcc.is_active ? 'connected' : 'disconnected',
   };
 }
@@ -86,7 +86,7 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     winRate: isNaN(winRateVal) ? 50.0 : winRateVal,
     lastDeployTime: backendDeployment.start_time || backendDeployment.created_at || new Date().toISOString(),
     openPositions: 0, // Fallback placeholder
-    symbols: [backendDeployment.symbol || 'BTC/USD'],
+    symbols: [backendDeployment.symbol || 'NSE_INDEX|Nifty 50'],
     description: backendDeployment.notes || 'Algorithmic deployment workload.',
   };
 }
@@ -103,6 +103,8 @@ function parseBrokerFromDescription(desc: string): string {
 
 function getSymbolName(ticker: string): string {
   const map: Record<string, string> = {
+    'NSE_INDEX|Nifty 50': 'Nifty 50',
+    'NSE_INDEX|Nifty Bank': 'Nifty Bank',
     'BTC/USD': 'Bitcoin / US Dollar',
     'AAPL': 'Apple Inc.',
     'EUR/USD': 'Euro / US Dollar',

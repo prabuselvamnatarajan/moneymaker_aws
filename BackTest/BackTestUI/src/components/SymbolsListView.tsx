@@ -123,7 +123,7 @@ export default function SymbolsListView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Aggregated Daily Volume</p>
           <p className="text-xl font-bold font-mono text-indigo-400 mt-1.5">
-            ${(totalVolume / 1e9).toFixed(1)}B <span className="text-[9px] text-slate-500 font-normal">Est</span>
+            ₹{(totalVolume / 1e9).toFixed(1)}B <span className="text-[9px] text-slate-500 font-normal">Est</span>
           </p>
         </div>
 
@@ -229,7 +229,7 @@ export default function SymbolsListView({
                         </span>
                       </td>
                       <td className="p-4 text-right font-bold font-mono text-slate-200">
-                        ${sym.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                        ₹{sym.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                       </td>
                       <td className="p-4 text-right">
                         <span className={`inline-flex items-center gap-1 font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -238,7 +238,7 @@ export default function SymbolsListView({
                         </span>
                       </td>
                       <td className="p-4 text-right text-slate-400 font-mono">
-                        ${sym.volume24h.toLocaleString()}
+                        ₹{sym.volume24h.toLocaleString()}
                       </td>
                       <td className="p-4 text-center">
                         <button
@@ -321,7 +321,7 @@ export default function SymbolsListView({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Last Price (USD)</label>
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Last Price (INR)</label>
                   <input
                     type="number"
                     required
@@ -349,7 +349,7 @@ export default function SymbolsListView({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Est 24h Volume ($)</label>
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Est 24h Volume (INR)</label>
                   <input
                     type="number"
                     min="0"
