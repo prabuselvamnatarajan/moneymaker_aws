@@ -37,7 +37,7 @@ export interface SymbolData {
   lastPrice: number;
   change24h: number; // percentage
   volume24h: number;
-  instrumentType: 'crypto' | 'equity' | 'forex';
+  instrumentType: 'crypto' | 'equity' | 'forex' | 'index';
 }
 
 export interface AuditTrailEvent {
