@@ -133,7 +133,7 @@ export default function StrategiesListView({
       </div>
 
       {/* Aggregate metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-sans">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 font-sans">
         
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Total Cumulative Yield</p>
@@ -188,7 +188,7 @@ export default function StrategiesListView({
       </div>
 
       {/* Strategies Grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 font-sans">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 font-sans">
         {filteredStrategies.length > 0 ? (
           filteredStrategies.map(strat => {
             const isPnlPositive = strat.pnl >= 0;

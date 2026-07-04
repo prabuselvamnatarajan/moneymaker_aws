@@ -266,7 +266,7 @@ export default function DashboardView({
       </div>
 
       {/* Overview Cards Row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         
         {/* Net Asset Valuation (AUM) */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex items-center justify-between">
@@ -343,7 +343,7 @@ export default function DashboardView({
       </div>
 
       {/* Main Column grid layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         
         {/* Performance Chart Block (Spans 2 columns) */}
         <div className="lg:col-span-2 space-y-4">
@@ -413,7 +413,7 @@ export default function DashboardView({
               <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Toggling brokerage status simulates dynamic API disconnects or server maintenance triggers.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
               {accounts.map((acc) => {
                 const isConnected = acc.status === 'connected';
                 return (

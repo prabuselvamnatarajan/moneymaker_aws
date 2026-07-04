@@ -168,7 +168,7 @@ export default function AccountsListView({
       </div>
 
       {/* Aggregate Overview Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-sans">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 font-sans">
         
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Total Net Liquidation</p>
@@ -279,7 +279,7 @@ export default function AccountsListView({
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-6 md:gap-12">
+                  <div className="flex flex-wrap items-center gap-4 md:gap-8 lg:gap-12">
                     
                     {/* Balance */}
                     <div className="space-y-0.5 min-w-[100px]">

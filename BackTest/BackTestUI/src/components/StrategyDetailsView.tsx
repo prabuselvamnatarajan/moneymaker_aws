@@ -230,7 +230,7 @@ export default function StrategyDetailsView({
       </div>
 
       {/* Numerical Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-sans">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 font-sans">
         
         {/* Cumulative P&L Card */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
@@ -281,7 +281,7 @@ export default function StrategyDetailsView({
       </div>
 
       {/* Relational Ticker Links and Cloud deployments metadata */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-sans">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-sans">
         
         {/* Associated Symbols Grid */}
         <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4">

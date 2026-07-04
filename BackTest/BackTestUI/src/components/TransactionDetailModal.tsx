@@ -66,10 +66,10 @@ export default function TransactionDetailModal({
   const totalValue = transaction.quantity * (transaction.avgPrice || transaction.price);
 
   return (
-    <div id="tx-modal-overlay" className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-xs transition-opacity">
+    <div id="tx-modal-overlay" className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-end bg-black/60 backdrop-blur-xs transition-opacity">
       <div 
         id="tx-modal-container"
-        className="w-full max-w-2xl h-full bg-slate-900 border-l border-slate-800 text-slate-100 flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-300"
+        className="w-full sm:max-w-2xl sm:h-full bg-slate-900 sm:border-l border-t sm:border-t-0 border-slate-800 text-slate-100 flex flex-col justify-between shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-right duration-300 max-h-[92vh] sm:max-h-full rounded-t-2xl sm:rounded-none"
       >
         {/* Header */}
         <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950 font-sans">
@@ -109,7 +109,7 @@ export default function TransactionDetailModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
           {/* Status & Quick Stats */}
-          <div className="grid grid-cols-3 gap-3 bg-slate-950 p-4 rounded-lg border border-slate-800 font-sans">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-950 p-4 rounded-lg border border-slate-800 font-sans">
             <div>
               <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold font-mono">Status</p>
               <div className="flex items-center gap-1.5 mt-1">
@@ -137,7 +137,7 @@ export default function TransactionDetailModal({
           {/* Connected Entities Grid */}
           <div className="space-y-3">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Linked Platform Entities</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Account Card */}
               <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 flex flex-col justify-between hover:border-slate-700 transition-colors group">
                 <div>

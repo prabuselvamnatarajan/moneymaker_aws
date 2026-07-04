@@ -95,7 +95,7 @@ export default function SymbolDetailsView({
       </div>
 
       {/* Snapshot Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-sans">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-sans">
         
         {/* Market Rate */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
@@ -138,7 +138,7 @@ export default function SymbolDetailsView({
         </div>
 
         {activeStrategies.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {activeStrategies.map((strat) => {
               return (
                 <div 

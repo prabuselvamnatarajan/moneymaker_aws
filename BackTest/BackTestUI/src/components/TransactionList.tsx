@@ -368,8 +368,67 @@ export default function TransactionList({
       {/* Main Grid Card */}
       <div className="bg-slate-950/60 rounded-xl border border-slate-800 overflow-hidden shadow-xs">
         
-        {/* Table representation for desktop */}
-        <div className="overflow-x-auto">
+        {/* Mobile card view (hidden on md+) */}
+        <div className="block md:hidden">
+          {transactions.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 font-sans">
+              <p className="text-sm font-semibold text-slate-400">No trading records found</p>
+              <p className="text-xs mt-1 text-slate-600">Modify your active filter criteria or trigger new strategy signals.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-800/60">
+              {paginatedTransactions.map((tx) => {
+                const isHighlighted = highlightedTxId === tx.id;
+                return (
+                  <div
+                    key={tx.id}
+                    onClick={() => onRowClick(tx)}
+                    className={`p-4 cursor-pointer transition-colors hover:bg-indigo-600/5 ${
+                      isHighlighted ? 'bg-indigo-600/10 border-l-2 border-indigo-500' : ''
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`font-bold font-mono text-sm ${
+                          tx.type === 'BUY' ? 'text-emerald-500' : 'text-rose-500'
+                        }`}>{tx.type}</span>
+                        <span className="font-mono font-bold text-white text-sm">{tx.symbol}</span>
+                        {tx.flagged && <span className="text-amber-500 text-[10px] font-mono">⚑ FLAGGED</span>}
+                      </div>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase border font-mono font-bold ${
+                        tx.status === 'EXECUTED' ? 'bg-slate-800 text-slate-300 border-slate-700' :
+                        tx.status === 'PENDING' ? 'bg-indigo-600/10 text-indigo-400 border-indigo-500/20' :
+                        'bg-red-950/20 text-red-400 border-red-900/30'
+                      }`}>{tx.status}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                      <div>
+                        <span className="text-slate-500">Qty: </span>
+                        <span className="text-slate-200 font-mono">{tx.quantity}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Price: </span>
+                        <span className="text-slate-200 font-mono">₹{tx.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Strategy: </span>
+                        <span className="text-slate-400 truncate">{getStrategyName(tx.strategyId)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Account: </span>
+                        <span className="text-slate-400 truncate">{getAccountName(tx.accountId)}</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-600 font-mono mt-2">{formatDate(tx.timestamp)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Desktop table view (hidden below md) */}
+        <div className="hidden md:block overflow-x-auto">
           {transactions.length === 0 ? (
             <div className="p-12 text-center text-slate-500 font-sans">
               <p className="text-sm font-semibold text-slate-400">No trading records found</p>
@@ -532,8 +591,6 @@ export default function TransactionList({
             </table>
           )}
         </div>
-
-        {/* Paginated Footer Controls for Full screen */}
         {variant === 'full' && transactions.length > 0 && (
           <div className="px-4 py-3 bg-slate-950/80 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400 select-none font-sans">
             <div className="flex items-center gap-2">

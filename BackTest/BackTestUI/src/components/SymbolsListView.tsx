@@ -105,7 +105,7 @@ export default function SymbolsListView({
       </div>
 
       {/* Overview Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-sans">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 font-sans">
         
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold font-sans">Assets Engaged</p>

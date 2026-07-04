@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { Menu } from 'lucide-react';
 import { 
   Account, Strategy, SymbolData, Transaction, TransactionFilters, ViewScreen, Broker
 } from './types';
@@ -39,6 +40,7 @@ export default function App() {
   // --- Auth & Session States ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('accessToken'));
   const [currentUser, setCurrentUser] = useState<{ _id: string; username: string; email: string; name: string; is_mfa_enabled: boolean; backup_codes?: string[] } | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const handleProfileUpdate = async () => {
@@ -534,12 +536,33 @@ export default function App() {
         timezone={timezone}
         onTimezoneChange={(tz) => setTimezone(tz)}
         currentUser={currentUser}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       {/* Main Panel Frame */}
-      <main id="main-content-scroll" className="flex-1 overflow-y-auto h-screen p-6 md:p-8 space-y-6">
-        {renderActiveScreen()}
-      </main>
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        {/* Mobile Top Bar */}
+        <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800 shrink-0">
+          <button
+            id="hamburger-menu-btn"
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            aria-label="Open navigation menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center font-bold text-white text-xs">C</div>
+            <span className="text-sm font-bold text-white uppercase tracking-tight">CobraTrades</span>
+          </div>
+          <div className="w-9" />{/* Spacer to center title */}
+        </header>
+
+        <main id="main-content-scroll" className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+          {renderActiveScreen()}
+        </main>
+      </div>
 
       {/* Inspect Detail Drawer Modal */}
       {selectedTransaction && (

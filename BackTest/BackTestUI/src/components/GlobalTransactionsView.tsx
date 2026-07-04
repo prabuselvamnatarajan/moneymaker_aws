@@ -176,8 +176,8 @@ export default function GlobalTransactionsView({
         </div>
 
         {/* Global search input */}
-        <div className="flex items-center gap-2">
-          <div className="relative w-64 md:w-80">
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64 lg:w-80">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
             <input
               id="global-ledger-search-input"
@@ -200,14 +200,14 @@ export default function GlobalTransactionsView({
           <button
             id="toggle-advance-filters-btn"
             onClick={() => setShowAdvanceFilters(!showAdvanceFilters)}
-            className={`p-2 rounded-md border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+            className={`p-2 rounded-md border text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0 ${
               showAdvanceFilters 
                 ? 'bg-slate-800 border-slate-700 text-indigo-400' 
                 : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
             }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
-            <span>Filters</span>
+            <span className="hidden sm:inline">Filters</span>
           </button>
         </div>
       </div>
@@ -261,7 +261,7 @@ export default function GlobalTransactionsView({
       {/* Advanced Multiselect Controls Panel */}
       {showAdvanceFilters && (
         <div id="advanced-filters-panel" className="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4 animate-in slide-in-from-top duration-200 font-sans">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             
             {/* Accounts Multi-select */}
             <div className="space-y-1 text-xs">
