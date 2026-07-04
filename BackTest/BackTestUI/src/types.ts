@@ -115,4 +115,5 @@ export type ViewScreen =
   | 'account-detail' 
   | 'symbol-detail'
   | 'profile'
-  | 'brokers-list';
+  | 'brokers-list'
+  | 'strategy-templates';

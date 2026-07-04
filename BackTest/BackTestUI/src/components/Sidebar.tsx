@@ -41,7 +41,7 @@ export default function Sidebar({
 }: SidebarProps) {
   
   const connectedAccountsCount = accounts.filter(a => a.status === 'connected').length;
-  const activeStrategiesCount = strategies.filter(s => s.status === 'active').length;
+  const activeStrategiesCount = strategies.filter(s => s.status === 'active' && s.name.toLowerCase() !== 'manual').length;
 
   const handleNav = (screen: ViewScreen) => {
     onNavigate(screen);
@@ -175,7 +175,7 @@ export default function Sidebar({
                 <Cpu className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               </div>
               <div className="space-y-0.5 pl-1">
-                {strategies.map(s => {
+                {strategies.filter(s => s.name.toLowerCase() !== 'manual').map(s => {
                   const isSelected = activeScreen === 'strategy-detail' && selectedEntityId === s.id;
                   return (
                     <button

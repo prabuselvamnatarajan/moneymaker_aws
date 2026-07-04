@@ -10,6 +10,7 @@ export default function StrategyTemplatesView({
   strategyDefinitions = [],
   onCreateStrategy,
 }: StrategyTemplatesViewProps) {
+  const visibleDefinitions = strategyDefinitions.filter(s => s.strategy_name.toLowerCase() !== 'manual');
   const [newStrategyName, setNewStrategyName] = useState('');
   const [newStrategyDescription, setNewStrategyDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -71,13 +72,13 @@ export default function StrategyTemplatesView({
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-sm font-bold uppercase font-mono tracking-wider text-slate-400">Available Templates</h2>
           
-          {strategyDefinitions.length === 0 ? (
+          {visibleDefinitions.length === 0 ? (
             <div className="text-center p-12 bg-slate-900/40 border border-slate-850 rounded-2xl text-slate-500 text-xs">
               No strategy templates found. Get started by defining one on the right.
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
-              {strategyDefinitions.map((strat) => {
+              {visibleDefinitions.map((strat) => {
                 const isInternal = strat.strategy_name.toLowerCase() === 'manual';
                 return (
                   <div 

@@ -84,10 +84,25 @@ export default function DashboardView({
       if (matchedStrat.accountId) {
         setSelectedAcc(matchedStrat.accountId);
       }
-      if (matchedStrat.symbols && matchedStrat.symbols[0]) {
+      if (matchedStrat.symbols && matchedStrat.symbols[0] && matchedStrat.symbols[0] !== 'MANUAL') {
         setSelectedSym(matchedStrat.symbols[0]);
         // Also sync price for that symbol
         const matchedSym = symbols.find(s => s.ticker === matchedStrat.symbols[0]);
+        if (matchedSym) {
+          setTradePrice(matchedSym.lastPrice.toString());
+        }
+      }
+    }
+  };
+
+  const handleAccountChange = (accId: string) => {
+    setSelectedAcc(accId);
+    const firstStratForAcc = strategies.find(s => s.accountId === accId);
+    if (firstStratForAcc) {
+      setSelectedStrat(firstStratForAcc.id);
+      if (firstStratForAcc.symbols && firstStratForAcc.symbols[0] && firstStratForAcc.symbols[0] !== 'MANUAL') {
+        setSelectedSym(firstStratForAcc.symbols[0]);
+        const matchedSym = symbols.find(sym => sym.ticker === firstStratForAcc.symbols[0]);
         if (matchedSym) {
           setTradePrice(matchedSym.lastPrice.toString());
         }
@@ -100,23 +115,23 @@ export default function DashboardView({
   const totalMargin = useMemo(() => accounts.reduce((acc, a) => acc + a.margin, 0), [accounts]);
   
   const totalPnl = useMemo(() => {
-    return strategies.reduce((acc, s) => acc + s.pnl, 0);
+    return strategies.filter(s => s.name.toLowerCase() !== 'manual').reduce((acc, s) => acc + s.pnl, 0);
   }, [strategies]);
 
   const liveDeploymentsCount = useMemo(() => {
-    return strategies.filter(s => s.status === 'active' && s.mode === 'live').length;
+    return strategies.filter(s => s.status === 'active' && s.mode === 'live' && s.name.toLowerCase() !== 'manual').length;
   }, [strategies]);
 
   const paperDeploymentsCount = useMemo(() => {
-    return strategies.filter(s => s.status === 'active' && s.mode === 'paper').length;
+    return strategies.filter(s => s.status === 'active' && s.mode === 'paper' && s.name.toLowerCase() !== 'manual').length;
   }, [strategies]);
 
   const backtestDeploymentsCount = useMemo(() => {
-    return strategies.filter(s => s.status === 'active' && s.mode === 'backtest').length;
+    return strategies.filter(s => s.status === 'active' && s.mode === 'backtest' && s.name.toLowerCase() !== 'manual').length;
   }, [strategies]);
 
   const avgWinRate = useMemo(() => {
-    const activeStrats = strategies.filter(s => s.totalTrades > 0);
+    const activeStrats = strategies.filter(s => s.totalTrades > 0 && s.name.toLowerCase() !== 'manual');
     if (activeStrats.length === 0) return 0;
     return activeStrats.reduce((acc, s) => acc + s.winRate, 0) / activeStrats.length;
   }, [strategies]);
@@ -136,14 +151,15 @@ export default function DashboardView({
 
     const strategyPnls: Record<string, number> = {};
     const points: any[] = [];
+    const visibleStrats = strategies.filter(s => s.name.toLowerCase() !== 'manual');
 
-    strategies.forEach(s => {
+    visibleStrats.forEach(s => {
       strategyPnls[s.id] = 0;
     });
 
     // Add starting point
     const startPoint: any = { time: 'Start' };
-    strategies.forEach(s => {
+    visibleStrats.forEach(s => {
       startPoint[s.name.replace(/\s+/g, '')] = 0;
     });
     points.push(startPoint);
@@ -159,7 +175,7 @@ export default function DashboardView({
       const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       
       const point: any = { time: timeStr };
-      strategies.forEach(s => {
+      visibleStrats.forEach(s => {
         const cleanName = s.name.replace(/\s+/g, '');
         point[cleanName] = parseFloat((strategyPnls[s.id] || 0).toFixed(2));
       });
@@ -385,7 +401,7 @@ export default function DashboardView({
                     labelStyle={{ fontFamily: 'monospace', color: '#94a3b8', fontSize: '11px' }}
                     itemStyle={{ fontSize: '11px', fontFamily: 'sans-serif' }}
                   />
-                  {strategies.map((s, idx) => {
+                  {strategies.filter(s => s.name.toLowerCase() !== 'manual').map((s, idx) => {
                     const cleanName = s.name.replace(/\s+/g, '');
                     const colors = ['#818cf8', '#10b981', '#fbbf24', '#f87171', '#22d3ee', '#a78bfa'];
                     const color = colors[idx % colors.length];
@@ -480,7 +496,7 @@ export default function DashboardView({
                   <select
                     id="order-account-select"
                     value={selectedAcc}
-                    onChange={(e) => setSelectedAcc(e.target.value)}
+                    onChange={(e) => handleAccountChange(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-800 rounded-md p-2 text-slate-200 focus:outline-hidden focus:border-indigo-500"
                   >
                     {accounts.map(acc => (
@@ -500,11 +516,13 @@ export default function DashboardView({
                     onChange={(e) => handleStrategyChange(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-800 rounded-md p-2 text-slate-200 focus:outline-hidden focus:border-indigo-500"
                   >
-                    {strategies.map(strat => (
-                      <option key={strat.id} value={strat.id}>
-                        {strat.name} ({strat.mode})
-                      </option>
-                    ))}
+                    {strategies
+                      .filter(strat => strat.accountId === selectedAcc)
+                      .map(strat => (
+                        <option key={strat.id} value={strat.id}>
+                          {strat.name} ({strat.mode})
+                        </option>
+                      ))}
                   </select>
                 </div>
 

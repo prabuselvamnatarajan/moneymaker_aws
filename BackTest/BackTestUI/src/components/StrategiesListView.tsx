@@ -44,12 +44,14 @@ export default function StrategiesListView({
   const [backtestSpeed, setBacktestSpeed] = useState(1000);
 
   // Computed metrics
-  const totalPnl = strategies.reduce((sum, s) => sum + s.pnl, 0);
-  const activeCount = strategies.filter(s => s.status === 'active').length;
-  const avgWinRate = strategies.reduce((sum, s) => sum + s.winRate, 0) / (strategies.length || 1);
-  const totalOpenPositions = strategies.reduce((sum, s) => sum + s.openPositions, 0);
+  const visibleStrategies = strategies.filter(s => s.name.toLowerCase() !== 'manual');
 
-  const filteredStrategies = strategies.filter(s => 
+  const totalPnl = visibleStrategies.reduce((sum, s) => sum + s.pnl, 0);
+  const activeCount = visibleStrategies.filter(s => s.status === 'active').length;
+  const avgWinRate = visibleStrategies.reduce((sum, s) => sum + s.winRate, 0) / (visibleStrategies.length || 1);
+  const totalOpenPositions = visibleStrategies.reduce((sum, s) => sum + s.openPositions, 0);
+
+  const filteredStrategies = visibleStrategies.filter(s => 
     s.name.toLowerCase().includes(search.toLowerCase()) ||
     s.description.toLowerCase().includes(search.toLowerCase()) ||
     s.symbols.some(sym => sym.toLowerCase().includes(search.toLowerCase()))
