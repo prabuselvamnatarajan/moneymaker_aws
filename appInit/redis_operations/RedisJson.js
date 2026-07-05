@@ -40,8 +40,8 @@ class RedisJson {
                 type = await this.client.type(key);
             }
 
-            // Use JSON.GET if type is ReJSON-RL or if client supports it
-            if (type === 'ReJSON-RL' || typeof this.client.sendCommand === 'function') {
+            // Use JSON.GET if type is ReJSON-RL or if client supports it (and key is not a string)
+            if (type !== 'string' && (type === 'ReJSON-RL' || typeof this.client.sendCommand === 'function')) {
                 let jsonData = null;
                 try {
                     jsonData = await this.client.sendCommand(['JSON.GET', key]);

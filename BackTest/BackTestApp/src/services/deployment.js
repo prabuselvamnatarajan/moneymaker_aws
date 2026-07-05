@@ -275,7 +275,12 @@ export const syncAllDeploymentsToRedis = async () => {
     }
 
     for (const [key, activeStrategies] of Object.entries(newKeysData)) {
-      await client.set(key, JSON.stringify({ activeStrategies }));
+      await client.del(key);
+      if (typeof client.json?.set === 'function') {
+        await client.json.set(key, '.', { activeStrategies });
+      } else {
+        await client.set(key, JSON.stringify({ activeStrategies }));
+      }
       console.log(`Updated Redis key ${key} with ${activeStrategies.length} active strategies`);
     }
 
