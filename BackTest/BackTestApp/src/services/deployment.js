@@ -1,4 +1,7 @@
 import Deployment from "../models/deployment.js";
+import Trade from "../models/trade.js";
+import Ledger from "../models/ledger.js";
+import Account from "../models/account.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
@@ -19,9 +22,98 @@ const triggerBacktestIfNeeded = (deployment) => {
   }
 };
 
+const resetBacktestDeployment = async (deployment) => {
+  if (deployment.strategy_mode !== "BACKTEST") {
+    return;
+  }
+
+  const deploymentId = deployment._id;
+  const symbol = deployment.symbol;
+
+  try {
+    // 1. Delete trades and ledgers in MongoDB for this deployment
+    const deletedTrades = await Trade.deleteMany({ deployment_id: deploymentId });
+    const deletedLedgers = await Ledger.deleteMany({ deployment_id: deploymentId });
+    console.log(`[Reset] Deleted ${deletedTrades.deletedCount} trades and ${deletedLedgers.deletedCount} ledgers for deployment ${deploymentId}`);
+
+    // 2. Reset account balance in MongoDB
+    if (deployment.account_id) {
+      const account = await Account.findById(deployment.account_id);
+      if (account) {
+        account.current_balance = account.initial_balance;
+        await account.save();
+        console.log(`[Reset] Reset account ${account._id} current_balance to initial_balance: ${account.initial_balance}`);
+
+        // Sync to Redis
+        const redisUrl = process.env.REDIS_URL;
+        if (redisUrl) {
+          let client;
+          try {
+            client = createClient({ url: redisUrl });
+            await client.connect();
+            const accountIdStr = account.account_id || account._id.toString();
+            const balanceKey = `account_balance:${accountIdStr}`;
+            const balanceData = { balance: account.initial_balance };
+            if (typeof client.json?.set === 'function') {
+              await client.json.set(balanceKey, '.', balanceData);
+            } else {
+              await client.set(balanceKey, JSON.stringify(balanceData));
+            }
+            console.log(`[Reset] Synced account balance for ${accountIdStr} to Redis: ${account.initial_balance}`);
+          } catch (err) {
+            console.error(`[Reset] Error syncing account balance to Redis: ${err.message}`);
+          } finally {
+            if (client) {
+              await client.disconnect();
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Clear Redis keys for strategy state and bought quantity
+    const redisUrl = process.env.REDIS_URL;
+    if (redisUrl) {
+      let client;
+      try {
+        client = createClient({ url: redisUrl });
+        await client.connect();
+
+        const deploymentIdStr = deploymentId.toString();
+
+        // Specific keys
+        const stateKeyBacktest = `strategies:msb:backtest:${deploymentIdStr}:${symbol}`;
+        const stateKeyLive = `strategies:msb:live:${deploymentIdStr}:${symbol}`;
+        await client.del(stateKeyBacktest);
+        await client.del(stateKeyLive);
+
+        const boughtQtyKey = `bought_quantity:${deploymentIdStr}:${symbol}`;
+        await client.del(boughtQtyKey);
+
+        // Wildcard search/clear keys to be future-proof
+        const wildcardKeys = await client.keys(`strategies:*:${deploymentIdStr}:${symbol}`);
+        for (const k of wildcardKeys) {
+          await client.del(k);
+        }
+        
+        console.log(`[Reset] Cleared state and bought quantity Redis keys for deployment ${deploymentIdStr} symbol ${symbol}`);
+      } catch (err) {
+        console.error(`[Reset] Error clearing Redis keys: ${err.message}`);
+      } finally {
+        if (client) {
+          await client.disconnect();
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[Reset] Error during backtest deployment reset: ${err.message}`);
+  }
+};
+
 export const createDeployment = async (userId, deploymentData) => {
   const deployment = new Deployment({ ...deploymentData, user_id: userId });
   const result = await deployment.save();
+  await resetBacktestDeployment(result);
   triggerBacktestIfNeeded(result);
   await syncAllDeploymentsToRedis();
   return result;
@@ -113,6 +205,7 @@ export const transitionDeployment = async (userId, id, action) => {
 
   if (action === "start" || action === "restart") {
     deployment.start_time = new Date();
+    await resetBacktestDeployment(deployment);
   }
   if (action === "stop") {
     deployment.end_time = new Date();
@@ -266,6 +359,21 @@ export const syncAllDeploymentsToRedis = async () => {
         strategy_mode: dep.strategy_mode,
         is_internal_broker: dep.account_id.broker_id ? dep.account_id.broker_id.is_internal : false,
       });
+
+      // Sync account balance to Redis
+      const accountId = dep.account_id.account_id || dep.account_id._id.toString();
+      const balanceKey = `account_balance:${accountId}`;
+      const balanceData = { balance: dep.account_id.current_balance };
+      try {
+        if (typeof client.json?.set === 'function') {
+          await client.json.set(balanceKey, '.', balanceData);
+        } else {
+          await client.set(balanceKey, JSON.stringify(balanceData));
+        }
+        console.log(`[Sync] Synced account balance for ${accountId} to Redis: ${dep.account_id.current_balance}`);
+      } catch (err) {
+        console.error(`[Sync] Failed to sync account balance for ${accountId} to Redis: ${err.message}`);
+      }
     }
 
     // Scan Redis for existing strategy keys to clean up

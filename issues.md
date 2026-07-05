@@ -90,3 +90,90 @@ This document compiles the inconsistencies, architectural flaws, potential race 
   * [MSB.js:L20-34](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/kafka/services/Strategies/MSB/MSB.js#L20-L34)
 * **Proposed Fix**: Add a sanity check in `computeOrderPayload` or `MSB.js` to ensure the quantity is strictly greater than zero before calling the placement API.
 
+---
+
+## 9. Scheduled Exporter `timestamp` Query Bug (Critical)
+* **Description**: The daily cron exporter `exportCollection` queries MongoDB collections using a hardcoded `{ timestamp: { $gte: start, $lte: end } }` filter. However, core transaction collections like `trades` use the field name `created_at`, and `ledgers` use the field name `created_on`. Neither model defines a `timestamp` field.
+* **Impact**:
+  * The scheduled task silently fails to fetch any trades or ledger records.
+  * The daily exported JSON backups for transactions are permanently empty arrays (`[]`), resulting in catastrophic loss of backup coverage.
+* **Code Location**:
+  * [exportCollections.js:L26](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/ScheduledServices/ExportToFile/exportCollections.js#L26)
+* **Proposed Fix**: Detect the target collection type dynamically and query by the correct field (`created_at` for trades, `created_on` for ledgers, and `timestamp` for price tick data).
+
+---
+
+## 10. File Sanitization Mismatch between Exporter and Streamer (Critical)
+* **Description**: `exportCollections.js` sanitizes collection names by keeping hyphens: `collectionName.replace(/[^a-zA-Z0-9-_]/g, '_')`. In contrast, the backtest data loader (`streamer.js` and `clientServer.js`) sanitizes symbol names by replacing hyphens with underscores: `String(str).replace(/[^a-zA-Z0-9]/g, '_')`.
+* **Impact**:
+  * If a symbol name contains hyphens (e.g., `NSE_EQ-KARURVYSYA`), the file is saved as `NSE_EQ-KARURVYSYA.json`.
+  * The streaming engine looks for `NSE_EQ_KARURVYSYA.json` and fails to load the data, crashing the backtest streaming loop with a "file not found" error.
+* **Code Location**:
+  * [exportCollections.js:L33](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/ScheduledServices/ExportToFile/exportCollections.js#L33)
+  * [streamer.js:L12](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BacktestStreamer/streamer.js#L12)
+* **Proposed Fix**: Standardize symbol/file name sanitization across all modules to use the exact same character filter rule.
+
+---
+
+## 11. Backtest WebSocket Stream Subscription Gap (Critical)
+* **Description**: The WebSocket server in `BackTestApp` only subscribes to the `splited-live-data` Kafka topic. Similarly, in the `stream-to-client` WebSocket service, while users can subscribe to `backtest:${symbol}`, there is no publisher in the entire codebase publishing to this Redis PubSub channel.
+* **Impact**:
+  * Real-time price charts and tickers in the UI will remain completely blank/frozen during backtest runs, even though the backtest engine is actively publishing ticks to Kafka.
+* **Code Location**:
+  * [websocketService.js:L134](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestApp/src/services/websocketService.js#L134)
+  * [wsServer.js:L82](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/kafka/services/streamToClient/wsServer.js#L82)
+* **Proposed Fix**: Update `BackTestApp`'s WebSocket server to subscribe to the backtest topic, and ensure the backtest client or chooser publishes ticks to the Redis PubSub channels under the `backtest:` namespace.
+
+---
+
+## 12. Backtest Reset Command Clears Incorrect Redis Keys (Critical)
+* **Description**: When starting/restarting a backtest, `resetBacktestDeployment` deletes namespaced keys in Redis: `strategies:msb:backtest:${deploymentIdStr}:${symbol}` and `bought_quantity:${deploymentIdStr}:${symbol}`. However, the MSB strategy runner reads/writes from the global, non-namespaced keys: `strategies:msb:backtest:${symbol}` and `bought_quantity:${symbol}`.
+* **Impact**:
+  * Wiping and restarting a deployment clears the MongoDB database but leaves the indicator states (previous high/low, trend) and inventory holdings intact in Redis.
+  * Subsequent backtest runs on the same symbol will inherit contaminated state data, leading to non-deterministic, inconsistent test results.
+* **Code Locations**:
+  * [deployment.js:L85-L91](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestApp/src/services/deployment.js#L85-L91)
+  * [getStrategyStateDetails.js:L9](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/kafka/services/Strategies/MSB/redis_utils/getStrategyStateDetails.js#L9)
+  * [MSB.js:L33,102](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/kafka/services/Strategies/MSB/MSB.js#L33)
+* **Proposed Fix**: Align the key generation in both the strategy runner and reset logic to always use the namespaced `deployment_id` format.
+
+---
+
+## 13. Database Collection Initialization Double-Colon Bug (Critical)
+* **Description**: The database initializer constructs the Redis key as `${redisKey}:${propertyValue}`. Since the configuration `redisKey` is already defined with a trailing colon (e.g. `strategies:live:`), the resulting key is written to Redis as `strategies:live::${symbol}` (with two colons). However, `StrategyChooserConsumer` and the backtest app read from `strategies:live:${symbol}` (with one colon).
+* **Impact**:
+  * The initial strategies seeded by `appinit` on startup are never found by the strategy chooser, making the system default to empty active strategies until a manual sync is run from the UI.
+* **Code Location**:
+  * [base_init.js:L28](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/appInit/Init/base_init.js#L28)
+* **Proposed Fix**: Remove the trailing colon from the environment variables in `docker-compose.yml` or check for double colons in `base_init.js` key construction.
+
+---
+
+## 14. Quadratic Performance Degradation in Trade Ledger Creation (Critical)
+* **Description**: To record a new trade, the backend queries *all* previous trades for that deployment/account and runs a chronological loop to calculate the current position size and average entry price.
+* **Impact**:
+  * As the number of trades ($N$) grows, the execution time grows quadratically ($O(N^2)$ overall, $O(N)$ per trade insertion). This will trigger severe database latency, event loop blocking, and eventual timeouts on large backtests or active live deployments.
+* **Code Location**:
+  * [trade.js:L127-L132](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestApp/src/services/trade.js#L127-L132)
+* **Proposed Fix**: Cache the active position size and average entry price directly in the `Deployment` or `Account` schema, updating them in $O(1)$ time upon trade execution.
+
+---
+
+## 15. Single-Tenant Broker Hardcoding & Security Risk (Critical)
+* **Description**: The Upstox authorization client retrieves and stores credentials using a single static Redis key `redis_upstox_access_token`.
+* **Impact**:
+  * The system cannot support multi-tenancy. If multiple users connect their Upstox accounts, they will overwrite each other's tokens, leading to User A's strategy placement executing trades against User B's broker account.
+* **Code Locations**:
+  * [login.js:L130](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/MicroServices/UpstoxLogin/login.js#L130)
+  * [AuthoriseUpstoxClient.js:L31](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js#L31)
+* **Proposed Fix**: Namespace the access tokens in Redis and MongoDB by appending the `user_id` or `account_id` to the storage keys.
+
+---
+
+## 16. Docker Image Run Failure due to Runtime Volume Dependency (Critical)
+* **Description**: Local source code imports depend on a runtime-mounted directory `/app/redis_utils/redis_operations/` mapping to `appInit/redis_operations/`. Without this volume mount (e.g., in a production Kubernetes or ECS stack), the containers will crash immediately on startup due to missing import modules.
+* **Impact**:
+  * The services are not truly containerized and cannot be deployed on serverless container services (like ECS, Fargate, or Google Cloud Run) where local host volumes are unavailable.
+* **Code Location**:
+  * [getStrategiesForSymbol.js:L1](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/kafka/services/StrategyChooserConsumer/redis_utils/getStrategiesForSymbol.js#L1)
+* **Proposed Fix**: Bundle shared code inside the Docker images during compilation/build time using standard `COPY` instructions or an npm package workspace instead of relying on runtime volumes.

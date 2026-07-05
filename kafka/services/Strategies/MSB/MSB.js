@@ -30,7 +30,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag)
     if (transaction_type == "SELL" && use_full_amount) {
         // For SELL orders, quantity should be determined based on holdings.
         // so we get the last bought quantity from redis with the tag.
-        quantity = await getBoughtQuantityWithTagFromRedis(tag);
+        quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
     };
     let orderPayLoad = {
         quantity,
@@ -99,7 +99,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
 
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);
             await triggerOrder(requestBody);
-            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity);
+            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
         }
         else {
             // trend continuation

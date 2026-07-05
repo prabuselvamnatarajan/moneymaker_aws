@@ -47,8 +47,7 @@ async function createConsumer() {
             if (isBackTest) {
                 strategy_details.isTest = true;
             }
-            logger.info(`Received message for symbol ${symbol}`);
-            const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest);
+            const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest, strategy_details.deployment_id);
 
             logger.debug(`Message content for ${symbol}:`, msg);
             
@@ -62,7 +61,7 @@ async function createConsumer() {
             // call the actual strategy function here
             let newState = await MSB(lastState, data, symbol, strategy_details);
 
-            await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState);
+            await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState, strategy_details.deployment_id);
             
             //after strategy execution latency
             msg.latency.afterStrategyExecution = calculateLatency(symbol, msg);
