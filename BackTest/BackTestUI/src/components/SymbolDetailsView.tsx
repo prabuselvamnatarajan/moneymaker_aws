@@ -62,7 +62,9 @@ export default function SymbolDetailsView({
   }, [symbol?.ticker]);
 
   // Find strategies associated with this symbol
-  const activeStrategies = strategies.filter((strat) => strat.symbols.includes(symbol.ticker));
+  const activeStrategies = strategies.filter((strat) => 
+    strat.symbols.map(s => s.toUpperCase()).includes(symbol.ticker.toUpperCase())
+  );
 
   const isPositive = symbol.change24h >= 0;
 

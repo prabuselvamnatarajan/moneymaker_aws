@@ -25,8 +25,27 @@ export const createTrade = async (tradeData) => {
       throw new Error("user_id is required");
     }
 
-    if (tradeData.deployment_id) {
-      const deployment = await Deployment.findById(tradeData.deployment_id).session(session);
+    let deploymentId = tradeData.deployment_id;
+    if (!deploymentId || deploymentId === "none" || deploymentId === "") {
+      const account_id = tradeData.account_id;
+      if (account_id) {
+        const accountObj = await Account.findOne(buildAccountQuery(account_id)).session(session);
+        if (accountObj) {
+          const manualDeployment = await Deployment.findOne({
+            user_id,
+            account_id: accountObj._id,
+            deployment_name: "Manual",
+          }).session(session);
+          if (manualDeployment) {
+            deploymentId = manualDeployment._id;
+            tradeData.deployment_id = manualDeployment._id;
+          }
+        }
+      }
+    }
+
+    if (deploymentId && deploymentId !== "none" && deploymentId !== "") {
+      const deployment = await Deployment.findById(deploymentId).session(session);
       if (!deployment) {
         throw new Error("Associated deployment not found");
       }
@@ -34,8 +53,27 @@ export const createTrade = async (tradeData) => {
       tradeData.user_symbol_id = deployment.user_symbol_id;
       tradeData.instrument_token = deployment.instrument_token;
       tradeData.symbol = deployment.symbol;
+      tradeData.deployment_id = deployment._id;
       if (!tradeData.account_id) {
         tradeData.account_id = deployment.account_id;
+      }
+    }
+
+    if (!tradeData.user_symbol_id && tradeData.symbol) {
+      const UserSymbol = mongoose.model("UserSymbol");
+      const userSymbol = await UserSymbol.findOne({
+        user_id,
+        $or: [
+          { symbol: tradeData.symbol },
+          { symbol: tradeData.symbol.toUpperCase() },
+        ],
+      }).session(session);
+      if (userSymbol) {
+        tradeData.user_symbol_id = userSymbol._id;
+        tradeData.instrument_token = userSymbol.instrument_token;
+        tradeData.symbol = userSymbol.symbol;
+      } else {
+        throw new Error(`Symbol ${tradeData.symbol} not found in user's watchlisted symbols`);
       }
     }
 
@@ -211,10 +249,32 @@ export const getAllTrades = async (userId, queryParams) => {
     filter.type_of_order = queryParams.type_of_order.toUpperCase();
   }
   if (queryParams.symbol) {
-    filter.symbol = new RegExp(queryParams.symbol, "i");
+    // Normalise to uppercase exact match (handles NSE_INDEX|Nifty 50 correctly without regex pipe bug)
+    filter.symbol = queryParams.symbol.toUpperCase();
   }
   if (queryParams.account_id) {
-    filter.account_id = queryParams.account_id;
+    const account = await Account.findOne({
+      user_id: userId,
+      $or: [
+        ...(mongoose.isValidObjectId(queryParams.account_id)
+          ? [{ _id: queryParams.account_id }]
+          : []),
+        { account_id: queryParams.account_id },
+      ],
+    });
+    if (account) {
+      filter.account_id = account._id;
+    } else {
+      return {
+        items: [],
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          pages: 0,
+        },
+      };
+    }
   }
   if (queryParams.deployment_id) {
     filter.deployment_id = queryParams.deployment_id;

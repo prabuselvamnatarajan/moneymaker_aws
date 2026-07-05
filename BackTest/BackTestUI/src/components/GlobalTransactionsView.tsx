@@ -219,7 +219,7 @@ export default function GlobalTransactionsView({
       }
 
       // 4. Symbols Filter
-      if (filters.symbols.length > 0 && !filters.symbols.includes(tx.symbol)) {
+      if (filters.symbols.length > 0 && !filters.symbols.map(s => s.toUpperCase()).includes(tx.symbol.toUpperCase())) {
         return false;
       }
 

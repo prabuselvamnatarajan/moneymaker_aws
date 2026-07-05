@@ -64,7 +64,9 @@ export default function StrategyDetailsView({
   }, [strategy?.id]);
 
   // Find associated symbol detail states
-  const matchedSymbols = symbols.filter((sym) => strategy.symbols.includes(sym.ticker));
+  const matchedSymbols = symbols.filter((sym) => 
+    strategy.symbols.map(s => s.toUpperCase()).includes(sym.ticker.toUpperCase())
+  );
 
   const isPositive = strategy.pnl >= 0;
 
