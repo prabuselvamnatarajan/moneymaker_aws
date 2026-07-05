@@ -55,3 +55,38 @@ This document compiles the inconsistencies, architectural flaws, potential race 
   * Services may enter a restart loop on docker deployment.
   * While `kafkajs` contains a retry policy, if the broker clustering takes longer than the maximum retries, the container crashes and terminates.
 * **Proposed Fix**: Implement a wrapper script (e.g., using `wait-for-it.sh` or Docker healthcheck parameters) to delay consumer service startup until the Kafka brokers are fully available.
+
+---
+
+## 6. Redis Key Collision for Strategy Runner State (Critical)
+* **Description**: Inside the MSB strategy code, the previous high/low and trend state is stored in Redis using keys mapped by symbol: `strategies:msb:backtest:${symbol}` and `strategies:msb:live:${symbol}`.
+* **Impact**:
+  * If two different users or two different deployments are active on the same symbol (e.g. `SBIN`) using the `msb` strategy at the same time, they will overwrite each other's technical indicator states.
+  * Ticks belonging to one deployment will corrupt the indicator trend computations of the other deployment, leading to erratic triggers.
+* **Code Locations**:
+  * [getStrategyStateDetails.js:L9-13](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/kafka/services/Strategies/MSB/redis_utils/getStrategyStateDetails.js#L9-L13)
+  * [server.js:L51,65](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/kafka/services/Strategies/MSB/server.js#L51)
+* **Proposed Fix**: Include the `deployment_id` in the Redis state key name (e.g. `strategies:msb:backtest:${deployment_id}:${symbol}`).
+
+---
+
+## 7. Desynchronization Risk in Live Order Execution (Critical)
+* **Description**: In `placeorder`'s express handler, it calls `triggerBackTestApp(body)` to log the trade in `BackTestApp`'s database *before* making the API call `placeOrders` to Upstox.
+* **Impact**:
+  * If the broker's API call fails (e.g., due to invalid API keys, insufficient broker margins, API downtime, or rate-limiting), the virtual database ledger will still record the trade as successful.
+  * This creates desynchronization where the dashboard shows shares bought/sold and virtual balances updated, but the actual broker account has no matching transactions.
+* **Code Location**:
+  * [server.js:L27-44](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/MicroServices/Orders/placeOrders/server.js#L27-L44)
+* **Proposed Fix**: Place the real order on Upstox first, wait for a successful response, and only then record the trade in `BackTestApp`'s virtual ledger. If the broker call fails, log the error and reject the transaction.
+
+---
+
+## 8. Unvalidated Zero-Quantity Order Triggers (Medium)
+* **Description**: If a strategy's account balance is depleted, or if it tries to close a position but the holdings tag indicates 0 quantity, `computeOrderPayload` will output `quantity = 0` or a negative value.
+* **Impact**:
+  * The strategy will attempt to place an order with a quantity of 0.
+  * This results in failed broker requests or corrupt ledger entries in `BackTestApp` showing trades with zero quantities.
+* **Code Location**:
+  * [MSB.js:L20-34](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/kafka/services/Strategies/MSB/MSB.js#L20-L34)
+* **Proposed Fix**: Add a sanity check in `computeOrderPayload` or `MSB.js` to ensure the quantity is strictly greater than zero before calling the placement API.
+
