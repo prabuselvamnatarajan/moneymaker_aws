@@ -248,7 +248,7 @@ export default function GlobalTransactionsView({
           {/* Refresh button */}
           <button
             id="refresh-ledger-btn"
-            onClick={fetchTransactions}
+            onClick={() => fetchTransactions(filters)}
             disabled={txLoading}
             className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
           >
