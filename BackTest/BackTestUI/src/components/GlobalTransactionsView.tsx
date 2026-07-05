@@ -78,46 +78,28 @@ export default function GlobalTransactionsView({
         const res = await api.ledger.list();
         items = res.items.map(mapLedger);
       } else {
-        // --- Priority-based scoped fetch to avoid union+AND false-zero problem ---
-        // When multiple entity TYPES are selected, we fetch using the most specific one
-        // (accounts → strategies → symbols) so the fetched pool is already scoped,
-        // and the client-side AND filter narrows it correctly.
         const promises: Promise<Transaction[]>[] = [];
 
-        if (hasAccountFilter) {
-          // Fetch trades per account (server-scoped). The pool will only contain trades
-          // for these accounts. Strategy/Symbol client-side filters narrow it further.
-          currentFilters.accounts.forEach(accountId => {
-            promises.push(
-              api.trades.listForAccount(accountId)
+        // Build Cartesian Product of active filters to query correct combinations on the server
+        const accountsToQuery = hasAccountFilter ? currentFilters.accounts : [undefined];
+        const strategiesToQuery = hasStrategyFilter ? currentFilters.strategies : [undefined];
+        const symbolsToQuery = hasSymbolFilter ? currentFilters.symbols : [undefined];
+
+        accountsToQuery.forEach(accountId => {
+          strategiesToQuery.forEach(strategyId => {
+            symbolsToQuery.forEach(symbol => {
+              promises.push(
+                api.trades.listWithFilters({
+                  account_id: accountId,
+                  deployment_id: strategyId,
+                  symbol: symbol,
+                })
                 .then(r => r.items.map(mapTrade))
                 .catch(() => [])
-            );
+              );
+            });
           });
-        } else if (hasStrategyFilter) {
-          // Only fetch by strategy if no account filter — avoids union+AND zero problem
-          currentFilters.strategies.forEach(strategyId => {
-            promises.push(
-              api.trades.listForDeployment(strategyId)
-                .then(r => r.items.map(t => ({
-                  ...mapTrade(t),
-                  // Patch strategyId with the deployment ID we fetched by, because
-                  // mapTrade uses t.strategy_id (definition ID) not deployment_id
-                  strategyId: t.deployment_id || strategyId,
-                })))
-                .catch(() => [])
-            );
-          });
-        } else if (hasSymbolFilter) {
-          // Only fetch by symbol if no account or strategy filter
-          currentFilters.symbols.forEach(symbol => {
-            promises.push(
-              api.trades.listForSymbol(symbol)
-                .then(r => r.items.map(mapTrade))
-                .catch(() => [])
-            );
-          });
-        }
+        });
 
         const results = await Promise.all(promises);
         const merged = results.flat();

@@ -65,8 +65,9 @@ export function mapTrade(backendTrade: any): Transaction & { deployment_id?: str
     symbol: backendTrade.symbol || 'UNKNOWN',
     // strategyId maps to deployment_id (UI "strategies" = deployments)
     // If deployment_id is present, prefer it; fall back to strategy_id
-    strategyId: backendTrade.deployment_id || backendTrade.strategy_id,
-    accountId: backendTrade.account_id,
+    strategyId: backendTrade.deployment_id?._id || backendTrade.deployment_id 
+      || backendTrade.strategy_id?._id || backendTrade.strategy_id || '',
+    accountId: backendTrade.account_id?._id || backendTrade.account_id || '',
     quantity: qty,
     price: prc,
     fee: backendTrade.commission !== undefined ? backendTrade.commission : parseFloat((qty * prc * 0.0005).toFixed(2)),

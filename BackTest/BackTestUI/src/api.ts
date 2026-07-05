@@ -438,6 +438,22 @@ export const api = {
       return handleResponse<{ items: any[] }>(res);
     },
 
+    // Fetch trades using any combination of account, deployment/strategy, and symbol filters
+    async listWithFilters(params: { account_id?: string; deployment_id?: string; symbol?: string; limit?: number }) {
+      const query = new URLSearchParams();
+      if (params.account_id) query.append('account_id', params.account_id);
+      if (params.deployment_id) query.append('deployment_id', params.deployment_id);
+      if (params.symbol) query.append('symbol', params.symbol);
+      query.append('limit', String(params.limit || 500));
+      query.append('order', 'desc');
+
+      const res = await fetch(`${BASE_URL}/trades?${query.toString()}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
     async create(tradeData: {
       account_id: string;
       symbol: string;
