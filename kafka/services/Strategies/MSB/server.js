@@ -2,7 +2,7 @@ import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
 import { getLatestOHLCByInterval, getLTP } from './utils.js';
 import { calculateLatency } from './utils/latencyUtil.js';
-import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol } from './redis_utils/getStrategyStateDetails.js';
+import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 
 // Use environment variables with fallback defaults
@@ -32,15 +32,19 @@ async function createConsumer() {
             const symbol = message.key.toString();
             const msg = JSON.parse(message.value.toString());
             console.log(`msg: ${JSON.stringify(msg)}`);
+            let { strategy_details = {} } = msg;
             if (msg.done) {
                 logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
+                if (strategy_details.deployment_id) {
+                    await setBacktestCompleted(strategy_details.deployment_id);
+                }
                 return;
             }
+
             msg.latency = {
                 ...msg.latency,
                 beforeStrategyExecution: calculateLatency(symbol, msg)
             };
-            let { strategy_details = {} } = msg;
 
 
             const isBackTest = IS_BACKTEST || strategy_details.isTest === true;

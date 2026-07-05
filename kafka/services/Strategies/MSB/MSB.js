@@ -5,13 +5,12 @@ import { logger } from '/app/utils/logUtils.js';
 async function triggerOrder(requestBody) {
     const placeOrderApi = process.env.PLACEORDER_API;
     if (placeOrderApi) {
-        axios.post(placeOrderApi, requestBody)
-            .then(res => {
-                logger.debug('Order API response:', res.data);
-            })
-            .catch(err => {
-                logger.error('Order API error:', err.message);
-            });
+        try {
+            const res = await axios.post(placeOrderApi, requestBody);
+            logger.debug('Order API response:', res.data);
+        } catch (err) {
+            logger.error('Order API error:', err.message);
+        }
     } else {
         logger.error('PLACEORDER_API env variable not set');
     }

@@ -72,18 +72,31 @@ app.get('/', (req, res) => {
         ws.send(JSON.stringify(payload));
     });
 
-    ws.on('message', async (data) => {
-        //console.log('Received:', data.toString());
-        // Produce to Kafka
-        try {
-            await producer.send({
-                topic,
-                messages: [{ value: data.toString(), key: partitionKey }]
-            });
-            console.log(`Message sent to Kafka topic ${topic} with key ${partitionKey}`);
-        } catch (err) {
-            console.error('Kafka produce error:', err.message);
+    let queue = [];
+    let processing = false;
+
+    async function processQueue() {
+        if (processing) return;
+        processing = true;
+        while (queue.length > 0) {
+            const batch = queue.splice(0, 100);
+            const messages = batch.map(msg => ({ value: msg, key: symbolName }));
+            try {
+                await producer.send({
+                    topic,
+                    messages
+                });
+                console.log(`Sent batch of ${messages.length} messages to Kafka topic ${topic} with key ${symbolName}`);
+            } catch (err) {
+                console.error('Kafka produce error:', err.message);
+            }
         }
+        processing = false;
+    }
+
+    ws.on('message', (data) => {
+        queue.push(data.toString());
+        processQueue().catch(err => console.error('Error in processQueue:', err));
     });
 
     ws.on('close', () => {
