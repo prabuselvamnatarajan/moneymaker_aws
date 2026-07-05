@@ -551,6 +551,7 @@ export default function App() {
         accounts={accounts}
         strategies={strategies}
         symbols={symbols}
+        strategyDefinitions={strategyDefinitions}
         selectedEntityId={selectedEntityId}
         onSelectEntity={handleSelectEntity}
         timezone={timezone}
