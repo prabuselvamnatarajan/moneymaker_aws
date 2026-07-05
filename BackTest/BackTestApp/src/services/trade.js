@@ -245,25 +245,38 @@ export const getAllTrades = async (userId, queryParams) => {
 
   filter.user_id = userId;
 
+  const ensureArray = (val) => {
+    if (!val) return [];
+    return Array.isArray(val) ? val : [val];
+  };
+
   if (queryParams.type_of_order) {
-    filter.type_of_order = queryParams.type_of_order.toUpperCase();
+    const types = ensureArray(queryParams.type_of_order).map(t => t.toUpperCase());
+    filter.type_of_order = { $in: types };
   }
+
+  if (queryParams.status) {
+    const statuses = ensureArray(queryParams.status).map(s => s.toUpperCase());
+    filter.status = { $in: statuses };
+  }
+
   if (queryParams.symbol) {
-    // Normalise to uppercase exact match (handles NSE_INDEX|Nifty 50 correctly without regex pipe bug)
-    filter.symbol = queryParams.symbol.toUpperCase();
+    const symbols = ensureArray(queryParams.symbol).map(s => s.toUpperCase());
+    filter.symbol = { $in: symbols };
   }
+
   if (queryParams.account_id) {
-    const account = await Account.findOne({
+    const accountQueryIds = ensureArray(queryParams.account_id);
+    const validObjectIds = accountQueryIds.filter(id => mongoose.isValidObjectId(id));
+    const accounts = await Account.find({
       user_id: userId,
       $or: [
-        ...(mongoose.isValidObjectId(queryParams.account_id)
-          ? [{ _id: queryParams.account_id }]
-          : []),
-        { account_id: queryParams.account_id },
+        { _id: { $in: validObjectIds } },
+        { account_id: { $in: accountQueryIds } },
       ],
     });
-    if (account) {
-      filter.account_id = account._id;
+    if (accounts.length > 0) {
+      filter.account_id = { $in: accounts.map(a => a._id) };
     } else {
       return {
         items: [],
@@ -276,8 +289,10 @@ export const getAllTrades = async (userId, queryParams) => {
       };
     }
   }
+
   if (queryParams.deployment_id) {
-    filter.deployment_id = queryParams.deployment_id;
+    const deploymentIds = ensureArray(queryParams.deployment_id);
+    filter.deployment_id = { $in: deploymentIds };
   }
 
   const items = await Trade.find(filter).sort(sort).skip(skip).limit(limit);

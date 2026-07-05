@@ -438,13 +438,42 @@ export const api = {
       return handleResponse<{ items: any[] }>(res);
     },
 
-    // Fetch trades using any combination of account, deployment/strategy, and symbol filters
-    async listWithFilters(params: { account_id?: string; deployment_id?: string; symbol?: string; limit?: number }) {
+    // Fetch trades using any combination of account, deployment/strategy, symbol, direction, and status filters, with date ranges
+    async listWithFilters(params: { 
+      account_id?: string[]; 
+      deployment_id?: string[]; 
+      symbol?: string[]; 
+      type_of_order?: string[]; 
+      status?: string[]; 
+      from?: string; 
+      to?: string; 
+      limit?: number 
+    }) {
       const query = new URLSearchParams();
-      if (params.account_id) query.append('account_id', params.account_id);
-      if (params.deployment_id) query.append('deployment_id', params.deployment_id);
-      if (params.symbol) query.append('symbol', params.symbol);
-      query.append('limit', String(params.limit || 500));
+      
+      if (params.account_id) {
+        params.account_id.forEach(id => query.append('account_id', id));
+      }
+      if (params.deployment_id) {
+        params.deployment_id.forEach(id => query.append('deployment_id', id));
+      }
+      if (params.symbol) {
+        params.symbol.forEach(sym => query.append('symbol', sym));
+      }
+      if (params.type_of_order) {
+        params.type_of_order.forEach(type => query.append('type_of_order', type));
+      }
+      if (params.status) {
+        params.status.forEach(status => query.append('status', status));
+      }
+      if (params.from) {
+        query.append('from', params.from);
+      }
+      if (params.to) {
+        query.append('to', params.to);
+      }
+      
+      query.append('limit', String(params.limit || 1000));
       query.append('order', 'desc');
 
       const res = await fetch(`${BASE_URL}/trades?${query.toString()}`, {

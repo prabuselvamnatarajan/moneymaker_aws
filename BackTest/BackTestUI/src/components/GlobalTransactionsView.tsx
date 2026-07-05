@@ -69,48 +69,55 @@ export default function GlobalTransactionsView({
       const hasAccountFilter  = currentFilters.accounts.length > 0;
       const hasStrategyFilter = currentFilters.strategies.length > 0;
       const hasSymbolFilter   = currentFilters.symbols.length > 0;
-      const hasEntityFilter   = hasAccountFilter || hasStrategyFilter || hasSymbolFilter;
+      const hasTypeFilter     = currentFilters.types.length > 0;
+      const hasStatusFilter   = currentFilters.statuses.length > 0;
+      const hasDateFilter     = currentFilters.dateRange !== 'all';
+      const hasEntityFilter   = hasAccountFilter || hasStrategyFilter || hasSymbolFilter || hasTypeFilter || hasStatusFilter || hasDateFilter;
 
       let items: Transaction[] = [];
 
       if (!hasEntityFilter) {
-        // No entity filters: fetch full ledger snapshot
+        // No filters: fetch full ledger snapshot
         const res = await api.ledger.list();
         items = res.items.map(mapLedger);
       } else {
-        const promises: Promise<Transaction[]>[] = [];
+        // Calculate date range bounds
+        let fromDateStr: string | undefined = undefined;
+        let toDateStr: string | undefined = undefined;
 
-        // Build Cartesian Product of active filters to query correct combinations on the server
-        const accountsToQuery = hasAccountFilter ? currentFilters.accounts : [undefined];
-        const strategiesToQuery = hasStrategyFilter ? currentFilters.strategies : [undefined];
-        const symbolsToQuery = hasSymbolFilter ? currentFilters.symbols : [undefined];
+        if (currentFilters.dateRange !== 'all') {
+          const now = new Date();
+          if (currentFilters.dateRange === 'today') {
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            fromDateStr = startOfToday.toISOString();
+          } else if (currentFilters.dateRange === '7d') {
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            fromDateStr = sevenDaysAgo.toISOString();
+          } else if (currentFilters.dateRange === '30d') {
+            const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            fromDateStr = thirtyDaysAgo.toISOString();
+          } else if (currentFilters.dateRange === 'custom') {
+            if (currentFilters.customFrom) {
+              fromDateStr = new Date(currentFilters.customFrom).toISOString();
+            }
+            if (currentFilters.customTo) {
+              toDateStr = new Date(currentFilters.customTo).toISOString();
+            }
+          }
+        }
 
-        accountsToQuery.forEach(accountId => {
-          strategiesToQuery.forEach(strategyId => {
-            symbolsToQuery.forEach(symbol => {
-              promises.push(
-                api.trades.listWithFilters({
-                  account_id: accountId,
-                  deployment_id: strategyId,
-                  symbol: symbol,
-                })
-                .then(r => r.items.map(mapTrade))
-                .catch(() => [])
-              );
-            });
-          });
+        // Fetch from server in a single request with all combined filters!
+        const res = await api.trades.listWithFilters({
+          account_id: hasAccountFilter ? currentFilters.accounts : undefined,
+          deployment_id: hasStrategyFilter ? currentFilters.strategies : undefined,
+          symbol: hasSymbolFilter ? currentFilters.symbols : undefined,
+          type_of_order: hasTypeFilter ? currentFilters.types : undefined,
+          status: hasStatusFilter ? currentFilters.statuses : undefined,
+          from: fromDateStr,
+          to: toDateStr,
         });
 
-        const results = await Promise.all(promises);
-        const merged = results.flat();
-
-        // Deduplicate by transaction id
-        const seen = new Set<string>();
-        items = merged.filter(tx => {
-          if (seen.has(tx.id)) return false;
-          seen.add(tx.id);
-          return true;
-        });
+        items = res.items.map(mapTrade);
       }
 
       // Discard if a newer fetch has started
@@ -128,12 +135,21 @@ export default function GlobalTransactionsView({
     }
   };
 
-  // Re-fetch whenever entity filters change (server-side scoped fetch).
+  // Re-fetch whenever entity, direction, status, or date range filters change (server-side scoped fetch).
   // Pass filters as snapshot param to avoid closure stale reads.
   useEffect(() => {
     fetchTransactions(filters);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.accounts.join(','), filters.strategies.join(','), filters.symbols.join(',')]);
+  }, [
+    filters.accounts.join(','),
+    filters.strategies.join(','),
+    filters.symbols.join(','),
+    filters.types.join(','),
+    filters.statuses.join(','),
+    filters.dateRange,
+    filters.customFrom,
+    filters.customTo
+  ]);
 
   // Quick range helper
   const handleDateShortcut = (range: TransactionFilters['dateRange']) => {
@@ -190,60 +206,9 @@ export default function GlobalTransactionsView({
         if (!matches) return false;
       }
 
-      // 2. Accounts Filter
-      if (filters.accounts.length > 0 && !filters.accounts.includes(tx.accountId)) {
-        return false;
-      }
-
-      // 3. Strategies Filter
-      if (filters.strategies.length > 0 && !filters.strategies.includes(tx.strategyId)) {
-        return false;
-      }
-
-      // 4. Symbols Filter
-      if (filters.symbols.length > 0 && !filters.symbols.map(s => s.toUpperCase()).includes(tx.symbol.toUpperCase())) {
-        return false;
-      }
-
-      // 5. Types Filter
-      if (filters.types.length > 0 && !filters.types.includes(tx.type)) {
-        return false;
-      }
-
-      // 6. Statuses Filter
-      if (filters.statuses.length > 0 && !filters.statuses.includes(tx.status)) {
-        return false;
-      }
-
-      // 7. Date Range Filter
-      if (filters.dateRange !== 'all') {
-        const txDate = new Date(tx.timestamp);
-        const now = new Date();
-        
-        if (filters.dateRange === 'today') {
-          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          if (txDate < startOfToday) return false;
-        } else if (filters.dateRange === '7d') {
-          const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          if (txDate < sevenDaysAgo) return false;
-        } else if (filters.dateRange === '30d') {
-          const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          if (txDate < thirtyDaysAgo) return false;
-        } else if (filters.dateRange === 'custom') {
-          if (filters.customFrom) {
-            const fromDate = new Date(filters.customFrom);
-            if (txDate < fromDate) return false;
-          }
-          if (filters.customTo) {
-            const toDate = new Date(filters.customTo);
-            if (txDate > toDate) return false;
-          }
-        }
-      }
-
       return true;
     });
-  }, [transactions, filters, strategies, accounts]);
+  }, [transactions, filters.search, strategies, accounts]);
 
   // Saved Filter Presets
   const applyPreset = (name: string, pFilters: Partial<TransactionFilters>) => {
