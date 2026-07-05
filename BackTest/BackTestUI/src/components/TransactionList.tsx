@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Eye, Flag, 
-  Settings, CheckSquare, Square, Download, Trash, RefreshCw, Layers, SlidersHorizontal, ListCollapse
+  Settings, CheckSquare, Square, Download, Trash, RefreshCw, Layers, SlidersHorizontal, ListCollapse,
+  GripVertical, Play
 } from 'lucide-react';
 import { Transaction, Account, Strategy, ColumnPreference } from '../types';
 
@@ -53,43 +54,72 @@ export default function TransactionList({
 
   const [showColumnChooser, setShowColumnChooser] = useState(false);
   const [showSortManager, setShowSortManager] = useState(false);
+  const [tempSortConfigs, setTempSortConfigs] = useState<Array<{ field: string; direction: 'asc' | 'desc' }>>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
-  // --- Sort Manager Helpers ---
-  const handleToggleSortDir = (field: string) => {
-    if (onSortChange && sortConfigs) {
-      const updated = sortConfigs.map(c => 
-        c.field === field ? { ...c, direction: c.direction === 'asc' ? 'desc' : 'asc' } : c
-      );
-      onSortChange(updated);
+  // Sync tempSortConfigs with sortConfigs when the popover opens
+  useEffect(() => {
+    if (showSortManager && sortConfigs) {
+      setTempSortConfigs(sortConfigs);
     }
+  }, [showSortManager, sortConfigs]);
+
+  // --- Sort Manager Helpers (modifying local tempSortConfigs state) ---
+  const handleToggleSortDir = (field: string) => {
+    setTempSortConfigs(prev =>
+      prev.map(c => c.field === field ? { ...c, direction: c.direction === 'asc' ? 'desc' : 'asc' } : c)
+    );
   };
 
   const handleMoveSort = (index: number, direction: 'up' | 'down') => {
-    if (onSortChange && sortConfigs) {
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
-      if (targetIndex >= 0 && targetIndex < sortConfigs.length) {
-        const updated = [...sortConfigs];
-        const temp = updated[index];
-        updated[index] = updated[targetIndex];
-        updated[targetIndex] = temp;
-        onSortChange(updated);
-      }
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex >= 0 && targetIndex < tempSortConfigs.length) {
+      const updated = [...tempSortConfigs];
+      const temp = updated[index];
+      updated[index] = updated[targetIndex];
+      updated[targetIndex] = temp;
+      setTempSortConfigs(updated);
     }
   };
 
   const handleRemoveSort = (field: string) => {
-    if (onSortChange && sortConfigs) {
-      const updated = sortConfigs.filter(c => c.field !== field);
-      onSortChange(updated);
-    }
+    setTempSortConfigs(prev => prev.filter(c => c.field !== field));
   };
 
   const handleAddSort = (field: string) => {
-    if (onSortChange && sortConfigs) {
-      if (!sortConfigs.some(c => c.field === field)) {
-        onSortChange([...sortConfigs, { field, direction: 'asc' }]);
-      }
+    if (!tempSortConfigs.some(c => c.field === field)) {
+      setTempSortConfigs(prev => [...prev, { field, direction: 'asc' }]);
     }
+  };
+
+  const handleApplySort = () => {
+    if (onSortChange) {
+      onSortChange(tempSortConfigs);
+    }
+    setShowSortManager(false);
+  };
+
+  // --- Drag and Drop Sorting Handlers ---
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    const updated = [...tempSortConfigs];
+    const draggedItem = updated[draggedIndex];
+    updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, draggedItem);
+    
+    setTempSortConfigs(updated);
+    setDraggedIndex(null);
   };
 
   // --- Sorting State ---
@@ -398,21 +428,36 @@ export default function TransactionList({
                       </div>
 
                       <div className="py-2.5 space-y-2">
-                        {sortConfigs.length === 0 ? (
+                        {tempSortConfigs.length === 0 ? (
                           <div className="text-center py-4 text-xs text-slate-500 italic">
                             No sorting applied. Table defaults to server order.
                           </div>
                         ) : (
                           <div className="space-y-2 max-h-60 overflow-y-auto">
-                            {sortConfigs.map((cfg, idx) => {
+                            {tempSortConfigs.map((cfg, idx) => {
                               const colLabel = columns.find(c => c.id === cfg.field)?.label || cfg.field;
                               return (
-                                <div key={cfg.field} className="flex items-center justify-between bg-slate-950 p-2 rounded-md border border-slate-800 text-xs">
-                                  <div className="flex items-center gap-2">
+                                <div 
+                                  key={cfg.field} 
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, idx)}
+                                  onDragOver={(e) => handleDragOver(e, idx)}
+                                  onDrop={(e) => handleDrop(e, idx)}
+                                  className={`flex items-center justify-between bg-slate-950 p-2 rounded-md border text-xs transition-all ${
+                                    draggedIndex === idx 
+                                      ? 'border-indigo-500/50 bg-slate-900/50 opacity-50' 
+                                      : 'border-slate-800 hover:border-slate-700 bg-slate-950'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {/* Drag Handle */}
+                                    <div className="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-400 p-0.5">
+                                      <GripVertical className="w-3.5 h-3.5" />
+                                    </div>
                                     <span className="font-mono text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded-sm font-bold">
                                       {idx + 1}
                                     </span>
-                                    <span className="text-slate-200 font-semibold truncate max-w-[100px]" title={colLabel}>
+                                    <span className="text-slate-200 font-semibold truncate max-w-[85px]" title={colLabel}>
                                       {colLabel}
                                     </span>
                                   </div>
@@ -421,7 +466,7 @@ export default function TransactionList({
                                     {/* Toggle Order (Asc / Desc) */}
                                     <button
                                       onClick={() => handleToggleSortDir(cfg.field)}
-                                      className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 hover:bg-slate-800 text-[10px] font-mono font-bold text-indigo-400 cursor-pointer"
+                                      className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 hover:bg-slate-850 text-[10px] font-mono font-bold text-indigo-400 cursor-pointer"
                                       title="Toggle Sort Direction"
                                     >
                                       {cfg.direction.toUpperCase()}
@@ -431,15 +476,15 @@ export default function TransactionList({
                                     <button
                                       disabled={idx === 0}
                                       onClick={() => handleMoveSort(idx, 'up')}
-                                      className="p-1 rounded bg-slate-900 border border-slate-850 hover:bg-slate-800 disabled:opacity-20 text-slate-455 hover:text-white cursor-pointer"
+                                      className="p-1 rounded bg-slate-900 border border-slate-850 hover:bg-slate-800 disabled:opacity-20 text-slate-400 hover:text-white cursor-pointer"
                                       title="Increase Priority"
                                     >
                                       ▲
                                     </button>
                                     <button
-                                      disabled={idx === sortConfigs.length - 1}
+                                      disabled={idx === tempSortConfigs.length - 1}
                                       onClick={() => handleMoveSort(idx, 'down')}
-                                      className="p-1 rounded bg-slate-900 border border-slate-850 hover:bg-slate-800 disabled:opacity-20 text-slate-455 hover:text-white cursor-pointer"
+                                      className="p-1 rounded bg-slate-900 border border-slate-850 hover:bg-slate-800 disabled:opacity-20 text-slate-400 hover:text-white cursor-pointer"
                                       title="Decrease Priority"
                                     >
                                       ▼
@@ -448,7 +493,7 @@ export default function TransactionList({
                                     {/* Remove */}
                                     <button
                                       onClick={() => handleRemoveSort(cfg.field)}
-                                      className="p-1 rounded bg-rose-950/20 hover:bg-rose-950 text-rose-455 cursor-pointer"
+                                      className="p-1 rounded bg-rose-950/20 hover:bg-rose-950 text-rose-400 cursor-pointer"
                                       title="Remove sort"
                                     >
                                       <Trash className="w-3 h-3" />
@@ -462,7 +507,7 @@ export default function TransactionList({
                       </div>
 
                       {/* Add Column Dropdown */}
-                      <div className="pt-2.5 flex items-center justify-between gap-2">
+                      <div className="py-2.5 flex items-center justify-between gap-2">
                         <select
                           onChange={(e) => {
                             const val = e.target.value;
@@ -477,7 +522,7 @@ export default function TransactionList({
                           {columns
                             .filter(col => {
                               const colId = col.id === 'strategy' ? 'strategy' : col.id === 'account' ? 'account' : col.id;
-                              return !sortConfigs.some(cfg => cfg.field === colId);
+                              return !tempSortConfigs.some(cfg => cfg.field === colId);
                             })
                             .map(col => (
                               <option key={col.id} value={col.id === 'strategy' ? 'strategy' : col.id === 'account' ? 'account' : col.id}>
@@ -486,6 +531,16 @@ export default function TransactionList({
                             ))
                           }
                         </select>
+                      </div>
+
+                      {/* Run / Apply Sorting Trigger */}
+                      <div className="pt-2.5 flex items-center justify-end gap-2">
+                        <button
+                          onClick={handleApplySort}
+                          className="px-3 py-2 rounded-md bg-indigo-650 hover:bg-indigo-600 active:bg-indigo-700 text-white flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-colors w-full justify-center shadow-lg shadow-indigo-950/40"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" /> Apply & Run Query
+                        </button>
                       </div>
                     </div>
                   )}
