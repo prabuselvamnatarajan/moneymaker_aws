@@ -436,9 +436,7 @@ export const api = {
         headers: getHeaders(),
       });
       return handleResponse<{ items: any[] }>(res);
-    },
-
-    // Fetch trades using any combination of account, deployment/strategy, symbol, direction, and status filters, with date ranges and sorting
+    },    // Fetch trades using any combination of account, deployment/strategy, symbol, direction, and status filters, with date ranges and sorting
     async listWithFilters(params: { 
       account_id?: string[]; 
       deployment_id?: string[]; 
@@ -448,6 +446,7 @@ export const api = {
       from?: string; 
       to?: string; 
       sort?: string;
+      fields?: string;
       limit?: number 
     }) {
       const query = new URLSearchParams();
@@ -476,10 +475,13 @@ export const api = {
       if (params.sort) {
         query.append('sort', params.sort);
       }
+      if (params.fields) {
+        query.append('fields', params.fields);
+      }
       
       query.append('limit', String(params.limit || 1000));
       query.append('order', 'desc');
-
+ 
       const res = await fetch(`${BASE_URL}/trades?${query.toString()}`, {
         method: 'GET',
         headers: getHeaders(),
@@ -506,11 +508,14 @@ export const api = {
 
   // Ledger API
   ledger: {
-    async list(sort?: string) {
+    async list(sort?: string, fields?: string) {
       const query = new URLSearchParams();
       query.append('limit', '500');
       if (sort) {
         query.append('sort', sort);
+      }
+      if (fields) {
+        query.append('fields', fields);
       }
       const res = await fetch(`${BASE_URL}/ledger?${query.toString()}`, {
         method: 'GET',

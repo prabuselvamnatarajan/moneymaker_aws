@@ -7,7 +7,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Eye, Flag, 
   Settings, CheckSquare, Square, Download, Trash, RefreshCw, Layers, SlidersHorizontal, ListCollapse,
-  GripVertical, Play
+  GripVertical, Play, Plus, X
 } from 'lucide-react';
 import { Transaction, Account, Strategy, ColumnPreference } from '../types';
 
@@ -24,7 +24,23 @@ interface TransactionListProps {
   // Server-side multi-level sort support
   sortConfigs?: Array<{ field: string; direction: 'asc' | 'desc' }>;
   onSortChange?: (configs: Array<{ field: string; direction: 'asc' | 'desc' }>) => void;
+  // Lifted up column state for server-side projection
+  columns?: ColumnPreference[];
+  onColumnsChange?: (cols: ColumnPreference[]) => void;
 }
+
+const DEFAULT_COLUMNS: ColumnPreference[] = [
+  { id: 'timestamp', label: 'Timestamp', visible: true },
+  { id: 'type', label: 'Type', visible: true },
+  { id: 'symbol', label: 'Symbol', visible: true },
+  { id: 'strategy', label: 'Strategy', visible: true },
+  { id: 'account', label: 'Account', visible: true },
+  { id: 'quantity', label: 'Quantity', visible: true },
+  { id: 'price', label: 'Price', visible: true },
+  { id: 'fee', label: 'Fee', visible: true },
+  { id: 'status', label: 'Status', visible: true },
+  { id: 'tradeId', label: 'Trade / Execution ID', visible: true },
+];
 
 export default function TransactionList({
   transactions,
@@ -37,20 +53,13 @@ export default function TransactionList({
   timezone,
   sortConfigs,
   onSortChange,
+  columns,
+  onColumnsChange,
 }: TransactionListProps) {
-  // --- Column Configuration & Ordering State ---
-  const [columns, setColumns] = useState<ColumnPreference[]>([
-    { id: 'timestamp', label: 'Timestamp', visible: true },
-    { id: 'type', label: 'Type', visible: true },
-    { id: 'symbol', label: 'Symbol', visible: true },
-    { id: 'strategy', label: 'Strategy', visible: true },
-    { id: 'account', label: 'Account', visible: true },
-    { id: 'quantity', label: 'Quantity', visible: true },
-    { id: 'price', label: 'Price', visible: true },
-    { id: 'fee', label: 'Fee', visible: true },
-    { id: 'status', label: 'Status', visible: true },
-    { id: 'tradeId', label: 'Trade / Execution ID', visible: true },
-  ]);
+  // Use lifted up columns/callback if present; fall back to local state
+  const [localColumns, setLocalColumns] = useState<ColumnPreference[]>(DEFAULT_COLUMNS);
+  const activeColumns = columns || localColumns;
+  const setActiveColumns = onColumnsChange || setLocalColumns;
 
   const [showColumnChooser, setShowColumnChooser] = useState(false);
   const [showSortManager, setShowSortManager] = useState(false);
@@ -63,6 +72,115 @@ export default function TransactionList({
       setTempSortConfigs(sortConfigs);
     }
   }, [showSortManager, sortConfigs]);
+
+  // --- Column Chooser drag and drop state & handlers ---
+  const [tempColumns, setTempColumns] = useState<ColumnPreference[]>([]);
+  const [draggedColId, setDraggedColId] = useState<string | null>(null);
+
+  // Sync tempColumns with activeColumns when the popover opens
+  useEffect(() => {
+    if (showColumnChooser) {
+      setTempColumns(activeColumns);
+    }
+  }, [showColumnChooser, activeColumns]);
+
+  const handleColDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedColId(id);
+    e.dataTransfer.setData('text/plain', id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleColDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDropOnSelected = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (!draggedColId) return;
+
+    const draggedCol = tempColumns.find(c => c.id === draggedColId);
+    if (!draggedCol) return;
+
+    // Filter out the dragged column
+    const updated = tempColumns.filter(c => c.id !== draggedColId);
+    const updatedCol = { ...draggedCol, visible: true };
+
+    // Get visible columns in the updated array
+    let targetAbsoluteIndex = 0;
+    let visibleCount = 0;
+    for (let i = 0; i < updated.length; i++) {
+      if (updated[i].visible) {
+        if (visibleCount === targetIndex) {
+          targetAbsoluteIndex = i;
+          break;
+        }
+        visibleCount++;
+      }
+    }
+
+    if (targetIndex >= visibleCount) {
+      updated.push(updatedCol);
+    } else {
+      updated.splice(targetAbsoluteIndex, 0, updatedCol);
+    }
+
+    setTempColumns(updated);
+    setDraggedColId(null);
+  };
+
+  const handleDropOnSelectedContainer = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!draggedColId) return;
+
+    const draggedCol = tempColumns.find(c => c.id === draggedColId);
+    if (!draggedCol || draggedCol.visible) return; // If already visible, internal drop handles reordering
+
+    const updated = tempColumns.map(c => 
+      c.id === draggedColId ? { ...c, visible: true } : c
+    );
+    setTempColumns(updated);
+    setDraggedColId(null);
+  };
+
+  const handleDropOnAvailableContainer = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!draggedColId) return;
+
+    // Prevent hiding all columns
+    const visibleCount = tempColumns.filter(c => c.visible).length;
+    if (visibleCount <= 1) {
+      setDraggedColId(null);
+      return;
+    }
+
+    const updated = tempColumns.map(c => 
+      c.id === draggedColId ? { ...c, visible: false } : c
+    );
+    setTempColumns(updated);
+    setDraggedColId(null);
+  };
+
+  // Button move operations (fallback / accessibility click support)
+  const moveToSelected = (id: string) => {
+    setTempColumns(prev => prev.map(c => 
+      c.id === id ? { ...c, visible: true } : c
+    ));
+  };
+
+  const moveToAvailable = (id: string) => {
+    // Prevent hiding all columns
+    const visibleCount = tempColumns.filter(c => c.visible).length;
+    if (visibleCount <= 1) return;
+
+    setTempColumns(prev => prev.map(c => 
+      c.id === id ? { ...c, visible: false } : c
+    ));
+  };
+
+  const handleApplyColumns = () => {
+    setActiveColumns(tempColumns);
+    setShowColumnChooser(false);
+  };
 
   // --- Sort Manager Helpers (modifying local tempSortConfigs state) ---
   const handleToggleSortDir = (field: string) => {
@@ -234,29 +352,7 @@ export default function TransactionList({
 
   const totalPages = Math.ceil(transactions.length / pageSize);
 
-  // --- Column Chooser Operations ---
-  const toggleColumnVisibility = (id: string) => {
-    setColumns(prev => prev.map(col => {
-      if (col.id === id) {
-        // Prevent hiding all columns
-        const visibleCount = prev.filter(c => c.visible).length;
-        if (col.visible && visibleCount <= 1) return col;
-        return { ...col, visible: !col.visible };
-      }
-      return col;
-    }));
-  };
 
-  const moveColumn = (index: number, direction: 'up' | 'down') => {
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= columns.length) return;
-    
-    const updated = [...columns];
-    const temp = updated[index];
-    updated[index] = updated[newIndex];
-    updated[newIndex] = temp;
-    setColumns(updated);
-  };
 
   // --- Bulk Selection Operations ---
   const handleSelectAll = () => {
@@ -356,7 +452,7 @@ export default function TransactionList({
     );
   };
 
-  const visibleColumns = columns.filter(c => c.visible);
+  const visibleColumns = activeColumns.filter(c => c.visible);
 
   return (
     <div className="space-y-4">
@@ -435,7 +531,7 @@ export default function TransactionList({
                         ) : (
                           <div className="space-y-2 max-h-60 overflow-y-auto">
                             {tempSortConfigs.map((cfg, idx) => {
-                              const colLabel = columns.find(c => c.id === cfg.field)?.label || cfg.field;
+                              const colLabel = activeColumns.find(c => c.id === cfg.field)?.label || cfg.field;
                               return (
                                 <div 
                                   key={cfg.field} 
@@ -519,7 +615,7 @@ export default function TransactionList({
                           className="bg-slate-955 border border-slate-800 text-slate-300 text-[11px] rounded px-2 py-1 outline-hidden focus:border-indigo-500 w-full cursor-pointer"
                         >
                           <option value="">+ Add Sort Priority</option>
-                          {columns
+                          {activeColumns
                             .filter(col => {
                               const colId = col.id === 'strategy' ? 'strategy' : col.id === 'account' ? 'account' : col.id;
                               return !tempSortConfigs.some(cfg => cfg.field === colId);
@@ -565,61 +661,143 @@ export default function TransactionList({
                   <Settings className="w-4 h-4" />
                   <span className="hidden sm:inline">Columns</span>
                 </button>
-
                 {/* Column Chooser Dropdown */}
                 {showColumnChooser && (
-                  <div id="column-chooser-panel" className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-4 z-40 animate-in fade-in duration-100 divide-y divide-slate-800/65">
-                    <div className="pb-2.5 flex justify-between items-center">
+                  <div 
+                    id="column-chooser-panel" 
+                    className="absolute right-0 mt-2 w-[520px] bg-slate-900/95 border border-slate-800 rounded-xl shadow-2xl p-4 z-40 animate-in fade-in duration-100 backdrop-blur-md"
+                  >
+                    {/* Header */}
+                    <div className="pb-3 border-b border-slate-800 flex justify-between items-center">
                       <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-1.5">
-                        <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" /> Choose & Order Columns
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" /> Columns Configuration
                       </span>
                       <button 
                         onClick={() => setShowColumnChooser(false)} 
-                        className="text-[10px] text-slate-500 hover:text-slate-300 font-mono"
+                        className="text-xs text-slate-500 hover:text-slate-300 font-medium"
                       >
-                        Done
+                        Cancel
                       </button>
                     </div>
-                    
-                    <div className="py-2.5 space-y-2 max-h-64 overflow-y-auto">
-                      {columns.map((col, idx) => (
-                        <div key={col.id} className="flex items-center justify-between text-xs py-0.5">
-                          <label className="flex items-center gap-2 text-slate-300 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={col.visible}
-                              onChange={() => toggleColumnVisibility(col.id)}
-                              className="rounded-sm border-slate-800 text-indigo-600 bg-slate-950 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
-                            />
-                            <span className={`${col.visible ? 'text-slate-200' : 'text-slate-600 line-through font-light'}`}>
-                              {col.label}
-                            </span>
-                          </label>
-                          
-                          <div className="flex items-center gap-1">
-                            <button
-                              disabled={idx === 0}
-                              onClick={() => moveColumn(idx, 'up')}
-                              className="p-1 rounded-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800 disabled:opacity-20 cursor-pointer"
-                              title="Move column up"
-                            >
-                              ▲
-                            </button>
-                            <button
-                              disabled={idx === columns.length - 1}
-                              onClick={() => moveColumn(idx, 'down')}
-                              className="p-1 rounded-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800 disabled:opacity-20 cursor-pointer"
-                              title="Move column down"
-                            >
-                              ▼
-                            </button>
-                          </div>
+
+                    {/* Columns Grid */}
+                    <div className="grid grid-cols-2 gap-4 py-3 min-h-[220px]">
+                      
+                      {/* Selected Columns Column */}
+                      <div 
+                        onDragOver={handleColDragOver}
+                        onDrop={handleDropOnSelectedContainer}
+                        className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 flex flex-col transition-all hover:border-slate-700/50"
+                      >
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/50">
+                          <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                            Visible Columns ({tempColumns.filter(c => c.visible).length})
+                          </span>
                         </div>
-                      ))}
+                        
+                        <div className="space-y-1.5 flex-1 overflow-y-auto max-h-[220px] pr-0.5">
+                          {tempColumns.filter(c => c.visible).map((col, idx) => (
+                            <div
+                              key={col.id}
+                              draggable
+                              onDragStart={(e) => handleColDragStart(e, col.id)}
+                              onDragOver={handleColDragOver}
+                              onDrop={(e) => handleDropOnSelected(e, idx)}
+                              className={`flex items-center justify-between bg-slate-900/90 hover:bg-slate-800/60 border border-slate-800 rounded-md p-1.5 text-xs text-slate-300 transition-all cursor-grab active:cursor-grabbing ${
+                                draggedColId === col.id ? 'opacity-30 border-dashed border-indigo-500' : ''
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <GripVertical className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                                <span className="w-4 h-4 bg-slate-800 text-[10px] font-bold text-slate-400 flex items-center justify-center rounded-full shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <span className="font-medium text-slate-200 truncate max-w-[120px]">
+                                  {col.label}
+                                </span>
+                              </div>
+                              
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveToAvailable(col.id);
+                                }}
+                                className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
+                                title="Remove column"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          
+                          {tempColumns.filter(c => c.visible).length === 0 && (
+                            <div className="text-center py-6 text-[11px] text-slate-600 italic">
+                              Drag columns here
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Available Columns Column */}
+                      <div 
+                        onDragOver={handleColDragOver}
+                        onDrop={handleDropOnAvailableContainer}
+                        className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 flex flex-col transition-all hover:border-slate-700/50"
+                      >
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/50">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            Hidden / Available ({tempColumns.filter(c => !c.visible).length})
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-1.5 flex-1 overflow-y-auto max-h-[220px] pr-0.5">
+                          {tempColumns.filter(c => !c.visible).map((col) => (
+                            <div
+                              key={col.id}
+                              draggable
+                              onDragStart={(e) => handleColDragStart(e, col.id)}
+                              className={`flex items-center justify-between bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/60 rounded-md p-1.5 text-xs text-slate-500 transition-all cursor-grab active:cursor-grabbing ${
+                                draggedColId === col.id ? 'opacity-30 border-dashed border-slate-600' : ''
+                              }`}
+                            >
+                              <span className="font-normal truncate max-w-[150px]">
+                                {col.label}
+                              </span>
+                              
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveToSelected(col.id);
+                                }}
+                                className="p-1 text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-colors"
+                                title="Add column"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          
+                          {tempColumns.filter(c => !c.visible).length === 0 && (
+                            <div className="text-center py-6 text-[11px] text-slate-600 italic">
+                              All columns visible
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                     </div>
 
-                    <div className="pt-2 text-[10px] text-slate-500 italic">
-                      Drag-less ranking: use arrows to reorganize columns layout priority.
+                    {/* Footer Actions */}
+                    <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500 italic max-w-[200px]">
+                        Drag to reorder or move between panels.
+                      </span>
+                      <button
+                        onClick={handleApplyColumns}
+                        className="px-3 py-1.5 rounded-md bg-indigo-650 hover:bg-indigo-600 active:bg-indigo-700 text-white flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-colors shadow-lg shadow-indigo-950/40"
+                      >
+                        <Play className="w-3 h-3 fill-current" /> Apply & Run Query
+                      </button>
                     </div>
                   </div>
                 )}
@@ -789,13 +967,13 @@ export default function TransactionList({
                       )}
 
                       {/* Dynamic Columns values projection */}
-                      {columns.find(c => c.id === 'timestamp')?.visible && (
+                      {activeColumns.find(c => c.id === 'timestamp')?.visible && (
                         <td className="p-4 font-mono text-slate-400 whitespace-nowrap">
                           {formatDate(tx.timestamp)}
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'type')?.visible && (
+                      {activeColumns.find(c => c.id === 'type')?.visible && (
                         <td className="p-4 whitespace-nowrap">
                           <span className={`font-bold italic font-mono text-xs ${
                             tx.type === 'BUY' ? 'text-emerald-500' : 'text-rose-500'
@@ -805,43 +983,43 @@ export default function TransactionList({
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'symbol')?.visible && (
+                      {activeColumns.find(c => c.id === 'symbol')?.visible && (
                         <td className="p-4 font-mono font-bold text-white">
                           {tx.symbol}
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'strategy')?.visible && (
+                      {activeColumns.find(c => c.id === 'strategy')?.visible && (
                         <td className="p-4 text-slate-400 truncate max-w-[140px]" title={getStrategyName(tx.strategyId)}>
                           {getStrategyName(tx.strategyId)}
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'account')?.visible && (
+                      {activeColumns.find(c => c.id === 'account')?.visible && (
                         <td className="p-4 text-slate-400 truncate max-w-[140px]" title={getAccountName(tx.accountId)}>
                           {getAccountName(tx.accountId)}
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'quantity')?.visible && (
+                      {activeColumns.find(c => c.id === 'quantity')?.visible && (
                         <td className="p-4 font-mono text-right text-white whitespace-nowrap">
                           {tx.quantity.toLocaleString(undefined, { maximumFractionDigits: 5 })}
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'price')?.visible && (
+                      {activeColumns.find(c => c.id === 'price')?.visible && (
                         <td className="p-4 font-mono font-bold text-right text-white whitespace-nowrap">
                           {tx.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'fee')?.visible && (
+                      {activeColumns.find(c => c.id === 'fee')?.visible && (
                         <td className="p-4 font-mono text-right text-slate-500 whitespace-nowrap">
                           ₹{tx.fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'status')?.visible && (
+                      {activeColumns.find(c => c.id === 'status')?.visible && (
                         <td className="p-4 whitespace-nowrap">
                           <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase border font-mono font-bold ${
                             tx.status === 'EXECUTED' ? 'bg-slate-800 text-slate-300 border-slate-700' :
@@ -853,7 +1031,7 @@ export default function TransactionList({
                         </td>
                       )}
 
-                      {columns.find(c => c.id === 'tradeId')?.visible && (
+                      {activeColumns.find(c => c.id === 'tradeId')?.visible && (
                         <td className="p-4 font-mono text-indigo-400 whitespace-nowrap select-all hover:text-indigo-300">
                           {tx.tradeId}
                         </td>

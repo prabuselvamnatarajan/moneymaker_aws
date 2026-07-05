@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import Ledger from "../models/ledger.js";
-import { parseQueryParams } from "../utils/queryHelper.js";
+import { parseQueryParams, getProjectionFields } from "../utils/queryHelper.js";
 
 export const getAllLedger = async (userId, queryParams) => {
   const { filter, skip, limit, sort, page } = parseQueryParams(queryParams, {
@@ -55,7 +55,9 @@ export const getAllLedger = async (userId, queryParams) => {
     filter.change_in_balance = { $lt: 0 };
   }
 
-  const items = await Ledger.find(filter)
+  const projection = queryParams.fields ? getProjectionFields(queryParams.fields) : undefined;
+
+  const items = await Ledger.find(filter, projection)
     .sort(sort)
     .skip(skip)
     .limit(limit)

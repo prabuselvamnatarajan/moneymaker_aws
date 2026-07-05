@@ -3,7 +3,7 @@ import Trade from "../models/trade.js";
 import Account from "../models/account.js";
 import Ledger from "../models/ledger.js";
 import Deployment from "../models/deployment.js";
-import { parseQueryParams } from "../utils/queryHelper.js";
+import { parseQueryParams, getProjectionFields } from "../utils/queryHelper.js";
 
 function buildAccountQuery(accountId) {
   if (mongoose.isValidObjectId(accountId)) {
@@ -295,7 +295,8 @@ export const getAllTrades = async (userId, queryParams) => {
     filter.deployment_id = { $in: deploymentIds };
   }
 
-  const items = await Trade.find(filter).sort(sort).skip(skip).limit(limit);
+  const projection = queryParams.fields ? getProjectionFields(queryParams.fields) : undefined;
+  const items = await Trade.find(filter, projection).sort(sort).skip(skip).limit(limit);
 
   const total = await Trade.countDocuments(filter);
 

@@ -58,3 +58,42 @@ export function parseQueryParams(query, options = {}) {
 
   return { filter, skip, limit, sort, page };
 }
+
+export function getProjectionFields(fieldsParam) {
+  if (!fieldsParam) return undefined;
+  const fields = fieldsParam.split(",");
+  const dbFieldsSet = new Set([
+    "_id", 
+    "user_id", 
+    "description", 
+    "change_in_balance", 
+    "opening_balance", 
+    "closing_balance", 
+    "transaction_type",
+    "created_at",
+    "created_on",
+    "execution_time"
+  ]);
+
+  const mapUIFieldToDBFields = {
+    timestamp: ["created_at", "created_on", "execution_time"],
+    type: ["type_of_order", "transaction_type", "order_type"],
+    symbol: ["symbol"],
+    strategy: ["deployment_id", "strategy_id"],
+    account: ["account_id"],
+    quantity: ["quantity", "trade_id"],
+    price: ["price", "trade_id"],
+    fee: ["commission", "trade_id"],
+    status: ["status"],
+    tradeId: ["trade_id"]
+  };
+
+  fields.forEach(field => {
+    const dbFields = mapUIFieldToDBFields[field];
+    if (dbFields) {
+      dbFields.forEach(dbField => dbFieldsSet.add(dbField));
+    }
+  });
+
+  return Array.from(dbFieldsSet).join(" ");
+}

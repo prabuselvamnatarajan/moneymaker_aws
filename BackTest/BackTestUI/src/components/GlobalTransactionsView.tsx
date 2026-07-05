@@ -8,7 +8,7 @@ import {
   Search, SlidersHorizontal, X, Bookmark, Calendar, Filter, 
   Check, ChevronDown, RefreshCw, Sparkles, HelpCircle 
 } from 'lucide-react';
-import { Transaction, Account, Strategy, SymbolData, TransactionFilters } from '../types';
+import { Transaction, Account, Strategy, SymbolData, TransactionFilters, ColumnPreference } from '../types';
 import TransactionList from './TransactionList';
 import { api } from '../api';
 import { mapTrade, mapLedger } from '../adapters';
@@ -60,6 +60,20 @@ export default function GlobalTransactionsView({
   const [txError, setTxError] = useState<string | null>(null);
   const fetchIdRef = React.useRef(0);
 
+  // Column configuration lifted up to support server-side projection / select fields
+  const [columns, setColumns] = useState<ColumnPreference[]>([
+    { id: 'timestamp', label: 'Timestamp', visible: true },
+    { id: 'type', label: 'Type', visible: true },
+    { id: 'symbol', label: 'Symbol', visible: true },
+    { id: 'strategy', label: 'Strategy', visible: true },
+    { id: 'account', label: 'Account', visible: true },
+    { id: 'quantity', label: 'Quantity', visible: true },
+    { id: 'price', label: 'Price', visible: true },
+    { id: 'fee', label: 'Fee', visible: true },
+    { id: 'status', label: 'Status', visible: true },
+    { id: 'tradeId', label: 'Trade / Execution ID', visible: true },
+  ]);
+
   // Multi-level sort configuration state
   const [sortConfigs, setSortConfigs] = useState<Array<{ field: string; direction: 'asc' | 'desc' }>>([
     { field: 'timestamp', direction: 'desc' }
@@ -81,10 +95,11 @@ export default function GlobalTransactionsView({
 
       let items: Transaction[] = [];
       const sortParam = sortConfigs.map(c => `${c.field}:${c.direction}`).join(',');
+      const fieldsParam = columns.filter(c => c.visible).map(c => c.id).join(',');
 
       if (!hasEntityFilter) {
-        // No filters: fetch full ledger snapshot with sorting
-        const res = await api.ledger.list(sortParam);
+        // No filters: fetch full ledger snapshot with sorting and fields projection
+        const res = await api.ledger.list(sortParam, fieldsParam);
         items = res.items.map(mapLedger);
       } else {
         // Calculate date range bounds
@@ -112,7 +127,7 @@ export default function GlobalTransactionsView({
           }
         }
 
-        // Fetch from server in a single request with all combined filters and multi-level sorting!
+        // Fetch from server in a single request with all combined filters, sorting, and projection!
         const res = await api.trades.listWithFilters({
           account_id: hasAccountFilter ? currentFilters.accounts : undefined,
           deployment_id: hasStrategyFilter ? currentFilters.strategies : undefined,
@@ -122,6 +137,7 @@ export default function GlobalTransactionsView({
           from: fromDateStr,
           to: toDateStr,
           sort: sortParam,
+          fields: fieldsParam,
         });
 
         items = res.items.map(mapTrade);
@@ -140,7 +156,7 @@ export default function GlobalTransactionsView({
     }
   };
 
-  // Re-fetch whenever filters or sort config changes (server-side scoped fetch).
+  // Re-fetch whenever filters, sort config, or selected fields change (server-side scoped fetch).
   useEffect(() => {
     fetchTransactions(filters);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -154,6 +170,7 @@ export default function GlobalTransactionsView({
     filters.customFrom,
     filters.customTo,
     sortConfigs.map(c => `${c.field}:${c.direction}`).join(','),
+    columns.filter(c => c.visible).map(c => c.id).join(','),
   ]);
 
   // Quick range helper
@@ -603,6 +620,8 @@ export default function GlobalTransactionsView({
           highlightedTxId={highlightedTxId}
           sortConfigs={sortConfigs}
           onSortChange={setSortConfigs}
+          columns={columns}
+          onColumnsChange={setColumns}
         />
       )}
 
