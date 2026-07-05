@@ -20,6 +20,9 @@ interface TransactionListProps {
   onViewAllDrilldown?: () => void;
   highlightedTxId?: string;
   timezone: string;
+  // Server-side multi-level sort support
+  sortConfigs?: Array<{ field: string; direction: 'asc' | 'desc' }>;
+  onSortChange?: (configs: Array<{ field: string; direction: 'asc' | 'desc' }>) => void;
 }
 
 export default function TransactionList({
@@ -31,6 +34,8 @@ export default function TransactionList({
   onViewAllDrilldown,
   highlightedTxId,
   timezone,
+  sortConfigs,
+  onSortChange,
 }: TransactionListProps) {
   // --- Column Configuration & Ordering State ---
   const [columns, setColumns] = useState<ColumnPreference[]>([
@@ -81,19 +86,46 @@ export default function TransactionList({
   };
 
   // --- Sorting & Filtering Logic ---
-  const handleSort = (field: string) => {
+  const handleSort = (field: string, event: React.MouseEvent) => {
     if (variant === 'compact') return; // Compact view is always sorted by time
-    if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+
+    if (onSortChange && sortConfigs) {
+      let newConfigs = [...sortConfigs];
+      const isShiftPressed = event.shiftKey;
+
+      const existingIdx = newConfigs.findIndex(c => c.field === field);
+      if (existingIdx > -1) {
+        const currentDir = newConfigs[existingIdx].direction;
+        if (currentDir === 'asc') {
+          newConfigs[existingIdx].direction = 'desc';
+        } else {
+          newConfigs.splice(existingIdx, 1);
+        }
+      } else {
+        if (isShiftPressed) {
+          newConfigs.push({ field, direction: 'asc' });
+        } else {
+          newConfigs = [{ field, direction: 'asc' }];
+        }
+      }
+      onSortChange(newConfigs);
     } else {
-      setSortField(field as any);
-      setSortDirection('desc');
+      if (sortField === field) {
+        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+      } else {
+        setSortField(field as any);
+        setSortDirection('desc');
+      }
     }
     setCurrentPage(1);
   };
 
   const sortedTransactions = useMemo(() => {
     const list = [...transactions];
+    if (sortConfigs) {
+      // Server-side sorted already!
+      return list;
+    }
     if (!sortField) return list;
 
     list.sort((a, b) => {
@@ -120,7 +152,7 @@ export default function TransactionList({
     });
 
     return list;
-  }, [transactions, sortField, sortDirection]);
+  }, [transactions, sortField, sortDirection, sortConfigs]);
 
   // --- Compact limits vs. Paginated lists ---
   const paginatedTransactions = useMemo(() => {
@@ -457,26 +489,45 @@ export default function TransactionList({
                   )}
 
                   {/* Dynamic Columns header projection */}
-                  {visibleColumns.map(col => (
-                    <th 
-                      key={col.id} 
-                      onClick={() => handleSort(col.id === 'strategy' ? 'strategy' : col.id === 'account' ? 'account' : col.id)}
-                      className={`p-4 font-normal ${variant === 'full' ? 'cursor-pointer hover:bg-slate-800 hover:text-slate-100 transition-colors' : ''}`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span>{col.label}</span>
-                        {variant === 'full' && (
-                          <span className="text-slate-600">
-                            {sortField === col.id || (col.id === 'strategy' && sortField === 'strategy') || (col.id === 'account' && sortField === 'account') ? (
-                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-400" /> : <ArrowDown className="w-3 h-3 text-indigo-400" />
-                            ) : (
-                              <ArrowUpDown className="w-3.5 h-3.5 hover:text-slate-400" />
-                            )}
-                          </span>
-                        )}
-                      </div>
-                    </th>
-                  ))}
+                  {visibleColumns.map(col => {
+                    const colId = col.id === 'strategy' ? 'strategy' : col.id === 'account' ? 'account' : col.id;
+                    
+                    // Check if server-side sorting props are active
+                    const serverSortIndex = sortConfigs ? sortConfigs.findIndex(c => c.field === colId) : -1;
+                    const isServerSorted = serverSortIndex > -1;
+                    const serverSortDir = isServerSorted ? sortConfigs![serverSortIndex].direction : null;
+                    
+                    const isLocalSorted = !sortConfigs && (sortField === colId || (colId === 'strategy' && sortField === 'strategy') || (colId === 'account' && sortField === 'account'));
+                    const localSortDir = isLocalSorted ? sortDirection : null;
+
+                    return (
+                      <th 
+                        key={col.id} 
+                        onClick={(e) => handleSort(colId, e)}
+                        className={`p-4 font-normal ${variant === 'full' ? 'cursor-pointer hover:bg-slate-800 hover:text-slate-100 transition-colors select-none' : ''}`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>{col.label}</span>
+                          {variant === 'full' && (
+                            <span className="flex items-center gap-0.5 text-slate-600">
+                              {isServerSorted ? (
+                                <>
+                                  {serverSortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-400" /> : <ArrowDown className="w-3 h-3 text-indigo-400" />}
+                                  <span className="text-[9px] font-mono font-bold bg-indigo-500/20 text-indigo-300 px-1 rounded-sm">
+                                    {serverSortIndex + 1}
+                                  </span>
+                                </>
+                              ) : isLocalSorted ? (
+                                localSortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-400" /> : <ArrowDown className="w-3 h-3 text-indigo-400" />
+                              ) : (
+                                <ArrowUpDown className="w-3.5 h-3.5 hover:text-slate-400" />
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
 
                   <th className="p-4 font-normal w-20 text-right pr-4">Details</th>
                 </tr>

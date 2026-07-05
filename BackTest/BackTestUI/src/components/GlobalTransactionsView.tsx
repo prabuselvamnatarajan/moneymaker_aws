@@ -60,6 +60,11 @@ export default function GlobalTransactionsView({
   const [txError, setTxError] = useState<string | null>(null);
   const fetchIdRef = React.useRef(0);
 
+  // Multi-level sort configuration state
+  const [sortConfigs, setSortConfigs] = useState<Array<{ field: string; direction: 'asc' | 'desc' }>>([
+    { field: 'timestamp', direction: 'desc' }
+  ]);
+
   const fetchTransactions = async (currentFilters: typeof filters) => {
     // Bump fetch ID — any in-flight fetch with an older ID will discard its result
     const fetchId = ++fetchIdRef.current;
@@ -75,10 +80,11 @@ export default function GlobalTransactionsView({
       const hasEntityFilter   = hasAccountFilter || hasStrategyFilter || hasSymbolFilter || hasTypeFilter || hasStatusFilter || hasDateFilter;
 
       let items: Transaction[] = [];
+      const sortParam = sortConfigs.map(c => `${c.field}:${c.direction}`).join(',');
 
       if (!hasEntityFilter) {
-        // No filters: fetch full ledger snapshot
-        const res = await api.ledger.list();
+        // No filters: fetch full ledger snapshot with sorting
+        const res = await api.ledger.list(sortParam);
         items = res.items.map(mapLedger);
       } else {
         // Calculate date range bounds
@@ -106,7 +112,7 @@ export default function GlobalTransactionsView({
           }
         }
 
-        // Fetch from server in a single request with all combined filters!
+        // Fetch from server in a single request with all combined filters and multi-level sorting!
         const res = await api.trades.listWithFilters({
           account_id: hasAccountFilter ? currentFilters.accounts : undefined,
           deployment_id: hasStrategyFilter ? currentFilters.strategies : undefined,
@@ -115,6 +121,7 @@ export default function GlobalTransactionsView({
           status: hasStatusFilter ? currentFilters.statuses : undefined,
           from: fromDateStr,
           to: toDateStr,
+          sort: sortParam,
         });
 
         items = res.items.map(mapTrade);
@@ -123,9 +130,7 @@ export default function GlobalTransactionsView({
       // Discard if a newer fetch has started
       if (fetchId !== fetchIdRef.current) return;
 
-      setTransactions(
-        items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      );
+      setTransactions(items);
     } catch (err: any) {
       if (fetchId !== fetchIdRef.current) return;
       setTxError(err.message || 'Failed to load ledger');
@@ -135,8 +140,7 @@ export default function GlobalTransactionsView({
     }
   };
 
-  // Re-fetch whenever entity, direction, status, or date range filters change (server-side scoped fetch).
-  // Pass filters as snapshot param to avoid closure stale reads.
+  // Re-fetch whenever filters or sort config changes (server-side scoped fetch).
   useEffect(() => {
     fetchTransactions(filters);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,7 +152,8 @@ export default function GlobalTransactionsView({
     filters.statuses.join(','),
     filters.dateRange,
     filters.customFrom,
-    filters.customTo
+    filters.customTo,
+    sortConfigs.map(c => `${c.field}:${c.direction}`).join(','),
   ]);
 
   // Quick range helper
@@ -596,6 +601,8 @@ export default function GlobalTransactionsView({
           timezone={timezone}
           onRowClick={onSelectTransaction}
           highlightedTxId={highlightedTxId}
+          sortConfigs={sortConfigs}
+          onSortChange={setSortConfigs}
         />
       )}
 

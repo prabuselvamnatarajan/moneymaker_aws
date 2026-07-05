@@ -5,10 +5,29 @@ export function parseQueryParams(query, options = {}) {
   const limit = Math.max(1, Math.min(100, parseInt(query.limit) || 20));
   const skip = (page - 1) * limit;
 
-  const requestedSort = query.sort || defaultSort;
-  const sortField = /^[a-zA-Z0-9_]+$/.test(requestedSort) ? requestedSort : defaultSort;
-  const order = query.order === "asc" ? 1 : -1;
-  const sort = { [sortField]: order };
+  let sort = {};
+  if (query.sort && query.sort.includes(":")) {
+    const parts = query.sort.split(",");
+    parts.forEach(part => {
+      const [field, direction] = part.split(":");
+      if (/^[a-zA-Z0-9_]+$/.test(field)) {
+        let dbField = field;
+        if (field === "timestamp" || field === "execution_time") {
+          dbField = "created_at";
+        }
+        sort[dbField] = direction === "asc" ? 1 : -1;
+      }
+    });
+  } else {
+    const requestedSort = query.sort || defaultSort;
+    const sortField = /^[a-zA-Z0-9_]+$/.test(requestedSort) ? requestedSort : defaultSort;
+    const order = query.order === "asc" ? 1 : -1;
+    let dbField = sortField;
+    if (sortField === "timestamp" || sortField === "execution_time") {
+      dbField = "created_at";
+    }
+    sort[dbField] = order;
+  }
 
   const filter = {};
 
