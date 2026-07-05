@@ -52,6 +52,45 @@ export default function TransactionList({
   ]);
 
   const [showColumnChooser, setShowColumnChooser] = useState(false);
+  const [showSortManager, setShowSortManager] = useState(false);
+
+  // --- Sort Manager Helpers ---
+  const handleToggleSortDir = (field: string) => {
+    if (onSortChange && sortConfigs) {
+      const updated = sortConfigs.map(c => 
+        c.field === field ? { ...c, direction: c.direction === 'asc' ? 'desc' : 'asc' } : c
+      );
+      onSortChange(updated);
+    }
+  };
+
+  const handleMoveSort = (index: number, direction: 'up' | 'down') => {
+    if (onSortChange && sortConfigs) {
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex >= 0 && targetIndex < sortConfigs.length) {
+        const updated = [...sortConfigs];
+        const temp = updated[index];
+        updated[index] = updated[targetIndex];
+        updated[targetIndex] = temp;
+        onSortChange(updated);
+      }
+    }
+  };
+
+  const handleRemoveSort = (field: string) => {
+    if (onSortChange && sortConfigs) {
+      const updated = sortConfigs.filter(c => c.field !== field);
+      onSortChange(updated);
+    }
+  };
+
+  const handleAddSort = (field: string) => {
+    if (onSortChange && sortConfigs) {
+      if (!sortConfigs.some(c => c.field === field)) {
+        onSortChange([...sortConfigs, { field, direction: 'asc' }]);
+      }
+    }
+  };
 
   // --- Sorting State ---
   const [sortField, setSortField] = useState<keyof Transaction | 'strategy' | 'account' | null>('timestamp');
@@ -317,78 +356,219 @@ export default function TransactionList({
           )}
 
           {variant === 'full' && (
-            <div className="relative">
-              <button
-                id="column-chooser-toggle"
-                onClick={() => setShowColumnChooser(!showColumnChooser)}
-                className={`p-2 rounded-md border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  showColumnChooser 
-                    ? 'bg-slate-800 text-indigo-400 border-slate-700' 
-                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-                title="Customize Display Columns"
-              >
-                <Settings className="w-4 h-4" />
-                <span className="hidden sm:inline">Columns</span>
-              </button>
+            <div className="flex items-center gap-2">
+              {/* Sort Manager Button & Popover */}
+              {sortConfigs && onSortChange && (
+                <div className="relative">
+                  <button
+                    id="sort-manager-toggle"
+                    onClick={() => {
+                      setShowSortManager(!showSortManager);
+                      setShowColumnChooser(false);
+                    }}
+                    className={`p-2 rounded-md border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                      showSortManager 
+                        ? 'bg-slate-800 text-indigo-400 border-slate-700' 
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                    title="Configure Multi-Level Sorting"
+                  >
+                    <ArrowUpDown className="w-4 h-4" />
+                    <span className="hidden sm:inline">Sort Hierarchy</span>
+                    {sortConfigs.length > 0 && (
+                      <span className="bg-indigo-500 text-white font-mono font-bold text-[9px] px-1.5 py-0.5 rounded-full">
+                        {sortConfigs.length}
+                      </span>
+                    )}
+                  </button>
 
-              {/* Column Chooser Dropdown */}
-              {showColumnChooser && (
-                <div id="column-chooser-panel" className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-4 z-40 animate-in fade-in duration-100 divide-y divide-slate-800/65">
-                  <div className="pb-2.5 flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-1.5">
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" /> Choose & Order Columns
-                    </span>
-                    <button 
-                      onClick={() => setShowColumnChooser(false)} 
-                      className="text-[10px] text-slate-500 hover:text-slate-300 font-mono"
-                    >
-                      Done
-                    </button>
-                  </div>
-                  
-                  <div className="py-2.5 space-y-2 max-h-64 overflow-y-auto">
-                    {columns.map((col, idx) => (
-                      <div key={col.id} className="flex items-center justify-between text-xs py-0.5">
-                        <label className="flex items-center gap-2 text-slate-300 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={col.visible}
-                            onChange={() => toggleColumnVisibility(col.id)}
-                            className="rounded-sm border-slate-800 text-indigo-600 bg-slate-950 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
-                          />
-                          <span className={`${col.visible ? 'text-slate-200' : 'text-slate-600 line-through font-light'}`}>
-                            {col.label}
-                          </span>
-                        </label>
-                        
-                        <div className="flex items-center gap-1">
-                          <button
-                            disabled={idx === 0}
-                            onClick={() => moveColumn(idx, 'up')}
-                            className="p-1 rounded-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800 disabled:opacity-20"
-                            title="Move column up"
-                          >
-                            ▲
-                          </button>
-                          <button
-                            disabled={idx === columns.length - 1}
-                            onClick={() => moveColumn(idx, 'down')}
-                            className="p-1 rounded-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800 disabled:opacity-20"
-                            title="Move column down"
-                          >
-                            ▼
-                          </button>
-                        </div>
+                  {/* Sort Manager Dropdown Panel */}
+                  {showSortManager && (
+                    <div id="sort-manager-panel" className="absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-4 z-40 animate-in fade-in duration-100 divide-y divide-slate-800/65">
+                      <div className="pb-2.5 flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-1.5">
+                          <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" /> Sort Priority Ranking
+                        </span>
+                        <button 
+                          onClick={() => setShowSortManager(false)} 
+                          className="text-[10px] text-slate-500 hover:text-slate-300 font-mono"
+                        >
+                          Done
+                        </button>
                       </div>
-                    ))}
-                  </div>
 
-                  <div className="pt-2 text-[10px] text-slate-500 italic">
-                    Drag-less ranking: use arrows to reorganize columns layout priority.
-                  </div>
+                      <div className="py-2.5 space-y-2">
+                        {sortConfigs.length === 0 ? (
+                          <div className="text-center py-4 text-xs text-slate-500 italic">
+                            No sorting applied. Table defaults to server order.
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {sortConfigs.map((cfg, idx) => {
+                              const colLabel = columns.find(c => c.id === cfg.field)?.label || cfg.field;
+                              return (
+                                <div key={cfg.field} className="flex items-center justify-between bg-slate-950 p-2 rounded-md border border-slate-800 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-[10px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded-sm font-bold">
+                                      {idx + 1}
+                                    </span>
+                                    <span className="text-slate-200 font-semibold truncate max-w-[100px]" title={colLabel}>
+                                      {colLabel}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5">
+                                    {/* Toggle Order (Asc / Desc) */}
+                                    <button
+                                      onClick={() => handleToggleSortDir(cfg.field)}
+                                      className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 hover:bg-slate-800 text-[10px] font-mono font-bold text-indigo-400 cursor-pointer"
+                                      title="Toggle Sort Direction"
+                                    >
+                                      {cfg.direction.toUpperCase()}
+                                    </button>
+
+                                    {/* Move Up / Down */}
+                                    <button
+                                      disabled={idx === 0}
+                                      onClick={() => handleMoveSort(idx, 'up')}
+                                      className="p-1 rounded bg-slate-900 border border-slate-850 hover:bg-slate-800 disabled:opacity-20 text-slate-455 hover:text-white cursor-pointer"
+                                      title="Increase Priority"
+                                    >
+                                      ▲
+                                    </button>
+                                    <button
+                                      disabled={idx === sortConfigs.length - 1}
+                                      onClick={() => handleMoveSort(idx, 'down')}
+                                      className="p-1 rounded bg-slate-900 border border-slate-850 hover:bg-slate-800 disabled:opacity-20 text-slate-455 hover:text-white cursor-pointer"
+                                      title="Decrease Priority"
+                                    >
+                                      ▼
+                                    </button>
+
+                                    {/* Remove */}
+                                    <button
+                                      onClick={() => handleRemoveSort(cfg.field)}
+                                      className="p-1 rounded bg-rose-950/20 hover:bg-rose-950 text-rose-455 cursor-pointer"
+                                      title="Remove sort"
+                                    >
+                                      <Trash className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Add Column Dropdown */}
+                      <div className="pt-2.5 flex items-center justify-between gap-2">
+                        <select
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val) {
+                              handleAddSort(val);
+                              e.target.value = '';
+                            }
+                          }}
+                          className="bg-slate-955 border border-slate-800 text-slate-300 text-[11px] rounded px-2 py-1 outline-hidden focus:border-indigo-500 w-full cursor-pointer"
+                        >
+                          <option value="">+ Add Sort Priority</option>
+                          {columns
+                            .filter(col => {
+                              const colId = col.id === 'strategy' ? 'strategy' : col.id === 'account' ? 'account' : col.id;
+                              return !sortConfigs.some(cfg => cfg.field === colId);
+                            })
+                            .map(col => (
+                              <option key={col.id} value={col.id === 'strategy' ? 'strategy' : col.id === 'account' ? 'account' : col.id}>
+                                {col.label}
+                              </option>
+                            ))
+                          }
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Column Chooser Button & Popover */}
+              <div className="relative">
+                <button
+                  id="column-chooser-toggle"
+                  onClick={() => {
+                    setShowColumnChooser(!showColumnChooser);
+                    setShowSortManager(false);
+                  }}
+                  className={`p-2 rounded-md border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                    showColumnChooser 
+                      ? 'bg-slate-800 text-indigo-400 border-slate-700' 
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                  title="Customize Display Columns"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span className="hidden sm:inline">Columns</span>
+                </button>
+
+                {/* Column Chooser Dropdown */}
+                {showColumnChooser && (
+                  <div id="column-chooser-panel" className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl p-4 z-40 animate-in fade-in duration-100 divide-y divide-slate-800/65">
+                    <div className="pb-2.5 flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-200 tracking-wide flex items-center gap-1.5">
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" /> Choose & Order Columns
+                      </span>
+                      <button 
+                        onClick={() => setShowColumnChooser(false)} 
+                        className="text-[10px] text-slate-500 hover:text-slate-300 font-mono"
+                      >
+                        Done
+                      </button>
+                    </div>
+                    
+                    <div className="py-2.5 space-y-2 max-h-64 overflow-y-auto">
+                      {columns.map((col, idx) => (
+                        <div key={col.id} className="flex items-center justify-between text-xs py-0.5">
+                          <label className="flex items-center gap-2 text-slate-300 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={col.visible}
+                              onChange={() => toggleColumnVisibility(col.id)}
+                              className="rounded-sm border-slate-800 text-indigo-600 bg-slate-950 focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span className={`${col.visible ? 'text-slate-200' : 'text-slate-600 line-through font-light'}`}>
+                              {col.label}
+                            </span>
+                          </label>
+                          
+                          <div className="flex items-center gap-1">
+                            <button
+                              disabled={idx === 0}
+                              onClick={() => moveColumn(idx, 'up')}
+                              className="p-1 rounded-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800 disabled:opacity-20 cursor-pointer"
+                              title="Move column up"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              disabled={idx === columns.length - 1}
+                              onClick={() => moveColumn(idx, 'down')}
+                              className="p-1 rounded-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800 disabled:opacity-20 cursor-pointer"
+                              title="Move column down"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-2 text-[10px] text-slate-500 italic">
+                      Drag-less ranking: use arrows to reorganize columns layout priority.
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
