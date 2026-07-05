@@ -476,7 +476,6 @@ export default function App() {
       case 'transactions':
         return (
           <GlobalTransactionsView
-            transactions={transactions}
             accounts={accounts}
             strategies={strategies}
             symbols={symbols}
@@ -531,7 +530,6 @@ export default function App() {
           <StrategyDetailsView
             strategy={matchedStrat}
             symbols={symbols}
-            transactions={transactions}
             onBackToDashboard={() => setActiveScreen('dashboard')}
             onUpdateStrategyStatus={handleUpdateStrategyStatus}
             onNavigateToEntity={handleSelectEntity}
@@ -547,7 +545,6 @@ export default function App() {
           <AccountDetailsView
             account={matchedAcc}
             accounts={accounts}
-            transactions={transactions}
             strategies={strategies}
             onBackToDashboard={() => setActiveScreen('dashboard')}
             onToggleBrokerStatus={handleToggleBrokerStatus}
@@ -563,7 +560,6 @@ export default function App() {
         return (
           <SymbolDetailsView
             symbol={matchedSym}
-            transactions={transactions}
             strategies={strategies}
             onBackToDashboard={() => setActiveScreen('dashboard')}
             onNavigateToEntity={handleSelectEntity}

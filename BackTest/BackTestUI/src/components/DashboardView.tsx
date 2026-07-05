@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { Account, Strategy, SymbolData, Transaction } from '../types';
+import { api } from '../api';
+import { mapLedger } from '../adapters';
 
 interface DashboardViewProps {
   accounts: Account[];
@@ -58,6 +60,23 @@ export default function DashboardView({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { showError, showSuccess } = useToast();
+
+  // --- Self-fetched recent transactions for log stream ---
+  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+
+  const fetchRecentTransactions = async () => {
+    try {
+      const res = await api.ledger.list();
+      const mapped = res.items.map(mapLedger);
+      setRecentTransactions(mapped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+    } catch (err) {
+      console.error('[Dashboard] Error fetching recent transactions:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentTransactions();
+  }, []);
 
   // Synchronize initial selections based on first strategy
   useEffect(() => {
@@ -236,6 +255,8 @@ export default function DashboardView({
       .then(() => {
         setTradeNotes('');
         showSuccess(`Order ${orderId} successfully executed & settled via ${matchedAccount?.broker}!`);
+        // Refresh local log stream after placing a trade
+        fetchRecentTransactions();
       })
       .catch((err) => {
         console.error("Order submission failed:", err);
@@ -633,19 +654,22 @@ export default function DashboardView({
               </div>
               
               <div className="space-y-2 max-h-[140px] overflow-y-auto divide-y divide-slate-900/60 font-mono pr-1 text-[10px]">
-                {transactions.slice(0, 4).map((tx, idx) => (
+                {recentTransactions.slice(0, 6).map((tx, idx) => (
                   <div 
                     key={tx.id} 
                     onClick={() => onSelectTransaction(tx)}
                     className="pt-2 first:pt-0 cursor-pointer hover:text-indigo-400 transition-colors"
                   >
                     <div className="flex justify-between text-slate-400 font-semibold">
-                      <span>{tx.id} - {tx.symbol}</span>
-                      <span className={tx.type === 'BUY' ? 'text-emerald-500' : 'text-rose-500'}>{tx.type}</span>
+                      <span className="truncate">{tx.id} - {tx.symbol}</span>
+                      <span className={`shrink-0 ml-2 ${tx.type === 'BUY' ? 'text-emerald-500' : 'text-rose-500'}`}>{tx.type || tx.transactionType}</span>
                     </div>
                     <p className="text-slate-500 truncate mt-0.5 text-[9px] font-sans">{tx.notes}</p>
                   </div>
                 ))}
+                {recentTransactions.length === 0 && (
+                  <p className="text-slate-600 text-[9px] font-sans">No recent transactions.</p>
+                )}
               </div>
             </div>
           </div>

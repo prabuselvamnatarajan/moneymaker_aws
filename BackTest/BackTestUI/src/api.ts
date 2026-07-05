@@ -191,6 +191,14 @@ export const api = {
       return handleResponse<{ items: any[] }>(res);
     },
 
+    async get(id: string) {
+      const res = await fetch(`${BASE_URL}/accounts/${id}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ data: any }>(res);
+    },
+
     async create(accountData: { 
       account_name: string; 
       account_type: string; 
@@ -241,6 +249,14 @@ export const api = {
         headers: getHeaders(),
       });
       return handleResponse<{ items: any[] }>(res);
+    },
+
+    async get(id: string) {
+      const res = await fetch(`${BASE_URL}/symbols/${id}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ data: any }>(res);
     },
 
     async create(symbolData: {
@@ -296,6 +312,14 @@ export const api = {
         headers: getHeaders(),
       });
       return handleResponse<{ items: any[] }>(res);
+    },
+
+    async get(id: string) {
+      const res = await fetch(`${BASE_URL}/deployments/${id}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ data: any }>(res);
     },
 
     async create(deploymentData: {
@@ -387,6 +411,33 @@ export const api = {
       return handleResponse<{ items: any[] }>(res);
     },
 
+    // Fetch all trades for a specific account (server-side filter — no false positives)
+    async listForAccount(accountId: string) {
+      const res = await fetch(`${BASE_URL}/trades?account_id=${encodeURIComponent(accountId)}&limit=500&order=desc`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    // Fetch all trades for a specific deployment (server-side filter)
+    async listForDeployment(deploymentId: string) {
+      const res = await fetch(`${BASE_URL}/trades?deployment_id=${encodeURIComponent(deploymentId)}&limit=500&order=desc`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    // Fetch all trades for a specific symbol (server-side filter)
+    async listForSymbol(symbol: string) {
+      const res = await fetch(`${BASE_URL}/trades?symbol=${encodeURIComponent(symbol)}&limit=500&order=desc`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
     async create(tradeData: {
       account_id: string;
       symbol: string;
@@ -408,6 +459,15 @@ export const api = {
   ledger: {
     async list() {
       const res = await fetch(`${BASE_URL}/ledger?limit=100`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    // Fetch ledger entries scoped to a specific account (server-side filter)
+    async listForAccount(accountId: string) {
+      const res = await fetch(`${BASE_URL}/ledger?accountId=${encodeURIComponent(accountId)}&limit=500&order=desc`, {
         method: 'GET',
         headers: getHeaders(),
       });

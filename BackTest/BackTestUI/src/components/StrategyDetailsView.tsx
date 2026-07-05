@@ -3,18 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Play, Pause, Square, TrendingUp, TrendingDown, Target, Zap, 
-  Layers, ChevronLeft, Calendar, HelpCircle, ArrowUpRight, ArrowLeft 
+  Layers, ChevronLeft, Calendar, HelpCircle, ArrowUpRight, ArrowLeft, RefreshCw
 } from 'lucide-react';
 import { Strategy, Transaction, SymbolData } from '../types';
 import TransactionList from './TransactionList';
+import { api } from '../api';
+import { mapTrade } from '../adapters';
 
 interface StrategyDetailsViewProps {
   strategy: Strategy;
   symbols: SymbolData[];
-  transactions: Transaction[];
   onBackToDashboard: () => void;
   onUpdateStrategyStatus: (stratId: string, status: 'active' | 'paused' | 'stopped') => void;
   onNavigateToEntity: (type: 'account' | 'strategy' | 'symbol', id: string) => void;
@@ -27,7 +28,6 @@ interface StrategyDetailsViewProps {
 export default function StrategyDetailsView({
   strategy,
   symbols,
-  transactions,
   onBackToDashboard,
   onUpdateStrategyStatus,
   onNavigateToEntity,
@@ -36,18 +36,41 @@ export default function StrategyDetailsView({
   timezone,
   onNavigateToScreen,
 }: StrategyDetailsViewProps) {
-  
-  // Filter transactions connected to this strategy
-  const filteredTxs = transactions.filter((tx) => tx.strategyId === strategy.id);
+
+  // --- Self-fetched transactions for this strategy/deployment ---
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txLoading, setTxLoading] = useState(true);
+  const [txError, setTxError] = useState<string | null>(null);
+
+  const fetchTransactions = async () => {
+    if (!strategy?.id) return;
+    setTxLoading(true);
+    setTxError(null);
+    try {
+      // Fetch trades server-side filtered by deployment_id (strategy.id maps to deployment)
+      const tradesRes = await api.trades.listForDeployment(strategy.id);
+      const mapped = tradesRes.items.map(mapTrade);
+      setTransactions(mapped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+    } catch (err: any) {
+      setTxError(err.message || 'Failed to load transactions');
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTransactions();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategy?.id]);
 
   // Find associated symbol detail states
   const matchedSymbols = symbols.filter((sym) => strategy.symbols.includes(sym.ticker));
 
   const isPositive = strategy.pnl >= 0;
 
-  // Reconstruct active positions from transaction history for this specific strategy
+  // Reconstruct active positions from fetched transaction history for this strategy
   const calculatedPositions = React.useMemo(() => {
-    const tradeTxs = filteredTxs.filter((tx) => tx.transactionType === 'TRADE');
+    const tradeTxs = transactions.filter((tx) => tx.transactionType === 'TRADE');
     const assetGroups: Record<string, { size: number; totalCost: number }> = {};
 
     const sortedTrades = [...tradeTxs].sort(
@@ -103,22 +126,9 @@ export default function StrategyDetailsView({
         };
       })
       .filter((pos) => pos.size > 0);
-  }, [filteredTxs]);
+  }, [transactions]);
 
-  const getMockPositions = () => {
-    if (strategy.id.includes('MeanReversion') || strategy.name.toLowerCase().includes('mean reversion')) {
-      return [
-        { ticker: 'NSE_INDEX|Nifty 50', size: 50, avgEntry: 24300.00, currentPrice: 24350.00, marketValue: 1217500, pnl: 2500 },
-      ];
-    } else if (strategy.id.includes('Momentum') || strategy.name.toLowerCase().includes('momentum')) {
-      return [
-        { ticker: 'NSE_INDEX|Nifty Bank', size: 25, avgEntry: 52000.00, currentPrice: 52100.00, marketValue: 1302500, pnl: 2500 },
-      ];
-    }
-    return [];
-  };
-
-  const positions = calculatedPositions.length > 0 ? calculatedPositions : getMockPositions();
+  const positions = calculatedPositions;
 
   const formatDate = (isoString: string) => {
     try {
@@ -141,7 +151,7 @@ export default function StrategyDetailsView({
     <div className="space-y-6">
       
       {/* Back button and breadcrumb */}
-      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium select-none">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium select-none">
         <button
           onClick={onBackToDashboard}
           className="flex items-center gap-1 hover:text-indigo-400 transition-colors cursor-pointer"
@@ -165,9 +175,9 @@ export default function StrategyDetailsView({
       </div>
 
       {/* Main header block */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950 p-6 rounded-xl border border-slate-800 font-sans">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 font-sans">
         <div className="space-y-2">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-xl font-black text-white font-sans tracking-tight">{strategy.name}</h2>
             <span className={`px-2 py-0.5 rounded-sm text-[10px] font-mono font-bold tracking-wider ${
               strategy.status === 'active' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' :
@@ -190,7 +200,7 @@ export default function StrategyDetailsView({
         </div>
 
         {/* Operational state controllers */}
-        <div className="flex items-center gap-2 bg-slate-900 p-1.5 rounded-lg border border-slate-850">
+        <div className="flex flex-wrap items-center gap-2 bg-slate-900 p-1.5 rounded-lg border border-slate-850">
           <button
             id="strategy-ctrl-start"
             onClick={() => onUpdateStrategyStatus(strategy.id, 'active')}
@@ -298,26 +308,26 @@ export default function StrategyDetailsView({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-sans">
         
         {/* Associated Symbols Grid */}
-        <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4">
+        <div className="bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 space-y-4">
           <div>
             <h3 className="text-sm font-bold text-slate-200">Associated Traded Assets</h3>
             <p className="text-[10px] text-slate-500 mt-0.5">Asset tickers explicitly targeted by this algorithm.</p>
           </div>
 
           <div className="space-y-2.5">
-            {matchedSymbols.map((sym) => {
+            {matchedSymbols.length > 0 ? matchedSymbols.map((sym) => {
               const isGain = sym.change24h >= 0;
               return (
                 <div 
                   key={sym.ticker}
                   className="p-3 bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-between hover:border-slate-700 transition-colors"
                 >
-                  <div className="font-mono">
-                    <span className="text-xs font-bold text-slate-100">{sym.ticker}</span>
-                    <span className="text-[10px] text-slate-400 block font-sans truncate max-w-[120px]">{sym.name}</span>
+                  <div className="font-mono min-w-0 flex-1">
+                    <span className="text-xs font-bold text-slate-100 truncate block">{sym.ticker}</span>
+                    <span className="text-[10px] text-slate-400 block font-sans truncate">{sym.name}</span>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right font-mono text-xs">
                       <span className="text-slate-200 font-semibold">₹{sym.lastPrice.toLocaleString()}</span>
                       <span className={`text-[10px] block ${isGain ? 'text-emerald-500' : 'text-rose-500'}`}>
@@ -335,12 +345,16 @@ export default function StrategyDetailsView({
                   </div>
                 </div>
               );
-            })}
+            }) : (
+              <div className="p-6 text-center text-slate-500 bg-slate-900/10 border border-slate-800/40 rounded-lg text-xs">
+                No symbols linked to this strategy.
+              </div>
+            )}
           </div>
         </div>
 
         {/* Strategy Portfolio Positions */}
-        <div className="md:col-span-2 bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4">
+        <div className="lg:col-span-2 bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 space-y-4">
           <div>
             <h3 className="text-sm font-bold text-slate-200">Strategy Portfolio Positions</h3>
             <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Security holdings and exposures managed dynamically by this algorithm.</p>
@@ -348,15 +362,15 @@ export default function StrategyDetailsView({
 
           {positions.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-sans divide-y divide-slate-850 border border-slate-800 rounded-lg overflow-hidden">
+              <table className="w-full text-left text-xs font-sans divide-y divide-slate-850 border border-slate-800 rounded-lg overflow-hidden min-w-[520px]">
                 <thead className="bg-slate-900/50 text-slate-500 uppercase font-semibold font-mono text-[10px] border-b border-slate-800">
                   <tr>
                     <th className="p-3">Asset</th>
                     <th className="p-3 text-right">Size</th>
                     <th className="p-3 text-right">Avg Cost</th>
-                    <th className="p-3 text-right">Current Price</th>
-                    <th className="p-3 text-right">Market Value</th>
-                    <th className="p-3 text-right">Unrealized profit</th>
+                    <th className="p-3 text-right">Cur. Price</th>
+                    <th className="p-3 text-right">Mkt Value</th>
+                    <th className="p-3 text-right">Unrealized P&L</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
@@ -390,17 +404,49 @@ export default function StrategyDetailsView({
 
       </div>
 
-      {/* Transactions Section */}
+      {/* Transactions Section — dynamically fetched */}
       <div className="pt-4 border-t border-slate-800 font-sans">
-        <TransactionList
-          transactions={filteredTxs}
-          accounts={[]}
-          strategies={[strategy]}
-          variant="compact"
-          timezone={timezone}
-          onRowClick={onSelectTransaction}
-          onViewAllDrilldown={() => onDrilldownToTransactions('strategyId', strategy.id)}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-200">Strategy Trade History</h3>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+              Live-fetched from server for this deployment — no client-side filtering.
+              {!txLoading && <span className="text-indigo-400 ml-1">{transactions.length} trades</span>}
+            </p>
+          </div>
+          <button
+            onClick={fetchTransactions}
+            disabled={txLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${txLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+
+        {txError && (
+          <div className="p-3 bg-rose-950/40 border border-rose-900/30 text-rose-300 rounded-lg text-xs mb-3">
+            Error loading transactions: {txError}
+          </div>
+        )}
+
+        {txLoading ? (
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-12 bg-slate-900/60 rounded-lg animate-pulse border border-slate-800" />
+            ))}
+          </div>
+        ) : (
+          <TransactionList
+            transactions={transactions}
+            accounts={[]}
+            strategies={[strategy]}
+            variant="compact"
+            timezone={timezone}
+            onRowClick={onSelectTransaction}
+            onViewAllDrilldown={() => onDrilldownToTransactions('strategyId', strategy.id)}
+          />
+        )}
       </div>
 
     </div>

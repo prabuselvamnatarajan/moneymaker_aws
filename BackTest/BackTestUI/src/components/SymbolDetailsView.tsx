@@ -3,17 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   LineChart, TrendingUp, TrendingDown, Clock, Activity, ArrowLeft, 
   Layers, ExternalLink, RefreshCw, BarChart3, HelpCircle, ArrowUpRight 
 } from 'lucide-react';
 import { SymbolData, Transaction, Strategy } from '../types';
 import TransactionList from './TransactionList';
+import { api } from '../api';
+import { mapTrade } from '../adapters';
 
 interface SymbolDetailsViewProps {
   symbol: SymbolData;
-  transactions: Transaction[];
   strategies: Strategy[];
   onBackToDashboard: () => void;
   onNavigateToEntity: (type: 'account' | 'strategy' | 'symbol', id: string) => void;
@@ -25,7 +26,6 @@ interface SymbolDetailsViewProps {
 
 export default function SymbolDetailsView({
   symbol,
-  transactions,
   strategies,
   onBackToDashboard,
   onNavigateToEntity,
@@ -35,8 +35,31 @@ export default function SymbolDetailsView({
   onNavigateToScreen,
 }: SymbolDetailsViewProps) {
 
-  // Filter transactions belonging to this symbol
-  const filteredTxs = transactions.filter((tx) => tx.symbol === symbol.ticker);
+  // --- Self-fetched transactions for this symbol ---
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txLoading, setTxLoading] = useState(true);
+  const [txError, setTxError] = useState<string | null>(null);
+
+  const fetchTransactions = async () => {
+    if (!symbol?.ticker) return;
+    setTxLoading(true);
+    setTxError(null);
+    try {
+      // Fetch trades server-side filtered by symbol
+      const tradesRes = await api.trades.listForSymbol(symbol.ticker);
+      const mapped = tradesRes.items.map(mapTrade);
+      setTransactions(mapped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+    } catch (err: any) {
+      setTxError(err.message || 'Failed to load transactions');
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTransactions();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol?.ticker]);
 
   // Find strategies associated with this symbol
   const activeStrategies = strategies.filter((strat) => strat.symbols.includes(symbol.ticker));
@@ -47,7 +70,7 @@ export default function SymbolDetailsView({
     <div className="space-y-6">
       
       {/* Back button and breadcrumb */}
-      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium select-none">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium select-none">
         <button
           onClick={onBackToDashboard}
           className="flex items-center gap-1 hover:text-indigo-400 transition-colors cursor-pointer"
@@ -71,13 +94,13 @@ export default function SymbolDetailsView({
       </div>
 
       {/* Main Header Block */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950 p-6 rounded-xl border border-slate-800 font-sans">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 font-sans">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-slate-900 rounded-lg text-indigo-400 border border-slate-800">
             <LineChart className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-bold text-white font-mono tracking-tight">{symbol.ticker}</h2>
               <span className="text-[10px] uppercase font-mono tracking-wider font-semibold bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-800">
                 {symbol.instrumentType}
@@ -131,7 +154,7 @@ export default function SymbolDetailsView({
       </div>
 
       {/* Active Algorithmic Strategies mapping */}
-      <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4 font-sans">
+      <div className="bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 space-y-4 font-sans">
         <div>
           <h3 className="text-sm font-bold text-slate-200">Active Strategies Deployed on {symbol.ticker}</h3>
           <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Strategies configured to analyze and execute contract orders on this asset.</p>
@@ -189,17 +212,49 @@ export default function SymbolDetailsView({
         )}
       </div>
 
-      {/* Transactions list section */}
+      {/* Transactions list section — dynamically fetched */}
       <div className="pt-4 border-t border-slate-800 font-sans">
-        <TransactionList
-          transactions={filteredTxs}
-          accounts={[]}
-          strategies={strategies}
-          variant="compact"
-          timezone={timezone}
-          onRowClick={onSelectTransaction}
-          onViewAllDrilldown={() => onDrilldownToTransactions('symbol', symbol.ticker)}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-200">Symbol Trade History</h3>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+              Live-fetched from server for this symbol — no client-side filtering.
+              {!txLoading && <span className="text-indigo-400 ml-1">{transactions.length} trades</span>}
+            </p>
+          </div>
+          <button
+            onClick={fetchTransactions}
+            disabled={txLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${txLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+
+        {txError && (
+          <div className="p-3 bg-rose-950/40 border border-rose-900/30 text-rose-300 rounded-lg text-xs mb-3">
+            Error loading transactions: {txError}
+          </div>
+        )}
+
+        {txLoading ? (
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-12 bg-slate-900/60 rounded-lg animate-pulse border border-slate-800" />
+            ))}
+          </div>
+        ) : (
+          <TransactionList
+            transactions={transactions}
+            accounts={[]}
+            strategies={strategies}
+            variant="compact"
+            timezone={timezone}
+            onRowClick={onSelectTransaction}
+            onViewAllDrilldown={() => onDrilldownToTransactions('symbol', symbol.ticker)}
+          />
+        )}
       </div>
 
     </div>

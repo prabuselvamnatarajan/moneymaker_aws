@@ -3,20 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
-  Landmark, ShieldCheck, ShieldAlert, ArrowLeft, TrendingUp, 
-  TrendingDown, DollarSign, Wallet, Percent, ArrowUpRight 
+  Landmark, ShieldCheck, ShieldAlert, ArrowLeft, RefreshCw
 } from 'lucide-react';
 import { Account, Transaction, Strategy } from '../types';
 import TransactionList from './TransactionList';
-
 import { api } from '../api';
+import { mapTrade, mapLedger } from '../adapters';
 
 interface AccountDetailsViewProps {
   account: Account;
   accounts: Account[];
-  transactions: Transaction[];
   strategies: Strategy[];
   onBackToDashboard: () => void;
   onToggleBrokerStatus: (accountId: string) => void;
@@ -30,7 +28,6 @@ interface AccountDetailsViewProps {
 export default function AccountDetailsView({
   account,
   accounts,
-  transactions,
   strategies,
   onBackToDashboard,
   onToggleBrokerStatus,
@@ -41,8 +38,51 @@ export default function AccountDetailsView({
   onNavigateToScreen,
 }: AccountDetailsViewProps) {
 
-  // Filter transactions belonging to this account
-  const filteredTxs = transactions.filter((tx) => tx.accountId === account.id);
+  // --- Self-fetched transactions for this account ---
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txLoading, setTxLoading] = useState(true);
+  const [txError, setTxError] = useState<string | null>(null);
+
+  const fetchTransactions = async () => {
+    if (!account?.id) return;
+    setTxLoading(true);
+    setTxError(null);
+    try {
+      // Fetch trades (server-side filtered by account) + ledger (for balance/deposit/withdraw history)
+      const [tradesRes, ledgerRes] = await Promise.allSettled([
+        api.trades.listForAccount(account.id),
+        api.ledger.listForAccount(account.id),
+      ]);
+
+      const tradeItems = tradesRes.status === 'fulfilled' ? tradesRes.value.items : [];
+      const ledgerItems = ledgerRes.status === 'fulfilled' ? ledgerRes.value.items : [];
+
+      // Map trades
+      const mappedTrades = tradeItems.map(mapTrade);
+      // Map ledger entries — include all types (trades from ledger have balance context)
+      const mappedLedger = ledgerItems.map(mapLedger);
+
+      // Combine, deduplicate by id
+      const combined = [...mappedTrades, ...mappedLedger];
+      const seen = new Set<string>();
+      const deduped = combined.filter(tx => {
+        if (seen.has(tx.id)) return false;
+        seen.add(tx.id);
+        return true;
+      });
+
+      setTransactions(deduped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+    } catch (err: any) {
+      setTxError(err.message || 'Failed to load transactions');
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTransactions();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account?.id]);
 
   // Form states for ledger balance management
   const [manageType, setManageType] = React.useState<'DEPOSIT' | 'WITHDRAW' | 'TRANSFER'>('DEPOSIT');
@@ -55,7 +95,7 @@ export default function AccountDetailsView({
 
   // Reconstruct active positions from transaction history
   const calculatedPositions = React.useMemo(() => {
-    const tradeTxs = filteredTxs.filter((tx) => tx.transactionType === 'TRADE');
+    const tradeTxs = transactions.filter((tx) => tx.transactionType === 'TRADE');
     const assetGroups: Record<string, { size: number; totalCost: number }> = {};
 
     const sortedTrades = [...tradeTxs].sort(
@@ -111,7 +151,7 @@ export default function AccountDetailsView({
         };
       })
       .filter((pos) => pos.size > 0);
-  }, [filteredTxs]);
+  }, [transactions]);
 
   const handleBalanceManage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,6 +184,8 @@ export default function AccountDetailsView({
 
       setAmount('');
       setDescription('');
+      // Refresh both local transactions and global account data
+      await fetchTransactions();
       if (onRefreshData) {
         onRefreshData();
       }
@@ -154,25 +196,7 @@ export default function AccountDetailsView({
     }
   };
 
-  const getMockPositions = () => {
-    if (account.id === 'ACC-001') {
-      return [
-        { ticker: 'NSE_INDEX|Nifty 50', size: 50, avgEntry: 24300.00, currentPrice: 24350.00, marketValue: 1217500, pnl: 2500 },
-        { ticker: 'NSE_INDEX|Nifty Bank', size: 25, avgEntry: 52000.00, currentPrice: 52100.00, marketValue: 1302500, pnl: 2500 },
-      ];
-    } else if (account.id === 'ACC-002') {
-      return [
-        { ticker: 'NSE_INDEX|Nifty 50', size: 50, avgEntry: 24300.00, currentPrice: 24350.00, marketValue: 1217500, pnl: 2500 },
-      ];
-    } else if (account.id === 'ACC-003') {
-      return [
-        { ticker: 'NSE_INDEX|Nifty Bank', size: 25, avgEntry: 52000.00, currentPrice: 52100.00, marketValue: 1302500, pnl: 2500 },
-      ];
-    }
-    return [];
-  };
-
-  const positions = calculatedPositions.length > 0 ? calculatedPositions : getMockPositions();
+  const positions = calculatedPositions;
   const isPositive = account.pnl >= 0;
   const isConnected = account.status === 'connected';
 
@@ -180,7 +204,7 @@ export default function AccountDetailsView({
     <div className="space-y-6">
       
       {/* Back button and breadcrumb */}
-      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium select-none">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium select-none">
         <button
           onClick={onBackToDashboard}
           className="flex items-center gap-1 hover:text-indigo-400 transition-colors cursor-pointer"
@@ -204,7 +228,7 @@ export default function AccountDetailsView({
       </div>
 
       {/* Main Header Block */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950 p-6 rounded-xl border border-slate-800 font-sans">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 font-sans">
         <div className="space-y-1.5">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-slate-900 rounded-lg text-indigo-400 border border-slate-800">
@@ -218,7 +242,7 @@ export default function AccountDetailsView({
         </div>
 
         {/* Connection Switcher */}
-        <div className="flex items-center gap-4 bg-slate-900 p-3 rounded-lg border border-slate-800">
+        <div className="flex flex-wrap items-center gap-3 bg-slate-900 p-3 rounded-lg border border-slate-800">
           <div className="flex items-center gap-2">
             {isConnected ? (
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -247,7 +271,6 @@ export default function AccountDetailsView({
       {/* Valuation Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 font-sans">
         
-        {/* Net Liquidation Assets */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Net Liquid Asset Valuation</p>
           <p className="text-xl font-black font-mono text-slate-100 mt-1.5">
@@ -256,7 +279,6 @@ export default function AccountDetailsView({
           <span className="text-[10px] text-slate-500 mt-1.5 block">Settled currency: <strong className="font-mono text-slate-400">{account.currency}</strong></span>
         </div>
 
-        {/* Leverage / Buying Power */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Available Margin (Leverage)</p>
           <p className="text-xl font-bold font-mono text-slate-100 mt-1.5">
@@ -265,7 +287,6 @@ export default function AccountDetailsView({
           <span className="text-[10px] text-slate-500 mt-1.5 block">Risk threshold: <strong className="font-mono text-slate-400">4.0x Ratio</strong></span>
         </div>
 
-        {/* Realized Ledger Yield */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Realized Capital Yield</p>
           <p className={`text-xl font-bold font-mono mt-1.5 ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -274,12 +295,11 @@ export default function AccountDetailsView({
           <span className="text-[10px] text-slate-500 mt-1.5 block">Based on initial equity block: <strong className="font-mono text-slate-400">₹{account.initialBalance.toLocaleString()}</strong></span>
         </div>
 
-        {/* Growth Ratio */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Equity Growth Factor</p>
           <div className="flex items-center gap-2 mt-1.5">
             <span className={`text-xl font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {((account.pnl / account.initialBalance) * 100).toFixed(2)}%
+              {account.initialBalance > 0 ? ((account.pnl / account.initialBalance) * 100).toFixed(2) : '0.00'}%
             </span>
             <span className="p-0.5 rounded-sm bg-indigo-500/10 text-indigo-400 text-[10px] font-mono font-semibold">
               YTD
@@ -288,7 +308,6 @@ export default function AccountDetailsView({
           <span className="text-[10px] text-slate-500 mt-1.5 block">Audit verified return</span>
         </div>
 
-        {/* Broker Commission */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold">Broker Commission Setup</p>
           <p className="text-xl font-bold font-mono text-indigo-400 mt-1.5">
@@ -305,7 +324,7 @@ export default function AccountDetailsView({
       {/* Active Portfolio Positions & Balance Management Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-sans">
         {/* Active Portfolio Positions holdings table (2 columns) */}
-        <div className="lg:col-span-2 bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4">
+        <div className="lg:col-span-2 bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 space-y-4">
           <div>
             <h3 className="text-sm font-bold text-slate-200">Active Live Portfolio Positions</h3>
             <p className="text-[10px] text-slate-500 mt-0.5">Aggregated security inventory currently exposed in the market.</p>
@@ -313,15 +332,15 @@ export default function AccountDetailsView({
 
           {positions.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-sans divide-y divide-slate-850 border border-slate-800 rounded-lg overflow-hidden">
+              <table className="w-full text-left text-xs font-sans divide-y divide-slate-850 border border-slate-800 rounded-lg overflow-hidden min-w-[520px]">
                 <thead className="bg-slate-900/50 text-slate-500 uppercase font-semibold font-mono text-[10px] border-b border-slate-800">
                   <tr>
                     <th className="p-3">Asset</th>
                     <th className="p-3 text-right">Size</th>
                     <th className="p-3 text-right">Avg Cost</th>
-                    <th className="p-3 text-right">Current Price</th>
-                    <th className="p-3 text-right">Market Value</th>
-                    <th className="p-3 text-right">Unrealized profit</th>
+                    <th className="p-3 text-right">Cur. Price</th>
+                    <th className="p-3 text-right">Mkt Value</th>
+                    <th className="p-3 text-right">Unrealized P&L</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
@@ -354,7 +373,7 @@ export default function AccountDetailsView({
         </div>
 
         {/* Balance Management Console (1 column) */}
-        <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4 flex flex-col justify-between">
+        <div className="bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 space-y-4 flex flex-col justify-between">
           <div className="space-y-4">
             <div>
               <h3 className="text-sm font-bold text-slate-200">Balance Management</h3>
@@ -373,7 +392,6 @@ export default function AccountDetailsView({
               </div>
             )}
 
-            {/* Toggle tabs for Deposit / Withdraw / Transfer */}
             <div className="grid grid-cols-3 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
               {(['DEPOSIT', 'WITHDRAW', 'TRANSFER'] as const).map((t) => (
                 <button
@@ -447,17 +465,49 @@ export default function AccountDetailsView({
         </div>
       </div>
 
-      {/* Transactions list section */}
+      {/* Transactions list section — dynamically fetched */}
       <div className="pt-4 border-t border-slate-800 font-sans">
-        <TransactionList
-          transactions={filteredTxs}
-          accounts={[account]}
-          strategies={strategies}
-          variant="compact"
-          timezone={timezone}
-          onRowClick={onSelectTransaction}
-          onViewAllDrilldown={() => onDrilldownToTransactions('accountId', account.id)}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-200">Account Transaction History</h3>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+              Live-fetched from server for this account — no client-side filtering.
+              {!txLoading && <span className="text-indigo-400 ml-1">{transactions.length} entries</span>}
+            </p>
+          </div>
+          <button
+            onClick={fetchTransactions}
+            disabled={txLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${txLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+
+        {txError && (
+          <div className="p-3 bg-rose-950/40 border border-rose-900/30 text-rose-300 rounded-lg text-xs mb-3">
+            Error loading transactions: {txError}
+          </div>
+        )}
+
+        {txLoading ? (
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-12 bg-slate-900/60 rounded-lg animate-pulse border border-slate-800" />
+            ))}
+          </div>
+        ) : (
+          <TransactionList
+            transactions={transactions}
+            accounts={[account]}
+            strategies={strategies}
+            variant="compact"
+            timezone={timezone}
+            onRowClick={onSelectTransaction}
+            onViewAllDrilldown={() => onDrilldownToTransactions('accountId', account.id)}
+          />
+        )}
       </div>
 
     </div>

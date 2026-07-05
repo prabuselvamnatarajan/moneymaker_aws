@@ -3,16 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, SlidersHorizontal, X, Bookmark, Calendar, Filter, 
   Check, ChevronDown, RefreshCw, Sparkles, HelpCircle 
 } from 'lucide-react';
 import { Transaction, Account, Strategy, SymbolData, TransactionFilters } from '../types';
 import TransactionList from './TransactionList';
+import { api } from '../api';
+import { mapLedger } from '../adapters';
 
 interface GlobalTransactionsViewProps {
-  transactions: Transaction[];
   accounts: Account[];
   strategies: Strategy[];
   symbols: SymbolData[];
@@ -25,7 +26,6 @@ interface GlobalTransactionsViewProps {
 }
 
 export default function GlobalTransactionsView({
-  transactions,
   accounts,
   strategies,
   symbols,
@@ -39,6 +39,29 @@ export default function GlobalTransactionsView({
   
   const [showAdvanceFilters, setShowAdvanceFilters] = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(null);
+
+  // --- Self-fetched transactions (full ledger) ---
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txLoading, setTxLoading] = useState(true);
+  const [txError, setTxError] = useState<string | null>(null);
+
+  const fetchTransactions = async () => {
+    setTxLoading(true);
+    setTxError(null);
+    try {
+      const res = await api.ledger.list();
+      const mapped = res.items.map(mapLedger);
+      setTransactions(mapped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+    } catch (err: any) {
+      setTxError(err.message || 'Failed to load ledger');
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTransactions();
+  }, []);
 
   // Quick range helper
   const handleDateShortcut = (range: TransactionFilters['dateRange']) => {
@@ -172,11 +195,26 @@ export default function GlobalTransactionsView({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Transactions Ledger Audit</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Comprehensive chronological database of automated algorithmic and manual executions.</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Comprehensive chronological database of automated algorithmic and manual executions.
+            {!txLoading && <span className="text-indigo-400 ml-1">{transactions.length} entries</span>}
+          </p>
         </div>
 
-        {/* Global search input */}
+        {/* Controls */}
         <div className="flex items-center gap-2 w-full md:w-auto">
+          {/* Refresh button */}
+          <button
+            id="refresh-ledger-btn"
+            onClick={fetchTransactions}
+            disabled={txLoading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${txLoading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+
+          {/* Global search input */}
           <div className="relative flex-1 md:w-64 lg:w-80">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
             <input
@@ -499,16 +537,30 @@ export default function GlobalTransactionsView({
         </div>
       )}
 
+      {txError && (
+        <div className="p-3 bg-rose-950/40 border border-rose-900/30 text-rose-300 rounded-lg text-xs">
+          Error loading ledger: {txError}
+        </div>
+      )}
+
       {/* Full Transaction list implementation */}
-      <TransactionList
-        transactions={filteredTransactions}
-        accounts={accounts}
-        strategies={strategies}
-        variant="full"
-        timezone={timezone}
-        onRowClick={onSelectTransaction}
-        highlightedTxId={highlightedTxId}
-      />
+      {txLoading ? (
+        <div className="space-y-2">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="h-12 bg-slate-900/60 rounded-lg animate-pulse border border-slate-800" />
+          ))}
+        </div>
+      ) : (
+        <TransactionList
+          transactions={filteredTransactions}
+          accounts={accounts}
+          strategies={strategies}
+          variant="full"
+          timezone={timezone}
+          onRowClick={onSelectTransaction}
+          highlightedTxId={highlightedTxId}
+        />
+      )}
 
     </div>
   );
