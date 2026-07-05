@@ -11,7 +11,7 @@ import {
 import { Transaction, Account, Strategy, SymbolData, TransactionFilters } from '../types';
 import TransactionList from './TransactionList';
 import { api } from '../api';
-import { mapLedger } from '../adapters';
+import { mapTrade, mapLedger } from '../adapters';
 
 interface GlobalTransactionsViewProps {
   accounts: Account[];
@@ -40,7 +40,14 @@ export default function GlobalTransactionsView({
   const [showAdvanceFilters, setShowAdvanceFilters] = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(null);
 
-  // --- Self-fetched transactions (full ledger) ---
+  // --- Smart data fetching ---
+  // Strategy:
+  //   - No entity filters selected → fetch full ledger (latest 100)
+  //   - Account(s) selected   → fetch trades scoped per account from server
+  //   - Strategy(ies) selected → fetch trades scoped per deployment from server
+  //   - Symbol(s) selected     → fetch trades scoped per symbol from server
+  //   - Multiple entity types  → merge all scoped results and deduplicate
+  // Search / date / type / status filters stay client-side (they apply on the fetched pool)
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [txLoading, setTxLoading] = useState(true);
   const [txError, setTxError] = useState<string | null>(null);
@@ -49,9 +56,66 @@ export default function GlobalTransactionsView({
     setTxLoading(true);
     setTxError(null);
     try {
-      const res = await api.ledger.list();
-      const mapped = res.items.map(mapLedger);
-      setTransactions(mapped.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      const hasAccountFilter  = filters.accounts.length > 0;
+      const hasStrategyFilter = filters.strategies.length > 0;
+      const hasSymbolFilter   = filters.symbols.length > 0;
+      const hasEntityFilter   = hasAccountFilter || hasStrategyFilter || hasSymbolFilter;
+
+      let items: Transaction[] = [];
+
+      if (!hasEntityFilter) {
+        // No entity filters: fetch full ledger snapshot
+        const res = await api.ledger.list();
+        items = res.items.map(mapLedger);
+      } else {
+        // Fetch scoped data for each selected entity in parallel
+        const promises: Promise<Transaction[]>[] = [];
+
+        if (hasAccountFilter) {
+          filters.accounts.forEach(accountId => {
+            promises.push(
+              api.trades.listForAccount(accountId)
+                .then(r => r.items.map(mapTrade))
+                .catch(() => [])
+            );
+          });
+        }
+
+        if (hasStrategyFilter) {
+          filters.strategies.forEach(strategyId => {
+            promises.push(
+              api.trades.listForDeployment(strategyId)
+                .then(r => r.items.map(mapTrade))
+                .catch(() => [])
+            );
+          });
+        }
+
+        if (hasSymbolFilter) {
+          filters.symbols.forEach(symbol => {
+            promises.push(
+              api.trades.listForSymbol(symbol)
+                .then(r => r.items.map(mapTrade))
+                .catch(() => [])
+            );
+          });
+        }
+
+        const results = await Promise.all(promises);
+        const merged = results.flat();
+
+        // Deduplicate by transaction id
+        const seen = new Set<string>();
+        items = merged.filter(tx => {
+          if (seen.has(tx.id)) return false;
+          seen.add(tx.id);
+          return true;
+        });
+      }
+
+      setTransactions(
+        items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      );
     } catch (err: any) {
       setTxError(err.message || 'Failed to load ledger');
     } finally {
@@ -59,9 +123,11 @@ export default function GlobalTransactionsView({
     }
   };
 
+  // Re-fetch whenever entity filters change (server-side scoped fetch)
   useEffect(() => {
     fetchTransactions();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.accounts.join(','), filters.strategies.join(','), filters.symbols.join(',')]);
 
   // Quick range helper
   const handleDateShortcut = (range: TransactionFilters['dateRange']) => {
