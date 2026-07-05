@@ -236,7 +236,10 @@ export const syncAllDeploymentsToRedis = async () => {
     // Fetch all RUNNING deployments
     const runningDeployments = await Deployment.find({ current_status: "RUNNING" })
       .populate("strategy_id")
-      .populate("account_id");
+      .populate({
+        path: "account_id",
+        populate: { path: "broker_id" }
+      });
 
     const newKeysData = {};
 
@@ -261,6 +264,7 @@ export const syncAllDeploymentsToRedis = async () => {
         deployment_id: dep._id.toString(),
         user_id: dep.user_id.toString(),
         strategy_mode: dep.strategy_mode,
+        is_internal_broker: dep.account_id.broker_id ? dep.account_id.broker_id.is_internal : false,
       });
     }
 

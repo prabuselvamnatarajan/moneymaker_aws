@@ -31,10 +31,11 @@ app.post('/', async (req, res) => {
             console.error('Failed to record trade in BackTestApp:', err);
         }
 
-        // 2. Determine if the deployment strategy mode is LIVE
+        // 2. Determine if the deployment strategy mode is LIVE and if it has an external broker
         const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
+        const isInternalBroker = strategy_details.is_internal_broker === true;
 
-        if (isLive) {
+        if (isLive && !isInternalBroker) {
             filteredBody.order_type === 'MARKET' && (filteredBody.price = 0);
             result = await placeOrders(access_token, JSON.stringify(filteredBody));
             let new_balance = await getLiveAccountBalance();
@@ -48,7 +49,11 @@ app.post('/', async (req, res) => {
             } else {
                 console.warn('⚠️ Warning: Received invalid closing balance from BackTestApp:', closing_balance);
             }
-            result = 'Test Mode: Order not placed with external broker.';
+            if (isInternalBroker) {
+                result = 'Internal Broker Mode: Order recorded internally.';
+            } else {
+                result = 'Test Mode: Order not placed with external broker.';
+            }
         }
         
         storeOrderDetails(body.instrument_token, body);
