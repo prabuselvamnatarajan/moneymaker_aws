@@ -40,25 +40,35 @@ export default function GlobalTransactionsView({
   const [showAdvanceFilters, setShowAdvanceFilters] = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(null);
 
-  // --- Smart data fetching ---
-  // Strategy:
-  //   - No entity filters selected → fetch full ledger (latest 100)
-  //   - Account(s) selected   → fetch trades scoped per account from server
-  //   - Strategy(ies) selected → fetch trades scoped per deployment from server
-  //   - Symbol(s) selected     → fetch trades scoped per symbol from server
-  //   - Multiple entity types  → merge all scoped results and deduplicate
-  // Search / date / type / status filters stay client-side (they apply on the fetched pool)
+  // --- Smart data fetching with race condition protection ---
+  //
+  // Key design decisions:
+  //  1. fetchId ref: Discards stale responses if a newer fetch has started.
+  //  2. Filters passed as parameter: Avoids closure staleness (captures snapshot at call time).
+  //  3. Cross-entity fetch strategy:
+  //     - Single entity type selected → server-side scoped fetch for each entity in that type (OR within same type)
+  //     - Multiple entity TYPES selected (e.g. Account + Strategy) → fetch scoped by the
+  //       most-restrictive filter first (accounts > strategies > symbols), then let client-side
+  //       AND logic eliminate non-matches. This avoids the union-then-AND problem where
+  //       fetching both Account A and Strategy B produces a union that, after client AND,
+  //       returns zero results even when both have trades (just not overlapping ones).
+  //  4. No entity filters → fetch full ledger.
+  //  5. Search / date / type / status remain client-side (applied on the fetched pool).
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [txLoading, setTxLoading] = useState(true);
   const [txError, setTxError] = useState<string | null>(null);
+  const fetchIdRef = React.useRef(0);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (currentFilters: typeof filters) => {
+    // Bump fetch ID — any in-flight fetch with an older ID will discard its result
+    const fetchId = ++fetchIdRef.current;
     setTxLoading(true);
     setTxError(null);
     try {
-      const hasAccountFilter  = filters.accounts.length > 0;
-      const hasStrategyFilter = filters.strategies.length > 0;
-      const hasSymbolFilter   = filters.symbols.length > 0;
+      const hasAccountFilter  = currentFilters.accounts.length > 0;
+      const hasStrategyFilter = currentFilters.strategies.length > 0;
+      const hasSymbolFilter   = currentFilters.symbols.length > 0;
       const hasEntityFilter   = hasAccountFilter || hasStrategyFilter || hasSymbolFilter;
 
       let items: Transaction[] = [];
@@ -68,31 +78,39 @@ export default function GlobalTransactionsView({
         const res = await api.ledger.list();
         items = res.items.map(mapLedger);
       } else {
-        // Fetch scoped data for each selected entity in parallel
+        // --- Priority-based scoped fetch to avoid union+AND false-zero problem ---
+        // When multiple entity TYPES are selected, we fetch using the most specific one
+        // (accounts → strategies → symbols) so the fetched pool is already scoped,
+        // and the client-side AND filter narrows it correctly.
         const promises: Promise<Transaction[]>[] = [];
 
         if (hasAccountFilter) {
-          filters.accounts.forEach(accountId => {
+          // Fetch trades per account (server-scoped). The pool will only contain trades
+          // for these accounts. Strategy/Symbol client-side filters narrow it further.
+          currentFilters.accounts.forEach(accountId => {
             promises.push(
               api.trades.listForAccount(accountId)
                 .then(r => r.items.map(mapTrade))
                 .catch(() => [])
             );
           });
-        }
-
-        if (hasStrategyFilter) {
-          filters.strategies.forEach(strategyId => {
+        } else if (hasStrategyFilter) {
+          // Only fetch by strategy if no account filter — avoids union+AND zero problem
+          currentFilters.strategies.forEach(strategyId => {
             promises.push(
               api.trades.listForDeployment(strategyId)
-                .then(r => r.items.map(mapTrade))
+                .then(r => r.items.map(t => ({
+                  ...mapTrade(t),
+                  // Patch strategyId with the deployment ID we fetched by, because
+                  // mapTrade uses t.strategy_id (definition ID) not deployment_id
+                  strategyId: t.deployment_id || strategyId,
+                })))
                 .catch(() => [])
             );
           });
-        }
-
-        if (hasSymbolFilter) {
-          filters.symbols.forEach(symbol => {
+        } else if (hasSymbolFilter) {
+          // Only fetch by symbol if no account or strategy filter
+          currentFilters.symbols.forEach(symbol => {
             promises.push(
               api.trades.listForSymbol(symbol)
                 .then(r => r.items.map(mapTrade))
@@ -113,19 +131,25 @@ export default function GlobalTransactionsView({
         });
       }
 
+      // Discard if a newer fetch has started
+      if (fetchId !== fetchIdRef.current) return;
+
       setTransactions(
         items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       );
     } catch (err: any) {
+      if (fetchId !== fetchIdRef.current) return;
       setTxError(err.message || 'Failed to load ledger');
     } finally {
+      if (fetchId !== fetchIdRef.current) return;
       setTxLoading(false);
     }
   };
 
-  // Re-fetch whenever entity filters change (server-side scoped fetch)
+  // Re-fetch whenever entity filters change (server-side scoped fetch).
+  // Pass filters as snapshot param to avoid closure stale reads.
   useEffect(() => {
-    fetchTransactions();
+    fetchTransactions(filters);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.accounts.join(','), filters.strategies.join(','), filters.symbols.join(',')]);
 

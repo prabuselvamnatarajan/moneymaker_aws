@@ -54,7 +54,7 @@ export function mapSymbol(backendSym: any): SymbolData {
 }
 
 // Map backend Trade to UI Transaction
-export function mapTrade(backendTrade: any): Transaction {
+export function mapTrade(backendTrade: any): Transaction & { deployment_id?: string } {
   const qty = backendTrade.quantity || 0;
   const prc = backendTrade.price || 0;
   
@@ -63,7 +63,9 @@ export function mapTrade(backendTrade: any): Transaction {
     timestamp: backendTrade.execution_time || backendTrade.created_at || new Date().toISOString(),
     type: backendTrade.type_of_order === 'SELL' ? 'SELL' : 'BUY',
     symbol: backendTrade.symbol || 'UNKNOWN',
-    strategyId: backendTrade.strategy_id,
+    // strategyId maps to deployment_id (UI "strategies" = deployments)
+    // If deployment_id is present, prefer it; fall back to strategy_id
+    strategyId: backendTrade.deployment_id || backendTrade.strategy_id,
     accountId: backendTrade.account_id,
     quantity: qty,
     price: prc,
@@ -81,9 +83,12 @@ export function mapTrade(backendTrade: any): Transaction {
     transactionType: 'TRADE',
     changeInBalance: backendTrade.type_of_order === 'SELL' ? (qty * prc) : -(qty * prc),
     openingBalance: 0,
-    closingBalance: 0
+    closingBalance: 0,
+    // Pass through deployment_id for downstream patching (e.g. GlobalTransactionsView)
+    deployment_id: backendTrade.deployment_id,
   };
 }
+
 
 // Map backend Ledger to UI Transaction
 export function mapLedger(backendLedger: any): Transaction {
