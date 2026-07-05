@@ -17,30 +17,42 @@ app.post('/', async (req, res) => {
         const access_token = await getAccessTokenFromRedis();
         const body = req.body;
 
-        let { strategy_details, ...filteredBody } = body;
+        const { strategy_details = {}, ...filteredBody } = body;
 
         console.log('Request Body:', body);
 
         let result = null;
+        let orderResponse = null;
 
-        if (!strategy_details.isTest) {
+        // 1. Always record the trade in our internal app (BackTestApp)
+        try {
+            orderResponse = await triggerBackTestApp(body);
+        } catch (err) {
+            console.error('Failed to record trade in BackTestApp:', err);
+        }
+
+        // 2. Determine if the deployment strategy mode is LIVE
+        const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
+
+        if (isLive) {
             filteredBody.order_type === 'MARKET' && (filteredBody.price = 0);
             result = await placeOrders(access_token, JSON.stringify(filteredBody));
             let new_balance = await getLiveAccountBalance();
-            await setAccountBalanceToRedis(strategy_details.account_id, new_balance);
+            if (new_balance !== undefined && new_balance !== null) {
+                await setAccountBalanceToRedis(strategy_details.account_id, new_balance);
+            }
         } else {
-            let orderResponse = await triggerBackTestApp(body);
             let { data: { closing_balance } = {} } = orderResponse || {};
             if (closing_balance !== undefined && closing_balance !== null) {
                 await setAccountBalanceToRedis(strategy_details.account_id, closing_balance);
             } else {
                 console.warn('⚠️ Warning: Received invalid closing balance from BackTestApp:', closing_balance);
             }
-            result = 'Test Mode: Order not placed.';
+            result = 'Test Mode: Order not placed with external broker.';
         }
         
         storeOrderDetails(body.instrument_token, body);
-        res.send(result);
+        res.send(result || orderResponse);
     } catch (e) {
         console.error(e);
         res.status(500).send('Internal Server Error');

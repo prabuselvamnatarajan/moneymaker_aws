@@ -259,6 +259,8 @@ export const syncAllDeploymentsToRedis = async () => {
         symbol: dep.symbol,
         strategy_id: dep.strategy_id._id.toString(),
         deployment_id: dep._id.toString(),
+        user_id: dep.user_id.toString(),
+        strategy_mode: dep.strategy_mode,
       });
     }
 
