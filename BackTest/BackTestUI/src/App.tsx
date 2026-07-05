@@ -130,6 +130,66 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
+  // --- Live WebSocket Pricing Stream ---
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.host;
+    const wsUrl = `${wsProto}//${wsHost}/backtestapp/ws?token=${encodeURIComponent(token)}`;
+
+    console.log('[Live Feed] Connecting to WebSocket:', wsUrl);
+    let ws = new WebSocket(wsUrl);
+    let reconnectTimeout: any;
+
+    const connect = () => {
+      ws.onopen = () => {
+        console.log('[Live Feed] Connected to BackTest live WebSocket');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg && msg.instrument_token && msg.last_price !== undefined) {
+            setSymbols(prevSymbols => 
+              prevSymbols.map(sym => 
+                sym.instrumentToken === msg.instrument_token 
+                  ? { ...sym, lastPrice: msg.last_price } 
+                  : sym
+              )
+            );
+          }
+        } catch (err) {
+          console.error('[Live Feed] Error parsing live WS message:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[Live Feed] BackTest live WebSocket disconnected. Reconnecting in 3s...');
+        reconnectTimeout = setTimeout(() => {
+          ws = new WebSocket(wsUrl);
+          connect();
+        }, 3000);
+      };
+
+      ws.onerror = (err) => {
+        console.error('[Live Feed] BackTest live WebSocket error:', err);
+      };
+    };
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+    };
+  }, [isAuthenticated]);
+
   // Auth logout / unauthorized event handler
   useEffect(() => {
     const handleUnauthorized = () => {

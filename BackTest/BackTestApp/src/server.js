@@ -11,7 +11,15 @@ connectDB().then(async () => {
   } catch (err) {
     console.error("⚠️ Failed to perform initial deployment sync to Redis:", err.message);
   }
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
   });
+  
+  try {
+    const { initWebSocketServer } = await import("./services/websocketService.js");
+    initWebSocketServer(server);
+    console.log("✅ WebSocket server initialized successfully");
+  } catch (err) {
+    console.error("⚠️ Failed to initialize WebSocket server:", err.message);
+  }
 });
