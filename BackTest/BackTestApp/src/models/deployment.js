@@ -72,6 +72,14 @@ const deploymentSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  position_size: {
+    type: Number,
+    default: 0,
+  },
+  average_entry_price: {
+    type: Number,
+    default: 0,
+  },
 });
 
 // Update timestamp on save
