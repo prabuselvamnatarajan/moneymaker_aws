@@ -9,6 +9,7 @@ import Deployment from "../models/deployment.js";
 import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
 import Broker from "../models/broker.js";
+import ExternalBrokerId from "../models/externalBrokerId.js";
 import { syncAllDeploymentsToRedis } from "../services/deployment.js";
 
 const PermissionSchema = new mongoose.Schema({
@@ -35,6 +36,7 @@ export const clearAndSeedDB = async () => {
     await User.deleteMany({});
     await Account.deleteMany({});
     await Broker.deleteMany({});
+    await ExternalBrokerId.deleteMany({});
     await Strategy.deleteMany({});
     await UserSymbol.deleteMany({});
     await Deployment.deleteMany({});
@@ -116,6 +118,11 @@ export const clearAndSeedDB = async () => {
     await standardUser.save();
     console.log("Created users.");
 
+    // Seed external broker ids
+    const upstoxExt = new ExternalBrokerId({ external_broker_id: "upstox" });
+    await upstoxExt.save();
+    console.log("Created external broker IDs.");
+
     // Seed brokers
     const internalBroker = new Broker({ name: "Cobra Trades", is_internal: true });
     await internalBroker.save();
@@ -125,7 +132,37 @@ export const clearAndSeedDB = async () => {
 
     const zerodhaBroker = new Broker({ name: "Zerodha" });
     await zerodhaBroker.save();
-    console.log("Created brokers.");
+
+    // Seed user-specific Upstox brokers with default credentials
+    const upstoxBrokerAdmin = new Broker({
+      name: "Upstox",
+      is_internal: false,
+      user_id: adminUser._id.toString(),
+      external_broker_id: "upstox",
+      credentials: {
+        client_id: "50b489f2-22c5-4824-9da5-9b815aab9667",
+        client_secret: "d51apkeb3c",
+        redirect_uri: "http://localhost/logedin"
+      },
+      access_token: ""
+    });
+    await upstoxBrokerAdmin.save();
+
+    const upstoxBrokerStandard = new Broker({
+      name: "Upstox",
+      is_internal: false,
+      user_id: standardUser._id.toString(),
+      external_broker_id: "upstox",
+      credentials: {
+        client_id: "50b489f2-22c5-4824-9da5-9b815aab9667",
+        client_secret: "d51apkeb3c",
+        redirect_uri: "http://localhost/logedin"
+      },
+      access_token: ""
+    });
+    await upstoxBrokerStandard.save();
+
+    console.log("Created brokers (including Upstox user-specific configurations).");
 
     // 4. Create accounts
     const accountsData = [

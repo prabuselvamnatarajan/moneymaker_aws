@@ -426,9 +426,6 @@ services:
     ports:
       - "8080:80"
     environment:
-      CLIENT_ID: 50b489f2-22c5-4824-9da5-9b815aab9667
-      CLIENT_SECRET: d51apkeb3c
-      REDIRECT_URI: http://localhost/logedin
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379

@@ -561,7 +561,6 @@ export const api = {
     },
   },
 
-  // Brokers API
   brokers: {
     async list() {
       const res = await fetch(`${BASE_URL}/brokers`, {
@@ -571,13 +570,30 @@ export const api = {
       return handleResponse<{ items: any[] }>(res);
     },
 
-    async create(name: string) {
+    async create(brokerData: { name: string; external_broker_id?: string; credentials?: any }) {
       const res = await fetch(`${BASE_URL}/brokers`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(brokerData),
       });
       return handleResponse<{ data: any; message: string }>(res);
+    },
+
+    async update(id: string, updateData: { name?: string; external_broker_id?: string; credentials?: any }) {
+      const res = await fetch(`${BASE_URL}/brokers/${id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(updateData),
+      });
+      return handleResponse<{ data: any; message: string }>(res);
+    },
+
+    async delete(id: string) {
+      const res = await fetch(`${BASE_URL}/brokers/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ message: string }>(res);
     },
   },
 };

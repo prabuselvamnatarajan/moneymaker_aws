@@ -28,7 +28,16 @@ async function getAccessTokenFromRedis(userId = '') {
     }
     let redisKey = userId ? `redis_upstox_access_token:${userId}` : 'redis_upstox_access_token';
     try {
-        const access_token = await redisString.get(redisKey);
+        let access_token = await redisString.get(redisKey);
+        if (!access_token && !userId) {
+            console.log("No default token, checking for user-specific tokens in Redis...");
+            const client = redisClientInstance.getClient();
+            const keys = await client.keys('redis_upstox_access_token:*');
+            if (keys && keys.length > 0) {
+                access_token = await redisString.get(keys[0]);
+                console.log(`Fallback: Fetched Access Token from key ${keys[0]}:`, access_token);
+            }
+        }
         console.log(`Fetched Access Token from key ${redisKey}:`, access_token);
         return access_token;
     } catch (error) {

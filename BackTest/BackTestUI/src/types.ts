@@ -60,6 +60,14 @@ export interface Broker {
   _id: string;
   name: string;
   is_internal: boolean;
+  user_id?: string;
+  external_broker_id?: string;
+  credentials?: {
+    client_id?: string;
+    client_secret?: string;
+    redirect_uri?: string;
+  };
+  access_token?: string;
   created_at: string;
 }
 

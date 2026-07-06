@@ -22,7 +22,13 @@ app.get('/', async (req, res) => {
     } else {
         const userId = req.query.userId || req.query.user_id || '';
         console.log('No code received, redirecting to Upstox login for user:', userId);
-        res.redirect(start_app_upstox(userId));
+        try {
+            const redirectUrl = await start_app_upstox(userId);
+            res.redirect(redirectUrl);
+        } catch (err) {
+            console.error('Error redirecting to Upstox authorization dialog:', err);
+            res.status(500).send('Internal Server Error: ' + err.message);
+        }
     }
 });
 
