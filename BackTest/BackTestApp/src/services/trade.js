@@ -44,8 +44,9 @@ export const createTrade = async (tradeData) => {
       }
     }
 
+    let deployment = null;
     if (deploymentId && deploymentId !== "none" && deploymentId !== "") {
-      const deployment = await Deployment.findById(deploymentId).session(session);
+      deployment = await Deployment.findById(deploymentId).session(session);
       if (!deployment) {
         throw new Error("Associated deployment not found");
       }
@@ -111,58 +112,60 @@ export const createTrade = async (tradeData) => {
 
     // Calculate P&L using chronological position-based simulation of previous trades
     let pnl = 0;
-    const prevTradesQuery = {};
-    if (tradeData.deployment_id) {
-      prevTradesQuery.deployment_id = tradeData.deployment_id;
-    } else {
-      prevTradesQuery.account_id = account._id;
-      prevTradesQuery.symbol = tradeData.symbol;
-    }
-
-    const prevTrades = await Trade.find(prevTradesQuery)
-      .sort({ created_at: 1 })
-      .session(session);
-
     let positionSize = 0;
     let averageEntryPrice = 0;
 
-    for (const t of prevTrades) {
-      const qty = t.quantity || 0;
-      const priceVal = t.price || 0;
-      const isBuy = t.type_of_order === "BUY";
-      const comm = t.commission || 0;
+    if (deployment) {
+      positionSize = deployment.position_size || 0;
+      averageEntryPrice = deployment.average_entry_price || 0;
+    } else {
+      const prevTradesQuery = {
+        account_id: account._id,
+        symbol: tradeData.symbol,
+      };
 
-      if (isBuy) {
-        if (positionSize >= 0) {
-          const newSize = positionSize + qty;
-          averageEntryPrice = newSize > 0 ? (averageEntryPrice * positionSize + priceVal * qty + comm) / newSize : 0;
-          positionSize = newSize;
-        } else {
-          const coveredQty = Math.min(Math.abs(positionSize), qty);
-          const remainingQty = qty - coveredQty;
-          positionSize += coveredQty;
-          if (remainingQty > 0) {
-            positionSize = remainingQty;
-            averageEntryPrice = priceVal;
-          } else if (positionSize === 0) {
-            averageEntryPrice = 0;
+      const prevTrades = await Trade.find(prevTradesQuery)
+        .sort({ created_at: 1 })
+        .session(session);
+
+      for (const t of prevTrades) {
+        const qty = t.quantity || 0;
+        const priceVal = t.price || 0;
+        const isBuy = t.type_of_order === "BUY";
+        const comm = t.commission || 0;
+
+        if (isBuy) {
+          if (positionSize >= 0) {
+            const newSize = positionSize + qty;
+            averageEntryPrice = newSize > 0 ? (averageEntryPrice * positionSize + priceVal * qty + comm) / newSize : 0;
+            positionSize = newSize;
+          } else {
+            const coveredQty = Math.min(Math.abs(positionSize), qty);
+            const remainingQty = qty - coveredQty;
+            positionSize += coveredQty;
+            if (remainingQty > 0) {
+              positionSize = remainingQty;
+              averageEntryPrice = priceVal;
+            } else if (positionSize === 0) {
+              averageEntryPrice = 0;
+            }
           }
-        }
-      } else {
-        if (positionSize <= 0) {
-          const newSize = positionSize - qty;
-          const absNewSize = Math.abs(newSize);
-          averageEntryPrice = absNewSize > 0 ? (averageEntryPrice * Math.abs(positionSize) + priceVal * qty + comm) / absNewSize : 0;
-          positionSize = newSize;
         } else {
-          const exitedQty = Math.min(positionSize, qty);
-          const remainingQty = qty - exitedQty;
-          positionSize -= exitedQty;
-          if (remainingQty > 0) {
-            positionSize = -remainingQty;
-            averageEntryPrice = priceVal;
-          } else if (positionSize === 0) {
-            averageEntryPrice = 0;
+          if (positionSize <= 0) {
+            const newSize = positionSize - qty;
+            const absNewSize = Math.abs(newSize);
+            averageEntryPrice = absNewSize > 0 ? (averageEntryPrice * Math.abs(positionSize) + priceVal * qty + comm) / absNewSize : 0;
+            positionSize = newSize;
+          } else {
+            const exitedQty = Math.min(positionSize, qty);
+            const remainingQty = qty - exitedQty;
+            positionSize -= exitedQty;
+            if (remainingQty > 0) {
+              positionSize = -remainingQty;
+              averageEntryPrice = priceVal;
+            } else if (positionSize === 0) {
+              averageEntryPrice = 0;
+            }
           }
         }
       }
@@ -182,6 +185,51 @@ export const createTrade = async (tradeData) => {
         const exitedQty = Math.min(positionSize, quantity);
         pnl = parseFloat(((price - averageEntryPrice) * exitedQty - commission).toFixed(2));
       }
+    }
+
+    // Now calculate the new position size and average entry price for the deployment
+    let newPositionSize = positionSize;
+    let newAverageEntryPrice = averageEntryPrice;
+
+    if (isBuy) {
+      if (positionSize >= 0) {
+        const newSize = positionSize + quantity;
+        newAverageEntryPrice = newSize > 0 ? (averageEntryPrice * positionSize + price * quantity + commission) / newSize : 0;
+        newPositionSize = newSize;
+      } else {
+        const coveredQty = Math.min(Math.abs(positionSize), quantity);
+        const remainingQty = quantity - coveredQty;
+        newPositionSize += coveredQty;
+        if (remainingQty > 0) {
+          newPositionSize = remainingQty;
+          newAverageEntryPrice = price;
+        } else if (newPositionSize === 0) {
+          newAverageEntryPrice = 0;
+        }
+      }
+    } else {
+      if (positionSize <= 0) {
+        const newSize = positionSize - quantity;
+        const absNewSize = Math.abs(newSize);
+        newAverageEntryPrice = absNewSize > 0 ? (averageEntryPrice * Math.abs(positionSize) + price * quantity + commission) / absNewSize : 0;
+        newPositionSize = newSize;
+      } else {
+        const exitedQty = Math.min(positionSize, quantity);
+        const remainingQty = quantity - exitedQty;
+        newPositionSize -= exitedQty;
+        if (remainingQty > 0) {
+          newPositionSize = -remainingQty;
+          newAverageEntryPrice = price;
+        } else if (newPositionSize === 0) {
+          newAverageEntryPrice = 0;
+        }
+      }
+    }
+
+    if (deployment) {
+      deployment.position_size = newPositionSize;
+      deployment.average_entry_price = newAverageEntryPrice;
+      await deployment.save({ session });
     }
 
     const tradePayload = {

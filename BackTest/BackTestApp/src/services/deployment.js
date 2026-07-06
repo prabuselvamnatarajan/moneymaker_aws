@@ -36,6 +36,12 @@ const resetBacktestDeployment = async (deployment) => {
     const deletedLedgers = await Ledger.deleteMany({ deployment_id: deploymentId });
     console.log(`[Reset] Deleted ${deletedTrades.deletedCount} trades and ${deletedLedgers.deletedCount} ledgers for deployment ${deploymentId}`);
 
+    // Reset cached position state on deployment
+    deployment.position_size = 0;
+    deployment.average_entry_price = 0;
+    await deployment.save();
+    console.log(`[Reset] Reset deployment cached position fields to 0`);
+
     // 2. Reset account balance in MongoDB
     if (deployment.account_id) {
       const account = await Account.findById(deployment.account_id);
