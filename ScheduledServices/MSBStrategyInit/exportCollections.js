@@ -13,8 +13,17 @@ const IST = 'Asia/Kolkata';
 async function exportCollection(collectionName) {
   const client = new MongoClient(uri);
   try {
-    await client.connect();
-    const db = client.db(dbName);
+    let targetDbName = dbName;
+    let timeField = 'timestamp';
+    if (collectionName === 'trades') {
+      targetDbName = 'BacktestApp';
+      timeField = 'created_at';
+    } else if (collectionName === 'ledgers') {
+      targetDbName = 'BacktestApp';
+      timeField = 'created_on';
+    }
+
+    const db = client.db(targetDbName);
     const collection = db.collection(collectionName);
 
     // Get today's date range in IST
@@ -22,7 +31,7 @@ async function exportCollection(collectionName) {
     const start = todayIST.startOf('day').toUTC().toJSDate();
     const end = todayIST.endOf('day').toUTC().toJSDate();
 
-    const query = { timestamp: { $gte: start, $lte: end } };
+    const query = { [timeField]: { $gte: start, $lte: end } };
     const data = await collection.find(query).toArray();
 
     const dateFolder = todayIST.toFormat('yyyy-MM-dd');
