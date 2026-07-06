@@ -17,12 +17,26 @@ const kafka = new Kafka({
   }
 });
 
+async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await target.connect();
+            logger.info(`Successfully connected to ${name}.`);
+            return;
+        } catch (err) {
+            logger.warn(`Connection attempt ${i + 1}/${retries} to ${name} failed: ${err.message}. Retrying in ${delay}ms...`);
+            await new Promise(res => setTimeout(res, delay));
+        }
+    }
+    throw new Error(`Failed to connect to ${name} after maximum retries.`);
+}
+
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
     const producer = kafka.producer();
 
-    await consumer.connect();
-    await producer.connect();
+    await connectWithRetry(consumer, 'Kafka Consumer');
+    await connectWithRetry(producer, 'Kafka Producer');
 
     // Subscribe to all topics in TARGET_TOPICS
     for (const topic of TARGET_TOPICS) {
