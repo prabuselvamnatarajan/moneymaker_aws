@@ -25,7 +25,8 @@ async function main({
             console.error(`Missing property '${targetProperty}' in document:`, item);
             continue;
         }
-        const redisItemKey = `${redisKey}:${propertyValue}`;
+        const cleanRedisKey = redisKey.endsWith(':') ? redisKey.slice(0, -1) : redisKey;
+        const redisItemKey = `${cleanRedisKey}:${propertyValue}`;
         await clearRedisKeyIfNeeded(redisTarget, redisDataType, redisItemKey);
         await addDataToRedisTarget(redisTarget, redisDataType, redisItemKey, item);
     }
