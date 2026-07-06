@@ -12,6 +12,9 @@ RUN npm install
 
 # Copy the rest of the application code
 COPY . .
+COPY ./redis_operations /app/redis_utils/redis_operations
+COPY ./account_utils.js /app/redis_utils/account_utils.js
+COPY ./utils /app/utils
 
 # Expose the default port (if needed for debugging or monitoring)
 EXPOSE 3000

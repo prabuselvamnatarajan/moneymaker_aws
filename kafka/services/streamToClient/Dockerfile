@@ -12,6 +12,8 @@ RUN npm install
 
 # Copy the rest of the application code
 COPY . .
+COPY ./redis_operations /app/redis_utils/redis_operations
+COPY ./utils /app/utils
 
 # Command to run the WebSocket server
 CMD ["node", "wsServer.js"]
