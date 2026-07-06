@@ -15,7 +15,7 @@ const headers = {
     'Content-Type': 'application/x-www-form-urlencoded',
 };
 
-function start_app_upstox() {
+function start_app_upstox(userId = '') {
 
     const client_id = process.env.CLIENT_ID;
     const redirect_uri = process.env.REDIRECT_URI;
@@ -24,10 +24,14 @@ function start_app_upstox() {
         throw new Error('CLIENT_ID and REDIRECT_URI must be defined in the environment variables.');
     }
     
-    return `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${client_id}&redirect_uri=${redirect_uri}`;
+    let url = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${client_id}&redirect_uri=${redirect_uri}`;
+    if (userId) {
+        url += `&state=${encodeURIComponent(userId)}`;
+    }
+    return url;
 }
 
-async function get_new_access_token(code) {
+async function get_new_access_token(code, userId = '') {
     if (!code) {
         throw new Error('The "code" parameter is required but was not provided. Ensure the authorization code is passed correctly.');
     }
@@ -70,10 +74,11 @@ async function get_new_access_token(code) {
             client_id: process.env.CLIENT_ID,
             client_secret: process.env.CLIENT_SECRET,
             redirect_uri: process.env.REDIRECT_URI,
-            access_token
+            access_token,
+            user_id: userId
         };
-        await checkAndUpdateCredentials(credentials);
-        await setAccessTokenInRedis(credentials);
+        await checkAndUpdateCredentials(credentials, userId);
+        await setAccessTokenInRedis(credentials, userId);
         return access_token;
     } catch (error) {
         console.error(`Error obtaining access token: ${error.message}`);
@@ -81,7 +86,7 @@ async function get_new_access_token(code) {
     }
 }
 
-async function checkAndUpdateCredentials(credentials) {
+async function checkAndUpdateCredentials(credentials, userId = '') {
     const uri = process.env.MONGODB_URI; // MongoDB connection string
     const dbName = process.env.MONGODB_DB_NAME;
 
@@ -99,7 +104,7 @@ async function checkAndUpdateCredentials(credentials) {
         const database = client.db(dbName);
         const collection = database.collection('credentials');
 
-        const query = {
+        const query = userId ? { user_id: userId } : {
             client_id: credentials.client_id,
             redirect_uri: credentials.redirect_uri
         };
@@ -109,11 +114,11 @@ async function checkAndUpdateCredentials(credentials) {
         if (existingEntry) {
             // Update the access_token of the existing entry
             await collection.updateOne(query, { $set: { access_token: credentials.access_token } });
-            console.log('Access token updated in MongoDB');
+            console.log(`Access token updated in MongoDB for query:`, query);
         } else {
             // Add a new entry
-            await collection.insertOne(credentials);
-            console.log('New credentials stored in MongoDB');
+            await collection.insertOne({ ...credentials, user_id: userId });
+            console.log(`New credentials stored in MongoDB with user_id: ${userId}`);
         }
     } catch (error) {
         if (error.codeName === 'Unauthorized') {
@@ -126,8 +131,8 @@ async function checkAndUpdateCredentials(credentials) {
     }
 }
 
-async function setAccessTokenInRedis(credentials) {
-    let redisKey = 'redis_upstox_access_token';
+async function setAccessTokenInRedis(credentials, userId = '') {
+    let redisKey = userId ? `redis_upstox_access_token:${userId}` : 'redis_upstox_access_token';
     if (!redisString) {
         await redisClientInstance.connect();
         redisString = new RedisString(redisClientInstance.getClient());
