@@ -14,6 +14,7 @@ const IST = 'Asia/Kolkata';
 async function exportCollection(collectionName) {
   const client = new MongoClient(uri);
   try {
+    await client.connect();
     let targetDbName = dbName;
     let timeField = 'timestamp';
     if (collectionName === 'trades') {
@@ -22,6 +23,18 @@ async function exportCollection(collectionName) {
     } else if (collectionName === 'ledgers') {
       targetDbName = 'BacktestApp';
       timeField = 'created_on';
+    } else {
+      if (collectionName.includes(':') || collectionName.includes('|')) {
+        targetDbName = 'stock_database';
+        timeField = 'timestamp';
+      } else {
+        const stockDb = client.db('stock_database');
+        const collections = await stockDb.listCollections({ name: collectionName }).toArray();
+        if (collections.length > 0) {
+          targetDbName = 'stock_database';
+          timeField = 'timestamp';
+        }
+      }
     }
 
     const db = client.db(targetDbName);
