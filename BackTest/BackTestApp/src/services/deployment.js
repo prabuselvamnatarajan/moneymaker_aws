@@ -87,22 +87,18 @@ const resetBacktestDeployment = async (deployment) => {
 
         const deploymentIdStr = deploymentId.toString();
 
-        // Specific keys
-        const stateKeyBacktest = `strategies:msb:backtest:${deploymentIdStr}:${symbol}`;
-        const stateKeyLive = `strategies:msb:live:${deploymentIdStr}:${symbol}`;
-        await client.del(stateKeyBacktest);
-        await client.del(stateKeyLive);
-
-        const boughtQtyKey = `bought_quantity:${deploymentIdStr}:${symbol}`;
-        await client.del(boughtQtyKey);
-
-        // Wildcard search/clear keys to be future-proof
-        const wildcardKeys = await client.keys(`strategies:*:${deploymentIdStr}:${symbol}`);
-        for (const k of wildcardKeys) {
-          await client.del(k);
-        }
-        
-        console.log(`[Reset] Cleared state and bought quantity Redis keys for deployment ${deploymentIdStr} symbol ${symbol}`);
+        // Safe non-blocking SCAN loop to delete all keys containing the deployment ID
+        let cursor = 0;
+        const pattern = `*${deploymentIdStr}*`;
+        do {
+          const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+          cursor = reply.cursor;
+          const keys = reply.keys;
+          if (keys && keys.length > 0) {
+            await client.del(keys);
+            console.log(`[Reset] Deleted scanned keys for deployment ${deploymentIdStr}:`, keys);
+          }
+        } while (cursor !== 0);
       } catch (err) {
         console.error(`[Reset] Error clearing Redis keys: ${err.message}`);
       } finally {
