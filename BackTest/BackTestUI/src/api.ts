@@ -79,7 +79,7 @@ export const api = {
         method: 'GET',
         headers: getHeaders(),
       });
-      return handleResponse<{ data: { _id: string; username: string; email: string; name: string; is_mfa_enabled: boolean; backup_codes?: string[] } }>(res);
+      return handleResponse<{ data: { _id: string; username: string; email: string; name: string; is_mfa_enabled: boolean; roles?: any[]; backup_codes?: string[] } }>(res);
     },
 
     async changePassword(currentPassword: string, newPassword: string) {
@@ -590,6 +590,42 @@ export const api = {
 
     async delete(id: string) {
       const res = await fetch(`${BASE_URL}/brokers/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+  },
+
+  externalBrokers: {
+    async list() {
+      const res = await fetch(`${BASE_URL}/external-brokers`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    async create(data: { external_broker_id: string }) {
+      const res = await fetch(`${BASE_URL}/external-brokers`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      });
+      return handleResponse<{ data: any; message: string }>(res);
+    },
+
+    async update(id: string, data: { external_broker_id: string }) {
+      const res = await fetch(`${BASE_URL}/external-brokers/${id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      });
+      return handleResponse<{ data: any; message: string }>(res);
+    },
+
+    async delete(id: string) {
+      const res = await fetch(`${BASE_URL}/external-brokers/${id}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });

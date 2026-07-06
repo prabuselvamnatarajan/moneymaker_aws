@@ -71,6 +71,13 @@ export interface Broker {
   created_at: string;
 }
 
+export interface ExternalBroker {
+  _id: string;
+  external_broker_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Transaction {
   id: string; // Internal system UUID or Trade/Execution ID
   timestamp: string; // ISO 8601 string

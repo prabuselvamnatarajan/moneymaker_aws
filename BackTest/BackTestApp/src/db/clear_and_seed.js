@@ -32,18 +32,18 @@ export const clearAndSeedDB = async () => {
   try {
     console.log("🧹 Wiping all collections...");
     
-    // Clear collections
-    await User.deleteMany({});
-    await Account.deleteMany({});
-    await Broker.deleteMany({});
-    await ExternalBrokerId.deleteMany({});
-    await Strategy.deleteMany({});
-    await UserSymbol.deleteMany({});
-    await Deployment.deleteMany({});
-    await Trade.deleteMany({});
-    await Ledger.deleteMany({});
-    await Permission.deleteMany({});
-    await Role.deleteMany({});
+    // Clear collections and drop indexes by dropping them
+    const collectionsToDrop = [
+      "users", "accounts", "brokers", "external_broker_ids", "strategies",
+      "usersymbols", "deployments", "trades", "ledgers", "permissions", "roles"
+    ];
+    for (const name of collectionsToDrop) {
+      try {
+        await mongoose.connection.db.dropCollection(name);
+      } catch (e) {
+        // Collection might not exist yet, safe to ignore
+      }
+    }
     
     // Clear sessions
     if (mongoose.connection.db.collection("sessions")) {
