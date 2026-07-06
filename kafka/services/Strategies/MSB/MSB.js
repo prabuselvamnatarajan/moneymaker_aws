@@ -3,6 +3,10 @@ import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBough
 import { logger } from '/app/utils/logUtils.js';
 
 async function triggerOrder(requestBody) {
+    if (!requestBody || requestBody.quantity <= 0) {
+        logger.warn('Order quantity is zero or negative, skipping order trigger.');
+        return;
+    }
     const placeOrderApi = process.env.PLACEORDER_API;
     if (placeOrderApi) {
         try {
@@ -74,7 +78,11 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol);
-            await triggerOrder(requestBody);
+            if (requestBody && requestBody.quantity > 0) {
+                await triggerOrder(requestBody);
+            } else {
+                logger.warn(`MSB: Skipping SELL order due to zero/negative quantity: ${requestBody?.quantity}`);
+            }
         }
         else {
             // trend continuation
@@ -97,8 +105,12 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);
-            await triggerOrder(requestBody);
-            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+            if (requestBody && requestBody.quantity > 0) {
+                await triggerOrder(requestBody);
+                await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+            } else {
+                logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
+            }
         }
         else {
             // trend continuation
