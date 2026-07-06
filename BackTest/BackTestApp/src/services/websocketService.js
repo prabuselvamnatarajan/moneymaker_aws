@@ -5,9 +5,17 @@ import * as authService from "../iam/services/authService.js";
 import Session from "../iam/models/session.js";
 import UserSymbol from "../models/userSymbol.js";
 import { Kafka } from 'kafkajs';
+import { createClient } from 'redis';
 
 let wss;
 const activeSockets = new Map(); // socketId -> { ws, userId, subscribedTokens: Set }
+
+let redisClient = null;
+const redisUrl = process.env.REDIS_URL;
+if (redisUrl) {
+  redisClient = createClient({ url: redisUrl });
+  redisClient.connect().catch(err => console.error("Failed to connect Redis in WebSocket service:", err));
+}
 
 export function initWebSocketServer(server) {
   wss = new WebSocketServer({ noServer: true });
@@ -132,11 +140,12 @@ async function initKafkaConsumer() {
   const consumer = kafka.consumer({ groupId: consumerGroupId, sessionTimeout: 30000 });
   await consumer.connect();
   await consumer.subscribe({ topic: 'splited-live-data', fromBeginning: false });
+  await consumer.subscribe({ topic: 'backtest-stream-data', fromBeginning: false });
 
-  console.log(`[Kafka WS Consumer] Subscribed to splited-live-data (Group: ${consumerGroupId})`);
+  console.log(`[Kafka WS Consumer] Subscribed to splited-live-data and backtest-stream-data (Group: ${consumerGroupId})`);
 
   await consumer.run({
-    eachMessage: async ({ message }) => {
+    eachMessage: async ({ topic, message }) => {
       try {
         if (!message.key || !message.value) return;
         const instrumentToken = message.key.toString();
@@ -151,11 +160,23 @@ async function initKafkaConsumer() {
           timestamp: Date.now()
         });
 
+        const cleanToken = instrumentToken.includes('|') ? instrumentToken.split('|')[1] : instrumentToken;
+
         for (const [socketId, client] of activeSockets.entries()) {
-          if (client.subscribedTokens.has(instrumentToken)) {
+          if (client.subscribedTokens.has(instrumentToken) || client.subscribedTokens.has(cleanToken)) {
             if (client.ws.readyState === client.ws.OPEN) {
               client.ws.send(outboundMsg);
             }
+          }
+        }
+
+        if (topic === 'backtest-stream-data' && redisClient && redisClient.isOpen) {
+          const channels = [
+            `backtest:${cleanToken}`,
+            `backtest:${instrumentToken}`
+          ];
+          for (const channel of channels) {
+            await redisClient.publish(channel, outboundMsg);
           }
         }
       } catch (err) {
