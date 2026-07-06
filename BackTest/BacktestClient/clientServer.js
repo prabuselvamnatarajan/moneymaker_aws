@@ -31,7 +31,7 @@ const producer = kafka.producer({
 });
 
 function sanitize(str) {
-    return String(str).replace(/[^a-zA-Z0-9]/g, '_');
+    return String(str).replace(/[^a-zA-Z0-9-_]/g, '_');
 }
 
 (async () => {
