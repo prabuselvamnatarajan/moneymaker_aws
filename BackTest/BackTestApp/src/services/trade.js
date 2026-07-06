@@ -84,15 +84,7 @@ export const createTrade = async (tradeData) => {
 
     let account = await Account.findOne(buildAccountQuery(account_id)).session(session);
     if (!account) {
-      account = new Account({
-        account_id,
-        account_name: tradeData.account_name || `Auto Account ${account_id}`,
-        account_type: tradeData.account_type || "SIMULATION",
-        initial_balance: 40000,
-        current_balance: 40000,
-        user_id,
-      });
-      await account.save({ session });
+      throw new Error(`Account associated with ID ${account_id} does not exist`);
     } else if (String(account.user_id) !== String(user_id)) {
       throw new Error("Account does not belong to the authenticated user");
     }
