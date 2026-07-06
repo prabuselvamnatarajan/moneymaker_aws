@@ -73,7 +73,6 @@ async function storeOrderDetails(symbol, order_details) {
 }
 
 async function placeOrders(access_token, body) {
-
     const url = `${base_url}/order/place`;
     const headers = {
         'Accept': 'application/json',
@@ -81,30 +80,30 @@ async function placeOrders(access_token, body) {
         'Authorization': `Bearer ${access_token}`
     };
 
+    console.log('In API Call Body:', body);
     try {
-        console.log('In API Call Body:', body);
-        const response = fetch(url, {
+        const res = await fetch(url, {
             method: 'POST',
             headers: headers,
             body
-        }).then(res => res.json()).then(data => {
-            console.log('Response:', data);
-            return data;
-        }).catch(error => { console.error('Error:', error); });
-        // console.log(response.data);
-        return response;
+        });
+        const data = await res.json();
+        console.log('Response from Upstox:', data);
+        if (data.status !== 'success') {
+            const errorMsg = data.errors ? JSON.stringify(data.errors) : 'Unknown broker error';
+            throw new Error(`Upstox order placement failed: ${errorMsg}`);
+        }
+        return data;
     } catch (err) {
-        console.error('Error:', err);
-        throw new Error('Failed Make Order ...');
+        console.error('Error placing order to Upstox:', err.message);
+        throw err;
     }
 }
 
 async function triggerBackTestApp(body) {
-
     const url = `${NGINX_ADDRESS}${BACKTEST_APP_URL}${BACKTEST_TRADE_URL}`;
 
     try {
-        
         let { strategy_details } = body;
         let testAPIBody = {
             "type_of_order": body.transaction_type,
@@ -120,19 +119,17 @@ async function triggerBackTestApp(body) {
         if (BACKTEST_SERVICE_TOKEN) {
             headers['X-Service-Token'] = BACKTEST_SERVICE_TOKEN;
         }
-        const response = fetch(url, {
+        const res = await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify(testAPIBody),
-        }).then(res => res.json()).then(data => {
-            console.log('Response:', data);
-            return data;
-        }).catch(error => { console.error('Error:', error); });
-        // console.log(response.data);
-        return response;
+        });
+        const data = await res.json();
+        console.log('Response from BackTestApp:', data);
+        return data;
     } catch (err) {
-        console.error('Error:', err);
-        throw new Error('Failed Make Order ...');
+        console.error('Error triggering BackTestApp:', err.message);
+        throw err;
     }
 }
 
