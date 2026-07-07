@@ -106,6 +106,50 @@ export function initWebSocketServer(server) {
   initKafkaConsumer().catch(err => {
     console.error("Failed to initialize Kafka Consumer for WebSocket Service:", err);
   });
+
+  initRedisSubscriber().catch(err => {
+    console.error("Failed to initialize Redis Subscriber for WebSocket Service:", err);
+  });
+}
+
+let redisSubscriber = null;
+
+async function initRedisSubscriber() {
+  if (!redisUrl) return;
+
+  redisSubscriber = createClient({ url: redisUrl });
+  redisSubscriber.on('error', (err) => console.error('WS Redis Subscriber Client Error', err));
+
+  await redisSubscriber.connect();
+  console.log("✅ WebSocket service connected to Redis subscriber channel");
+
+  await redisSubscriber.subscribe('broker_updates', (message) => {
+    try {
+      const payload = JSON.parse(message);
+      console.log("[WS Redis Sub] Received broker update:", payload);
+
+      const { userId, event, brokerId } = payload;
+      if (event === 'broker_updated') {
+        const outboundMsg = JSON.stringify({
+          event: 'broker_updated',
+          userId,
+          brokerId,
+          timestamp: Date.now()
+        });
+
+        for (const [socketId, client] of activeSockets.entries()) {
+          if (client.userId === userId) {
+            if (client.ws.readyState === client.ws.OPEN) {
+              console.log(`[WS Redis Sub] Broadcasting broker update to socket ${socketId} of user ${userId}`);
+              client.ws.send(outboundMsg);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[WS Redis Sub] Error parsing Redis subscription message:", err);
+    }
+  });
 }
 
 function extractLtp(feed) {

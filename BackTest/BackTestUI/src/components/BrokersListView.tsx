@@ -31,9 +31,15 @@ export default function BrokersListView() {
   const [newExtBrokerId, setNewExtBrokerId] = useState('');
   const [submittingExt, setSubmittingExt] = useState(false);
 
-  const fetchUserAndBrokers = async () => {
+  // Keep a ref of selectedBroker to avoid stale closures in event listeners
+  const selectedBrokerRef = React.useRef(selectedBroker);
+  useEffect(() => {
+    selectedBrokerRef.current = selectedBroker;
+  }, [selectedBroker]);
+
+  const fetchUserAndBrokers = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       
       // Fetch user profile to check admin rights
@@ -49,18 +55,46 @@ export default function BrokersListView() {
       const res = await api.brokers.list();
       setBrokers(res.items);
 
+      // Keep selectedBroker state updated if it is currently open
+      const currentSelected = selectedBrokerRef.current;
+      if (currentSelected) {
+        const updated = res.items.find((b: Broker) => b._id === currentSelected._id);
+        if (updated) {
+          setSelectedBroker(updated);
+          // And also update fields to match
+          setBrokerName(updated.name);
+          setSelectedPlatform(updated.external_broker_id || 'upstox');
+          const pairs = Object.entries(updated.credentials || {}).map(([key, value]) => ({
+            key,
+            value: String(value),
+            isSecret: key.toLowerCase().includes('secret') || key.toLowerCase().includes('token') || key.toLowerCase().includes('key')
+          }));
+          setCredentialRows(pairs);
+        }
+      }
+
       // Fetch external broker list for dropdown
       const extRes = await api.externalBrokers.list();
       setExternalBrokerIds(extRes.items);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch brokers data');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchUserAndBrokers();
+
+    const handleBrokerUpdated = () => {
+      console.log('[BrokersListView] Received broker-updated window event, refreshing list silently...');
+      fetchUserAndBrokers(true);
+    };
+
+    window.addEventListener('broker-updated', handleBrokerUpdated);
+    return () => {
+      window.removeEventListener('broker-updated', handleBrokerUpdated);
+    };
   }, []);
 
   const handleSelectBroker = (broker: Broker) => {

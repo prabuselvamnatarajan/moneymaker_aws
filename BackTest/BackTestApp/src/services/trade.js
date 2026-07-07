@@ -78,6 +78,14 @@ export const createTrade = async (tradeData) => {
       }
     }
 
+    if (tradeData.user_symbol_id) {
+      const UserSymbol = mongoose.model("UserSymbol");
+      const userSymbol = await UserSymbol.findById(tradeData.user_symbol_id).session(session);
+      if (userSymbol && !userSymbol.is_active) {
+        throw new Error(`Cannot place order: Symbol ${userSymbol.symbol || tradeData.symbol} is inactive`);
+      }
+    }
+
     const account_id = tradeData.account_id;
     if (!account_id) {
       throw new Error("account_id is required");

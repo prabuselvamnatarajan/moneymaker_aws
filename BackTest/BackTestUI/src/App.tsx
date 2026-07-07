@@ -213,7 +213,11 @@ export default function App() {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg && msg.instrument_token && msg.last_price !== undefined) {
+          if (msg && msg.event === 'broker_updated') {
+            console.log('[Live Feed] Broker updated event received:', msg);
+            window.dispatchEvent(new CustomEvent('broker-updated', { detail: msg }));
+            loadData();
+          } else if (msg && msg.instrument_token && msg.last_price !== undefined) {
             setSymbols(prevSymbols => 
               prevSymbols.map(sym => 
                 sym.instrumentToken === msg.instrument_token 

@@ -110,6 +110,7 @@ async function get_new_access_token(code, userId = '') {
 
         await checkAndUpdateCredentials(credentials, userId);
         await setAccessTokenInRedis(credentials, userId);
+        await publishBrokerUpdate(userId);
         return access_token;
     } catch (error) {
         console.error(`Error obtaining access token: ${error.message}`);
@@ -176,6 +177,25 @@ async function setAccessTokenInRedis(credentials, userId = '') {
         console.log(`Access token set in Redis with key ${redisKey}`);
     } catch (error) {
         console.error(`Error setting Access Token in Redis with key ${redisKey} :`, error.message);
+    }
+}
+
+async function publishBrokerUpdate(userId = '') {
+    if (!redisString) {
+        await redisClientInstance.connect();
+        redisString = new RedisString(redisClientInstance.getClient());
+    }
+    try {
+        const client = redisClientInstance.getClient();
+        const payload = JSON.stringify({
+            event: 'broker_updated',
+            userId,
+            brokerId: 'upstox'
+        });
+        await client.publish('broker_updates', payload);
+        console.log(`Published broker update to Redis channel broker_updates for user: ${userId}`);
+    } catch (error) {
+        console.error(`Error publishing broker update to Redis:`, error.message);
     }
 }
 
