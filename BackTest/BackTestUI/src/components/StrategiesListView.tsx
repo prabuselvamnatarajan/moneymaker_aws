@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { 
   Cpu, Search, Plus, Play, Pause, Square, Activity, TrendingUp, 
-  BarChart2, DollarSign, Globe, X, ChevronRight, AlertTriangle 
+  BarChart2, DollarSign, Globe, X, ChevronRight, AlertTriangle, RefreshCw 
 } from 'lucide-react';
 import { Strategy, SymbolData, Account } from '../types';
 
@@ -18,6 +18,7 @@ interface StrategiesListViewProps {
   onAddStrategy: (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId: string) => void;
   onUpdateStrategyStatus: (id: string, status: 'active' | 'paused' | 'stopped') => void;
   onNavigateToEntity: (type: 'strategy', id: string) => void;
+  onRefreshData?: () => Promise<void> | void;
 }
 
 export default function StrategiesListView({
@@ -27,10 +28,23 @@ export default function StrategiesListView({
   strategyDefinitions = [],
   onAddStrategy,
   onUpdateStrategyStatus,
-  onNavigateToEntity
+  onNavigateToEntity,
+  onRefreshData
 }: StrategiesListViewProps) {
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (onRefreshData) {
+      setRefreshing(true);
+      try {
+        await onRefreshData();
+      } finally {
+        setRefreshing(false);
+      }
+    }
+  };
   
   // Form fields for deployment creation
   const [selectedStrategyId, setSelectedStrategyId] = useState('');
@@ -120,6 +134,15 @@ export default function StrategiesListView({
         </div>
         
         <div className="flex flex-wrap gap-2 shrink-0 self-start sm:self-center">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+            title="Refresh strategies list"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
           <button
             id="btn-deploy-strategy-trigger"
             onClick={() => setShowAddForm(true)}

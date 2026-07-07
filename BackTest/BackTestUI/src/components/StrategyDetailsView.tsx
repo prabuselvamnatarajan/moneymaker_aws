@@ -23,6 +23,7 @@ interface StrategyDetailsViewProps {
   onDrilldownToTransactions: (filterKey: 'strategyId', filterValue: string) => void;
   timezone: string;
   onNavigateToScreen?: (screen: any) => void;
+  onRefreshData?: () => Promise<void> | void;
 }
 
 export default function StrategyDetailsView({
@@ -35,6 +36,7 @@ export default function StrategyDetailsView({
   onDrilldownToTransactions,
   timezone,
   onNavigateToScreen,
+  onRefreshData,
 }: StrategyDetailsViewProps) {
 
   // --- Self-fetched transactions for this strategy/deployment ---
@@ -55,6 +57,13 @@ export default function StrategyDetailsView({
       setTxError(err.message || 'Failed to load transactions');
     } finally {
       setTxLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    await fetchTransactions();
+    if (onRefreshData) {
+      await onRefreshData();
     }
   };
 
@@ -417,7 +426,7 @@ export default function StrategyDetailsView({
             </p>
           </div>
           <button
-            onClick={fetchTransactions}
+            onClick={handleRefresh}
             disabled={txLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
           >

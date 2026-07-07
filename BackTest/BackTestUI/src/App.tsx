@@ -546,6 +546,7 @@ export default function App() {
             onSelectTransaction={setSelectedTransaction}
             highlightedTxId={highlightedTxId}
             timezone={timezone}
+            onRefreshData={loadData}
           />
         );
       case 'accounts-list':
@@ -556,6 +557,7 @@ export default function App() {
             onAddAccount={handleAddAccount}
             onToggleBrokerStatus={handleToggleBrokerStatus}
             onNavigateToEntity={handleSelectEntity}
+            onRefreshData={loadData}
           />
         );
       case 'strategies-list':
@@ -568,6 +570,7 @@ export default function App() {
             onAddStrategy={handleAddStrategy}
             onUpdateStrategyStatus={handleUpdateStrategyStatus}
             onNavigateToEntity={handleSelectEntity}
+            onRefreshData={loadData}
           />
         );
       case 'strategy-templates':
@@ -583,6 +586,7 @@ export default function App() {
             symbols={symbols}
             onAddSymbol={handleAddSymbol}
             onNavigateToEntity={handleSelectEntity}
+            onRefreshData={loadData}
           />
         );
       case 'strategy-detail':
@@ -598,6 +602,7 @@ export default function App() {
             onDrilldownToTransactions={(key, val) => handleDrilldownToTransactions(key, val)}
             timezone={timezone}
             onNavigateToScreen={setActiveScreen}
+            onRefreshData={loadData}
           />
         );
       case 'account-detail':
@@ -628,6 +633,7 @@ export default function App() {
             onDrilldownToTransactions={(key, val) => handleDrilldownToTransactions(key, val)}
             timezone={timezone}
             onNavigateToScreen={setActiveScreen}
+            onRefreshData={loadData}
           />
         );
       case 'profile':

@@ -23,6 +23,7 @@ interface GlobalTransactionsViewProps {
   onSelectTransaction: (tx: Transaction) => void;
   highlightedTxId?: string;
   timezone: string;
+  onRefreshData?: () => Promise<void> | void;
 }
 
 export default function GlobalTransactionsView({
@@ -35,6 +36,7 @@ export default function GlobalTransactionsView({
   onSelectTransaction,
   highlightedTxId,
   timezone,
+  onRefreshData,
 }: GlobalTransactionsViewProps) {
   
   const [showAdvanceFilters, setShowAdvanceFilters] = useState(false);
@@ -156,6 +158,13 @@ export default function GlobalTransactionsView({
     }
   };
 
+  const handleRefresh = async () => {
+    await fetchTransactions(filters);
+    if (onRefreshData) {
+      await onRefreshData();
+    }
+  };
+
   // Re-fetch whenever filters, sort config, or selected fields change (server-side scoped fetch).
   useEffect(() => {
     fetchTransactions(filters);
@@ -265,7 +274,7 @@ export default function GlobalTransactionsView({
           {/* Refresh button */}
           <button
             id="refresh-ledger-btn"
-            onClick={() => fetchTransactions(filters)}
+            onClick={handleRefresh}
             disabled={txLoading}
             className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
           >

@@ -22,6 +22,7 @@ interface SymbolDetailsViewProps {
   onDrilldownToTransactions: (filterKey: 'symbol', filterValue: string) => void;
   timezone: string;
   onNavigateToScreen?: (screen: any) => void;
+  onRefreshData?: () => Promise<void> | void;
 }
 
 export default function SymbolDetailsView({
@@ -33,6 +34,7 @@ export default function SymbolDetailsView({
   onDrilldownToTransactions,
   timezone,
   onNavigateToScreen,
+  onRefreshData,
 }: SymbolDetailsViewProps) {
 
   // --- Self-fetched transactions for this symbol ---
@@ -53,6 +55,13 @@ export default function SymbolDetailsView({
       setTxError(err.message || 'Failed to load transactions');
     } finally {
       setTxLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    await fetchTransactions();
+    if (onRefreshData) {
+      await onRefreshData();
     }
   };
 
@@ -225,7 +234,7 @@ export default function SymbolDetailsView({
             </p>
           </div>
           <button
-            onClick={fetchTransactions}
+            onClick={handleRefresh}
             disabled={txLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
           >

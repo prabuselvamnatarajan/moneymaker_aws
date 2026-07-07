@@ -84,6 +84,13 @@ export default function AccountDetailsView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account?.id]);
 
+  const handleRefresh = async () => {
+    await fetchTransactions();
+    if (onRefreshData) {
+      onRefreshData();
+    }
+  };
+
   // Form states for ledger balance management
   const [manageType, setManageType] = React.useState<'DEPOSIT' | 'WITHDRAW' | 'TRANSFER'>('DEPOSIT');
   const [amount, setAmount] = React.useState('');
@@ -476,7 +483,7 @@ export default function AccountDetailsView({
             </p>
           </div>
           <button
-            onClick={fetchTransactions}
+            onClick={handleRefresh}
             disabled={txLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0"
           >

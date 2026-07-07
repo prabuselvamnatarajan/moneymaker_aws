@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { 
   LineChart, Search, Plus, TrendingUp, TrendingDown, Activity, 
-  Globe, Coins, X, ChevronRight, Sparkles 
+  Globe, Coins, X, ChevronRight, Sparkles, RefreshCw
 } from 'lucide-react';
 import { SymbolData } from '../types';
 
@@ -14,15 +14,29 @@ interface SymbolsListViewProps {
   symbols: SymbolData[];
   onAddSymbol: (newSym: SymbolData) => void;
   onNavigateToEntity: (type: 'symbol', id: string) => void;
+  onRefreshData?: () => Promise<void> | void;
 }
 
 export default function SymbolsListView({
   symbols,
   onAddSymbol,
-  onNavigateToEntity
+  onNavigateToEntity,
+  onRefreshData
 }: SymbolsListViewProps) {
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (onRefreshData) {
+      setRefreshing(true);
+      try {
+        await onRefreshData();
+      } finally {
+        setRefreshing(false);
+      }
+    }
+  };
   const [typeFilter, setTypeFilter] = useState<'all' | 'crypto' | 'equity' | 'forex'>('all');
   
   // Form fields
@@ -93,13 +107,24 @@ export default function SymbolsListView({
           </p>
         </div>
         
-        <button
-          id="btn-track-symbol-trigger"
-          onClick={() => setShowAddForm(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-md text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/10 shrink-0 self-start sm:self-center"
-        >
-          <Plus className="w-4 h-4" /> Track New Asset
-        </button>
+        <div className="flex flex-wrap gap-2 shrink-0 self-start sm:self-center">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+            title="Refresh symbols list"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            id="btn-track-symbol-trigger"
+            onClick={() => setShowAddForm(true)}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-md text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/10 shrink-0"
+          >
+            <Plus className="w-4 h-4" /> Track New Asset
+          </button>
+        </div>
       </div>
 
       {/* Overview Analytics Cards */}
