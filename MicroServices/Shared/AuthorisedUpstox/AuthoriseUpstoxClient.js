@@ -2,11 +2,43 @@ import { RedisClient, RedisString } from './redis_operations/index.js';
 import UpstoxClient from "upstox-js-sdk";
 
 const redisUrl = process.env.REDIS_URL;
-
+const DEFAULT_REDIS_KEY = 'redis_upstox_access_token';
 
 const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
 let redisString;
 let authorisedClient;
+
+function isUpstoxTokenExpired(token, skewSeconds = 60) {
+    if (!token || typeof token !== 'string') {
+        return true;
+    }
+
+    try {
+        const parts = token.split('.');
+        if (parts.length < 2) {
+            return true;
+        }
+
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+        if (!payload.exp) {
+            return true;
+        }
+
+        return Date.now() / 1000 >= payload.exp - skewSeconds;
+    } catch {
+        return true;
+    }
+}
+
+async function deleteExpiredToken(redisKey) {
+    try {
+        const client = redisClientInstance.getClient();
+        await client.del(redisKey);
+        console.warn(`[AuthoriseUpstox] Deleted expired access token from Redis key ${redisKey}`);
+    } catch (error) {
+        console.error(`[AuthoriseUpstox] Failed to delete expired token from key ${redisKey}:`, error.message);
+    }
+}
 
 async function getAuthorisedClient(userId = '') {
     try {
@@ -26,19 +58,37 @@ async function getAccessTokenFromRedis(userId = '') {
         await redisClientInstance.connect();
         redisString = new RedisString(redisClientInstance.getClient());
     }
-    let redisKey = userId ? `redis_upstox_access_token:${userId}` : 'redis_upstox_access_token';
+    let redisKey = userId ? `${DEFAULT_REDIS_KEY}:${userId}` : DEFAULT_REDIS_KEY;
     try {
         let access_token = await redisString.get(redisKey);
+        let resolvedKey = redisKey;
+
         if (!access_token && !userId) {
             console.log("No default token, checking for user-specific tokens in Redis...");
             const client = redisClientInstance.getClient();
-            const keys = await client.keys('redis_upstox_access_token:*');
+            const keys = await client.keys(`${DEFAULT_REDIS_KEY}:*`);
             if (keys && keys.length > 0) {
-                access_token = await redisString.get(keys[0]);
-                console.log(`Fallback: Fetched Access Token from key ${keys[0]}:`, access_token);
+                resolvedKey = keys[0];
+                access_token = await redisString.get(resolvedKey);
+                console.log(`Fallback: Fetched Access Token from key ${resolvedKey}`);
             }
         }
-        console.log(`Fetched Access Token from key ${redisKey}:`, access_token);
+
+        if (!access_token) {
+            console.log(`No access token found in Redis for key ${redisKey}`);
+            return null;
+        }
+
+        if (isUpstoxTokenExpired(access_token)) {
+            console.warn(`[AuthoriseUpstox] Access token expired for key ${resolvedKey}`);
+            await deleteExpiredToken(resolvedKey);
+            if (resolvedKey !== DEFAULT_REDIS_KEY) {
+                await deleteExpiredToken(DEFAULT_REDIS_KEY);
+            }
+            return null;
+        }
+
+        console.log(`Fetched valid access token from key ${resolvedKey}`);
         return access_token;
     } catch (error) {
         console.error(`Error fetching Access Token from key ${redisKey} :`, error.message);

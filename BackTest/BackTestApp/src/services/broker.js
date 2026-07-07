@@ -1,4 +1,90 @@
+import { createClient } from "redis";
 import Broker from "../models/broker.js";
+import {
+  getUpstoxRedisKey,
+  getUpstoxTokenStatus,
+  isUpstoxTokenExpired,
+} from "../utils/upstoxToken.js";
+
+const DEFAULT_REDIS_KEY = "redis_upstox_access_token";
+
+async function withRedisClient(callback) {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    console.warn("[Broker Service] REDIS_URL not set, skipping Redis token cleanup.");
+    return;
+  }
+
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    await client.connect();
+    await callback(client);
+  } catch (err) {
+    console.error("[Broker Service] Redis operation failed:", err.message);
+  } finally {
+    if (client) {
+      await client.disconnect();
+    }
+  }
+}
+
+async function clearBrokerAccessToken(broker) {
+  broker.access_token = "";
+  await broker.save();
+
+  await withRedisClient(async (client) => {
+    const userKey = getUpstoxRedisKey(broker.user_id || "");
+    await client.del(userKey);
+    await client.del(DEFAULT_REDIS_KEY);
+
+    const payload = JSON.stringify({
+      event: "broker_updated",
+      userId: broker.user_id || "",
+      brokerId: broker.external_broker_id || "upstox",
+    });
+    await client.publish("broker_updates", payload);
+  });
+
+  console.log(
+    `[Broker Service] Cleared expired Upstox access token for broker ${broker._id} (user: ${broker.user_id || "default"})`
+  );
+}
+
+function attachTokenStatus(broker) {
+  if (broker.is_internal || broker.external_broker_id !== "upstox") {
+    return broker;
+  }
+
+  const plainBroker = broker.toObject ? broker.toObject() : { ...broker };
+  plainBroker.token_status = getUpstoxTokenStatus(plainBroker.access_token);
+  return plainBroker;
+}
+
+async function sanitizeExpiredUpstoxBrokers(brokers) {
+  const sanitized = [];
+
+  for (const broker of brokers) {
+    if (
+      !broker.is_internal &&
+      broker.external_broker_id === "upstox" &&
+      broker.access_token &&
+      isUpstoxTokenExpired(broker.access_token)
+    ) {
+      await clearBrokerAccessToken(broker);
+      sanitized.push({
+        ...broker.toObject(),
+        access_token: "",
+        token_status: "expired",
+      });
+      continue;
+    }
+
+    sanitized.push(attachTokenStatus(broker));
+  }
+
+  return sanitized;
+}
 
 export const createBroker = async (userId, brokerData) => {
   const broker = new Broker({
@@ -9,15 +95,16 @@ export const createBroker = async (userId, brokerData) => {
 };
 
 export const getAllBrokers = async (userId, isAdmin = false) => {
+  let brokers;
   if (isAdmin) {
-    return await Broker.find({}).sort({ name: 1 });
+    brokers = await Broker.find({}).sort({ name: 1 });
+  } else {
+    brokers = await Broker.find({
+      $or: [{ is_internal: true }, { user_id: userId }],
+    }).sort({ name: 1 });
   }
-  return await Broker.find({
-    $or: [
-      { is_internal: true },
-      { user_id: userId }
-    ]
-  }).sort({ name: 1 });
+
+  return sanitizeExpiredUpstoxBrokers(brokers);
 };
 
 export const updateBroker = async (brokerId, userId, isAdmin, updateData) => {

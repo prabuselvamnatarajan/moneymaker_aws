@@ -28,7 +28,7 @@ async function ensureWSConnection() {
       console.log('[WS Upstox] Auto-initiating new WebSocket connection...');
       const access_token = await getAccessTokenFromRedis();
       if (!access_token) {
-        console.warn('[WS Upstox] Cannot auto-initiate connection: Access token not found in Redis.');
+        console.warn('[WS Upstox] Cannot auto-initiate connection: Upstox access token missing or expired — re-authenticate via Brokers page.');
         return;
       }
       await get_WS_URL({ access_token });
@@ -181,15 +181,20 @@ async function get_WS_URL({ access_token, symbol = [] }) {
     const ws = new WebSocket(initUrl, {
       headers: {
         "Accept": "*/*",
-        Authorization: `Bearer  ${access_token}`,
+        Authorization: `Bearer ${access_token}`,
       },
       followRedirects: true,
     });
 
-    console.log('Redirection detected: ' + ws);
+    console.log('[WS Upstox] Initiating WebSocket connection to Upstox feed');
     activeWS = ws;
     connectWebSocket({ ws, symbol }).catch((err) => {
-      console.error('[WS Upstox] Connection error in connectWebSocket:', err.message || err);
+      const message = err.message || String(err);
+      if (message.includes('401')) {
+        console.error('[WS Upstox] Connection error: Upstox access token missing or expired — re-authenticate via Brokers page.');
+      } else {
+        console.error('[WS Upstox] Connection error in connectWebSocket:', message);
+      }
     });
 
   } catch (error) {
@@ -290,7 +295,12 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
     });
 
     ws.on("error", (error) => {
-      console.log("error:", error);
+      const message = error.message || String(error);
+      if (message.includes('401')) {
+        console.error('[WS Upstox] Upstox access token missing or expired — re-authenticate via Brokers page.');
+      } else {
+        console.log("error:", error);
+      }
       if (activeWS === ws) {
         activeWS = null;
         subscribedSymbols.clear(); // Clear currently active subscriptions since connection closed

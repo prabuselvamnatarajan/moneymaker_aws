@@ -296,6 +296,46 @@ export default function BrokersListView() {
     return `http://localhost:8080/?userId=${encodeURIComponent(currentUserId)}`;
   };
 
+  const getBrokerAuthStatus = (broker: Broker): 'authorized' | 'expired' | 'disconnected' => {
+    if (broker.is_internal) return 'authorized';
+    if (broker.access_token) return 'authorized';
+    if (broker.token_status === 'expired') return 'expired';
+    return 'disconnected';
+  };
+
+  const getAuthStatusLabel = (status: 'authorized' | 'expired' | 'disconnected') => {
+    switch (status) {
+      case 'authorized':
+        return 'AUTHORIZED';
+      case 'expired':
+        return 'EXPIRED';
+      default:
+        return 'DISCONNECTED';
+    }
+  };
+
+  const getAuthStatusClasses = (status: 'authorized' | 'expired' | 'disconnected') => {
+    switch (status) {
+      case 'authorized':
+        return 'bg-emerald-950/60 border border-emerald-900/30 text-emerald-400';
+      case 'expired':
+        return 'bg-rose-950/60 border border-rose-900/30 text-rose-400';
+      default:
+        return 'bg-amber-950/60 border border-amber-900/30 text-amber-400';
+    }
+  };
+
+  const getAuthStatusDotClass = (status: 'authorized' | 'expired' | 'disconnected') => {
+    switch (status) {
+      case 'authorized':
+        return 'bg-emerald-400';
+      case 'expired':
+        return 'bg-rose-400';
+      default:
+        return 'bg-amber-400';
+    }
+  };
+
   return (
     <div className="p-4 sm:p-8 space-y-8 text-slate-100 min-h-screen bg-slate-950 font-sans">
       {/* Header */}
@@ -367,7 +407,7 @@ export default function BrokersListView() {
               <div className="grid grid-cols-1 gap-3">
                 {brokers.map((broker) => {
                   const isSelected = selectedBroker?._id === broker._id;
-                  const hasToken = !!broker.access_token;
+                  const authStatus = getBrokerAuthStatus(broker);
                   
                   return (
                     <div 
@@ -393,13 +433,9 @@ export default function BrokersListView() {
                           </span>
                           
                           {!broker.is_internal && (
-                            <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${
-                              hasToken 
-                                ? 'bg-emerald-950/60 border border-emerald-900/30 text-emerald-400' 
-                                : 'bg-amber-950/60 border border-amber-900/30 text-amber-400'
-                            }`}>
-                              <span className={`w-1 h-1 rounded-full ${hasToken ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                              {hasToken ? 'AUTHORIZED' : 'DISCONNECTED'}
+                            <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${getAuthStatusClasses(authStatus)}`}>
+                              <span className={`w-1 h-1 rounded-full ${getAuthStatusDotClass(authStatus)}`} />
+                              {getAuthStatusLabel(authStatus)}
                             </span>
                           )}
                         </div>
@@ -629,7 +665,11 @@ export default function BrokersListView() {
                   </div>
 
                   {/* Connection and Authentication flow */}
-                  {!isCreating && selectedBroker && selectedPlatform === 'upstox' && (
+                  {!isCreating && selectedBroker && selectedPlatform === 'upstox' && (() => {
+                    const authStatus = getBrokerAuthStatus(selectedBroker);
+                    const isAuthorized = authStatus === 'authorized';
+
+                    return (
                     <div className="p-4 bg-slate-950 border border-slate-850 rounded-xl space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
@@ -639,16 +679,20 @@ export default function BrokersListView() {
                           </p>
                         </div>
                         
-                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded flex items-center gap-1 ${
-                          selectedBroker.access_token 
-                            ? 'bg-emerald-950/80 border border-emerald-900 text-emerald-400' 
-                            : 'bg-amber-950/80 border border-amber-900 text-amber-400'
-                        }`}>
-                          {selectedBroker.access_token ? 'AUTHORIZED' : 'AWAITING ACCESS'}
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded flex items-center gap-1 ${getAuthStatusClasses(authStatus)}`}>
+                          {getAuthStatusLabel(authStatus)}
                         </span>
                       </div>
 
-                      {selectedBroker.access_token && (
+                      {authStatus === 'expired' && (
+                        <div className="p-3 bg-rose-950/20 border border-rose-900/30 rounded-lg">
+                          <p className="text-[10px] text-rose-300 leading-normal">
+                            Your Upstox session expired. Please re-authenticate to resume live market data and order placement.
+                          </p>
+                        </div>
+                      )}
+
+                      {isAuthorized && selectedBroker.access_token && (
                         <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg space-y-1 font-mono">
                           <span className="text-[9px] uppercase font-bold text-slate-500">Access Token (Stored)</span>
                           <p className="text-[10px] text-slate-400 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -664,10 +708,11 @@ export default function BrokersListView() {
                         className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-850 hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 font-bold font-mono tracking-wide rounded-lg text-[10px] border border-indigo-900/65 transition-colors cursor-pointer shadow-md"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        {selectedBroker.access_token ? 'Re-authenticate Account' : 'Authenticate / Login with Upstox'}
+                        {isAuthorized ? 'Re-authenticate Account' : 'Authenticate / Login with Upstox'}
                       </a>
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Actions Footer */}
                   <div className="flex items-center justify-between border-t border-slate-800 pt-4 mt-2">

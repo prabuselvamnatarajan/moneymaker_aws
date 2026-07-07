@@ -70,6 +70,7 @@ export interface Broker {
     redirect_uri?: string;
   };
   access_token?: string;
+  token_status?: 'valid' | 'expired' | 'missing';
   created_at: string;
 }
 
