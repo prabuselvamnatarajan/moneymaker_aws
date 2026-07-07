@@ -60,5 +60,7 @@ clean_shared ./kafka/services/Strategies/MSB
 rm -f ./kafka/services/Strategies/MSB/account_utils.js
 
 # Deploy the stack
-docker swarm init
+if ! docker info | grep -q "Swarm: active"; then
+  docker swarm init
+fi
 docker stack deploy --detach=false --compose-file docker-compose.yml moneymaker
