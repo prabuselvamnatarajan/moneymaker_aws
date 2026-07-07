@@ -7,75 +7,89 @@ import { createClient } from 'redis';
 let protobufRoot = null;
 let activeWS = null;
 const activeSymbols = new Set();
+const subscribedSymbols = new Set();
 let redisSubscriber = null;
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 
 function subscribeSymbols(symbolInput) {
-  if (!activeWS || activeWS.readyState !== WebSocket.OPEN) {
-    console.warn('[WS Upstox] Cannot subscribe: Upstox WebSocket is not open.');
-    return;
-  }
   const symbolArray = Array.isArray(symbolInput) ? symbolInput : [symbolInput];
   if (symbolArray.length === 0) return;
 
-  const toSubscribe = [];
+  // Add to the list of symbols we expect to be subscribed to
   for (const s of symbolArray) {
-    if (s && !activeSymbols.has(s)) {
-      activeSymbols.add(s);
-      toSubscribe.push(s);
+    if (s) activeSymbols.add(s);
+  }
+
+  if (activeWS && activeWS.readyState === WebSocket.OPEN) {
+    const toSubscribe = [];
+    for (const s of symbolArray) {
+      if (s && !subscribedSymbols.has(s)) {
+        subscribedSymbols.add(s);
+        toSubscribe.push(s);
+      }
     }
-  }
 
-  if (toSubscribe.length === 0) {
-    console.log('[WS Upstox] Symbols already subscribed:', symbolArray);
-    return;
-  }
+    if (toSubscribe.length === 0) {
+      console.log('[WS Upstox] Symbols already subscribed on active WS:', symbolArray);
+      return;
+    }
 
-  console.log('[WS Upstox] Subscribing to symbols:', toSubscribe);
-  const data = {
-    guid: "someguid",
-    method: "sub",
-    data: {
-      mode: "full",
-      instrumentKeys: toSubscribe
-    },
-  };
-  const content = Buffer.from(JSON.stringify(data));
-  activeWS.send(content);
+    console.log('[WS Upstox] Subscribing to symbols:', toSubscribe);
+    const data = {
+      guid: "someguid",
+      method: "sub",
+      data: {
+        mode: "full",
+        instrumentKeys: toSubscribe
+      },
+    };
+    const content = Buffer.from(JSON.stringify(data));
+    activeWS.send(content);
+  } else {
+    console.log('[WS Upstox] WebSocket not open. Added symbols to active/pending list:', symbolArray);
+  }
 }
 
 function unsubscribeSymbols(symbolInput) {
-  if (!activeWS || activeWS.readyState !== WebSocket.OPEN) {
-    console.warn('[WS Upstox] Cannot unsubscribe: Upstox WebSocket is not open.');
-    return;
-  }
   const symbolArray = Array.isArray(symbolInput) ? symbolInput : [symbolInput];
   if (symbolArray.length === 0) return;
 
-  const toUnsubscribe = [];
+  // Remove from the list of symbols we expect to be subscribed to
   for (const s of symbolArray) {
-    if (s && activeSymbols.has(s)) {
-      activeSymbols.delete(s);
-      toUnsubscribe.push(s);
+    if (s) activeSymbols.delete(s);
+  }
+
+  if (activeWS && activeWS.readyState === WebSocket.OPEN) {
+    const toUnsubscribe = [];
+    for (const s of symbolArray) {
+      if (s && subscribedSymbols.has(s)) {
+        subscribedSymbols.delete(s);
+        toUnsubscribe.push(s);
+      }
     }
-  }
 
-  if (toUnsubscribe.length === 0) {
-    console.log('[WS Upstox] Symbols are not subscribed:', symbolArray);
-    return;
-  }
+    if (toUnsubscribe.length === 0) {
+      console.log('[WS Upstox] Symbols are not currently subscribed on active WS:', symbolArray);
+      return;
+    }
 
-  console.log('[WS Upstox] Unsubscribing from symbols:', toUnsubscribe);
-  const data = {
-    guid: "someguid",
-    method: "unsub",
-    data: {
-      instrumentKeys: toUnsubscribe
-    },
-  };
-  const content = Buffer.from(JSON.stringify(data));
-  activeWS.send(content);
+    console.log('[WS Upstox] Unsubscribing from symbols:', toUnsubscribe);
+    const data = {
+      guid: "someguid",
+      method: "unsub",
+      data: {
+        instrumentKeys: toUnsubscribe
+      },
+    };
+    const content = Buffer.from(JSON.stringify(data));
+    activeWS.send(content);
+  } else {
+    for (const s of symbolArray) {
+      if (s) subscribedSymbols.delete(s);
+    }
+    console.log('[WS Upstox] WebSocket not open. Removed symbols from active/pending list:', symbolArray);
+  }
 }
 
 async function initRedisSubscriber() {
@@ -179,7 +193,40 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
 
       // Set a timeout to send a subscription message after 1 second
       setTimeout(() => {
-        subscribeSymbols(symbol);
+        // Merge the requested `symbol` into activeSymbols
+        const symbolArray = Array.isArray(symbol) ? symbol : [symbol];
+        for (const s of symbolArray) {
+          if (s) activeSymbols.add(s);
+        }
+
+        // Subscribe to ALL symbols in activeSymbols that are not yet subscribed on this WS connection
+        if (activeSymbols.size > 0) {
+          const toSubscribe = [];
+          for (const s of activeSymbols) {
+            if (s && !subscribedSymbols.has(s)) {
+              subscribedSymbols.add(s);
+              toSubscribe.push(s);
+            }
+          }
+
+          if (toSubscribe.length > 0) {
+            console.log('[WS Upstox] WebSocket opened. Subscribing to active symbols:', toSubscribe);
+            const data = {
+              guid: "someguid",
+              method: "sub",
+              data: {
+                mode: "full",
+                instrumentKeys: toSubscribe
+              },
+            };
+            const content = Buffer.from(JSON.stringify(data));
+            ws.send(content);
+          } else {
+            console.log('[WS Upstox] WebSocket opened. All active symbols already subscribed.');
+          }
+        } else {
+          console.log('[WS Upstox] WebSocket opened. No symbols to subscribe.');
+        }
       }, 1000);
     });
 
@@ -187,7 +234,7 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
       console.log("disconnected");
       if (activeWS === ws) {
         activeWS = null;
-        activeSymbols.clear();
+        subscribedSymbols.clear(); // Clear currently active subscriptions since connection closed
       }
     });
 
@@ -211,7 +258,7 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
       console.log("error:", error);
       if (activeWS === ws) {
         activeWS = null;
-        activeSymbols.clear();
+        subscribedSymbols.clear(); // Clear currently active subscriptions since connection closed
       }
       reject(error);
     });
