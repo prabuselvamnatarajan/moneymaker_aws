@@ -326,7 +326,7 @@ export const getDeploymentMetrics = async (userId, id) => {
     total_pnl: parseFloat(totalPnL.toFixed(2)),
     wins,
     losses,
-    win_rate: totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(2) + "%" : "100.00%",
+    win_rate: (wins + losses) > 0 ? ((wins / (wins + losses)) * 100).toFixed(2) + "%" : "0.00%",
   };
 };
 

@@ -337,6 +337,7 @@ export default function App() {
         }
         return strat;
       }));
+      await loadData();
     } catch (err: any) {
       showError(`Failed to update strategy execution status: ${err.message}`);
     }
@@ -484,6 +485,21 @@ export default function App() {
     }
   };
 
+  const handleToggleSymbolActive = async (id: string, isActive: boolean) => {
+    try {
+      await api.symbols.update(id, { is_active: isActive });
+      setSymbols(prev => prev.map(s => {
+        if (s.id === id) {
+          return { ...s, isActive };
+        }
+        return s;
+      }));
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to update symbol activation state: ${err.message}`);
+    }
+  };
+
   // --- Router & Entity Drilldown Navigation ---
   
   const handleNavigate = (screen: ViewScreen) => {
@@ -591,6 +607,7 @@ export default function App() {
             onAddSymbol={handleAddSymbol}
             onNavigateToEntity={handleSelectEntity}
             onRefreshData={loadData}
+            onToggleSymbolActive={handleToggleSymbolActive}
           />
         );
       case 'strategy-detail':

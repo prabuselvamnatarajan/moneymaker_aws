@@ -62,7 +62,10 @@ export default function StrategiesListView({
 
   const totalPnl = visibleStrategies.reduce((sum, s) => sum + s.pnl, 0);
   const activeCount = visibleStrategies.filter(s => s.status === 'active').length;
-  const avgWinRate = visibleStrategies.reduce((sum, s) => sum + s.winRate, 0) / (visibleStrategies.length || 1);
+  const strategiesWithTrades = visibleStrategies.filter(s => s.totalTrades > 0);
+  const avgWinRate = strategiesWithTrades.length > 0
+    ? strategiesWithTrades.reduce((sum, s) => sum + s.winRate, 0) / strategiesWithTrades.length
+    : 0;
   const totalOpenPositions = visibleStrategies.reduce((sum, s) => sum + s.openPositions, 0);
 
   const filteredStrategies = visibleStrategies.filter(s => 
@@ -467,7 +470,7 @@ export default function StrategiesListView({
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Targeted Market Symbols</label>
                 <div className="flex flex-wrap gap-1.5 p-2 bg-slate-950 rounded border border-slate-800 max-h-24 overflow-y-auto font-sans">
-                  {symbols.map(sym => {
+                  {symbols.filter(sym => sym.isActive).map(sym => {
                     const isChecked = selectedSymbols.includes(sym.ticker);
                     return (
                       <button
