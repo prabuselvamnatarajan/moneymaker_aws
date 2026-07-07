@@ -6,7 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { 
   LineChart, TrendingUp, TrendingDown, Clock, Activity, ArrowLeft, 
-  Layers, ExternalLink, RefreshCw, BarChart3, HelpCircle, ArrowUpRight 
+  Layers, ExternalLink, RefreshCw, BarChart3, HelpCircle, ArrowUpRight, Power 
 } from 'lucide-react';
 import { SymbolData, Transaction, Strategy } from '../types';
 import TransactionList from './TransactionList';
@@ -23,6 +23,7 @@ interface SymbolDetailsViewProps {
   timezone: string;
   onNavigateToScreen?: (screen: any) => void;
   onRefreshData?: () => Promise<void> | void;
+  onToggleSymbolActive?: (id: string, isActive: boolean) => void;
 }
 
 export default function SymbolDetailsView({
@@ -35,7 +36,9 @@ export default function SymbolDetailsView({
   timezone,
   onNavigateToScreen,
   onRefreshData,
+  onToggleSymbolActive,
 }: SymbolDetailsViewProps) {
+  const [toggling, setToggling] = useState(false);
 
   // --- Self-fetched transactions for this symbol ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -121,7 +124,41 @@ export default function SymbolDetailsView({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Active/Inactive Status Badge */}
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-mono tracking-wider font-bold uppercase border ${
+            symbol.isActive
+              ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/30'
+              : 'bg-slate-900 text-slate-450 border-slate-800'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${symbol.isActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+            {symbol.isActive ? 'Active Feed' : 'Inactive'}
+          </span>
+
+          {/* Toggle Active/Inactive Button */}
+          {onToggleSymbolActive && symbol.id && (
+            <button
+              id="btn-symbol-detail-toggle-active"
+              disabled={toggling}
+              onClick={async () => {
+                setToggling(true);
+                try {
+                  await onToggleSymbolActive(symbol.id!, !symbol.isActive);
+                } finally {
+                  setToggling(false);
+                }
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer border disabled:opacity-50 ${
+                symbol.isActive
+                  ? 'text-rose-400 hover:text-rose-300 bg-rose-950/20 border-rose-900/30 hover:bg-rose-900/20'
+                  : 'text-emerald-400 hover:text-emerald-300 bg-emerald-950/20 border-emerald-900/30 hover:bg-emerald-900/20'
+              }`}
+            >
+              <Power className={`w-3.5 h-3.5 ${toggling ? 'animate-spin' : ''}`} />
+              {symbol.isActive ? 'Deactivate' : 'Activate'}
+            </button>
+          )}
+
           <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 rounded-md border border-slate-800">
             <Clock className="w-3.5 h-3.5 text-indigo-400" /> FEED: DELAYLESS 200ms
           </span>

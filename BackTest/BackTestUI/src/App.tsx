@@ -39,7 +39,7 @@ const INITIAL_FILTERS: TransactionFilters = {
 };
 
 export default function App() {
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
 
   // --- Auth & Session States ---
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('accessToken'));
@@ -494,6 +494,8 @@ export default function App() {
         }
         return s;
       }));
+      const sym = symbols.find(s => s.id === id);
+      showSuccess(`${sym?.ticker || 'Symbol'} ${isActive ? 'activated' : 'deactivated'} successfully`);
       await loadData();
     } catch (err: any) {
       showError(`Failed to update symbol activation state: ${err.message}`);
@@ -655,6 +657,7 @@ export default function App() {
             timezone={timezone}
             onNavigateToScreen={setActiveScreen}
             onRefreshData={loadData}
+            onToggleSymbolActive={handleToggleSymbolActive}
           />
         );
       case 'profile':

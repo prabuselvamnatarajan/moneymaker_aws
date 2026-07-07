@@ -140,8 +140,16 @@ export default function SymbolsListView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold font-sans">Assets Engaged</p>
           <p className="text-xl font-black font-mono text-slate-100 mt-1.5">
+            <span className="text-emerald-400">{symbols.filter(s => s.isActive).length}</span>
+            <span className="text-slate-600 mx-0.5">/</span>
             {symbols.length} <span className="text-xs text-slate-500 font-normal">Active Feeds</span>
           </p>
+          <div className="mt-1.5 w-full h-1 bg-slate-900 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
+              style={{ width: `${symbols.length > 0 ? (symbols.filter(s => s.isActive).length / symbols.length) * 100 : 0}%` }}
+            />
+          </div>
         </div>
 
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
