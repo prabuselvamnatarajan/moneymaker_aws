@@ -2,6 +2,7 @@ import WebSocket from 'ws';
 import { Kafka } from 'kafkajs';
 import protobuf from 'protobufjs';
 import { createClient } from 'redis';
+import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 
 // Initialize global variables
 let protobufRoot = null;
@@ -9,8 +10,37 @@ let activeWS = null;
 const activeSymbols = new Set();
 const subscribedSymbols = new Set();
 let redisSubscriber = null;
+let connectionPromise = null;
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
+
+async function ensureWSConnection() {
+  if (activeWS && (activeWS.readyState === WebSocket.OPEN || activeWS.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  if (connectionPromise) {
+    return connectionPromise;
+  }
+
+  connectionPromise = (async () => {
+    try {
+      console.log('[WS Upstox] Auto-initiating new WebSocket connection...');
+      const access_token = await getAccessTokenFromRedis();
+      if (!access_token) {
+        console.warn('[WS Upstox] Cannot auto-initiate connection: Access token not found in Redis.');
+        return;
+      }
+      await get_WS_URL({ access_token });
+    } catch (err) {
+      console.error('[WS Upstox] Error auto-initiating WebSocket connection:', err);
+    } finally {
+      connectionPromise = null;
+    }
+  })();
+
+  return connectionPromise;
+}
 
 function subscribeSymbols(symbolInput) {
   const symbolArray = Array.isArray(symbolInput) ? symbolInput : [symbolInput];
@@ -48,6 +78,9 @@ function subscribeSymbols(symbolInput) {
     activeWS.send(content);
   } else {
     console.log('[WS Upstox] WebSocket not open. Added symbols to active/pending list:', symbolArray);
+    ensureWSConnection().catch((err) => {
+      console.error('[WS Upstox] Failed auto-connection trigger:', err);
+    });
   }
 }
 
