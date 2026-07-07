@@ -41,10 +41,15 @@ export const getAllSymbols = async (userId, queryParams) => {
   const { filter, skip, limit, sort, page } = parseQueryParams(queryParams, {
     defaultSort: "added_at",
     dateField: "added_at",
-    searchFields: ["symbol", "exchange"]
+    searchFields: ["symbol", "exchange", "symbol_name"]
   });
 
   filter.user_id = userId;
+
+  // Support instrument_class filter (e.g. ?instrument_class=EQUITY)
+  if (queryParams.instrument_class) {
+    filter.instrument_class = queryParams.instrument_class.toUpperCase();
+  }
 
   const items = await UserSymbol.find(filter)
     .sort(sort)

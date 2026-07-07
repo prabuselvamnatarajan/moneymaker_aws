@@ -3,15 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   LineChart, Search, Plus, TrendingUp, TrendingDown, Activity, 
-  Globe, Coins, X, ChevronRight, Sparkles, RefreshCw
+  Globe, Coins, X, ChevronRight, Sparkles, RefreshCw, Power
 } from 'lucide-react';
 import { SymbolData } from '../types';
+import { api } from '../api';
+import { mapSymbol } from '../adapters';
 
 interface SymbolsListViewProps {
-  symbols: SymbolData[];
+  symbols: SymbolData[]; // Parent state — used only for overview metrics
   onAddSymbol: (newSym: SymbolData) => void;
   onNavigateToEntity: (type: 'symbol', id: string) => void;
   onRefreshData?: () => Promise<void> | void;
@@ -28,20 +30,15 @@ export default function SymbolsListView({
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
-  const handleRefresh = async () => {
-    if (onRefreshData) {
-      setRefreshing(true);
-      try {
-        await onRefreshData();
-      } finally {
-        setRefreshing(false);
-      }
-    }
-  };
   const [typeFilter, setTypeFilter] = useState<'all' | 'crypto' | 'equity' | 'forex'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  
+
+  // --- Self-fetched table data (server-side filtering) ---
+  const [tableSymbols, setTableSymbols] = useState<SymbolData[]>([]);
+  const [tableLoading, setTableLoading] = useState(true);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
   // Form fields
   const [name, setName] = useState('');
   const [exchange, setExchange] = useState('NSE');
@@ -49,27 +46,65 @@ export default function SymbolsListView({
   const [description, setDescription] = useState('');
   const [instrumentClass, setInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
 
-  // Computed metrics
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Fetch filtered data from server
+  const fetchTableData = useCallback(async () => {
+    setTableLoading(true);
+    try {
+      const params: Record<string, string> = {};
+      if (statusFilter === 'active') params.is_active = 'true';
+      else if (statusFilter === 'inactive') params.is_active = 'false';
+      if (typeFilter !== 'all') params.instrument_class = typeFilter.toUpperCase();
+      if (debouncedSearch) params.search = debouncedSearch;
+
+      const res = await api.symbols.list(params);
+      setTableSymbols(res.items.map(mapSymbol));
+    } catch (err) {
+      console.error('[SymbolsListView] Failed to fetch symbols:', err);
+    } finally {
+      setTableLoading(false);
+    }
+  }, [statusFilter, typeFilter, debouncedSearch]);
+
+  // Re-fetch when filters change
+  useEffect(() => {
+    fetchTableData();
+  }, [fetchTableData]);
+
+  // Handle refresh
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchTableData();
+      if (onRefreshData) await onRefreshData();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Handle toggle active/inactive — calls parent handler, then re-fetches table
+  const handleToggleActive = async (id: string, isActive: boolean) => {
+    setTogglingId(id);
+    try {
+      onToggleSymbolActive(id, isActive);
+      // Allow the parent API call to process, then re-fetch server-filtered table
+      await new Promise(r => setTimeout(r, 400));
+      await fetchTableData();
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  // Computed overview metrics (from parent unfiltered symbols prop)
+  const activeCount = symbols.filter(s => s.isActive).length;
   const totalVolume = symbols.reduce((sum, s) => sum + s.volume24h, 0);
   const avgChange = symbols.reduce((sum, s) => sum + s.change24h, 0) / (symbols.length || 1);
-  
-  // Find top mover
   const topMover = [...symbols].sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h))[0];
-
-  const filteredSymbols = symbols.filter(s => {
-    const matchesSearch = 
-      s.ticker.toLowerCase().includes(search.toLowerCase()) ||
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.exchange.toLowerCase().includes(search.toLowerCase());
-    
-    const matchesType = typeFilter === 'all' || s.instrumentType === typeFilter;
-    const matchesStatus = 
-      statusFilter === 'all' ||
-      (statusFilter === 'active' && s.isActive) ||
-      (statusFilter === 'inactive' && !s.isActive);
-
-    return matchesSearch && matchesType && matchesStatus;
-  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,6 +132,8 @@ export default function SymbolsListView({
     setDescription('');
     setInstrumentClass('EQUITY');
     setShowAddForm(false);
+    // Re-fetch table after adding
+    setTimeout(() => fetchTableData(), 500);
   };
 
   return (
@@ -140,14 +177,14 @@ export default function SymbolsListView({
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-semibold font-sans">Assets Engaged</p>
           <p className="text-xl font-black font-mono text-slate-100 mt-1.5">
-            <span className="text-emerald-400">{symbols.filter(s => s.isActive).length}</span>
+            <span className="text-emerald-400">{activeCount}</span>
             <span className="text-slate-600 mx-0.5">/</span>
             {symbols.length} <span className="text-xs text-slate-500 font-normal">Active Feeds</span>
           </p>
           <div className="mt-1.5 w-full h-1 bg-slate-900 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
-              style={{ width: `${symbols.length > 0 ? (symbols.filter(s => s.isActive).length / symbols.length) * 100 : 0}%` }}
+              style={{ width: `${symbols.length > 0 ? (activeCount / symbols.length) * 100 : 0}%` }}
             />
           </div>
         </div>
@@ -243,13 +280,25 @@ export default function SymbolsListView({
       {/* Symbols Records Table */}
       <div className="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden font-sans">
         <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-          <span className="text-xs font-bold text-slate-300 font-sans">Asset Pricing Feeds Directory ({filteredSymbols.length})</span>
-          <span className="text-[10px] text-slate-500 font-mono">Quotes update under a 200ms latency standard</span>
+          <span className="text-xs font-bold text-slate-300 font-sans">
+            Asset Pricing Feeds Directory
+            {!tableLoading && <span className="text-indigo-400 ml-1">({tableSymbols.length})</span>}
+          </span>
+          <span className="text-[10px] text-slate-500 font-mono">
+            {tableLoading ? 'Fetching from server...' : 'Server-filtered results'}
+          </span>
         </div>
 
-        {filteredSymbols.length > 0 ? (
+        {tableLoading ? (
+          /* Loading skeleton */
+          <div className="p-2 space-y-1">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-14 bg-slate-900/60 rounded-lg animate-pulse border border-slate-800/40" />
+            ))}
+          </div>
+        ) : tableSymbols.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs divide-y divide-slate-800/60 select-none">
+            <table className="w-full text-left text-xs divide-y divide-slate-800/60 select-none min-w-[900px]">
               <thead className="bg-slate-900/50 text-slate-500 uppercase font-semibold font-mono text-[10px] border-b border-slate-800">
                 <tr>
                   <th className="p-4">Ticker / Asset Name</th>
@@ -263,10 +312,11 @@ export default function SymbolsListView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-900">
-                {filteredSymbols.map(sym => {
+                {tableSymbols.map(sym => {
                   const isPositive = sym.change24h >= 0;
+                  const isToggling = togglingId === sym.id;
                   return (
-                    <tr key={sym.ticker} className="hover:bg-indigo-600/5 transition-colors">
+                    <tr key={sym.id || sym.ticker} className="hover:bg-indigo-600/5 transition-colors">
                       <td className="p-4">
                         <div className="flex items-center gap-2.5">
                           <span className="text-sm font-black font-mono text-slate-100 hover:text-indigo-400 cursor-pointer" onClick={() => onNavigateToEntity('symbol', sym.ticker)}>
@@ -318,17 +368,19 @@ export default function SymbolsListView({
                             Audit Chart
                           </button>
                           <button
+                            disabled={isToggling}
                             onClick={() => {
                               if (sym.id) {
-                                onToggleSymbolActive(sym.id, !sym.isActive);
+                                handleToggleActive(sym.id, !sym.isActive);
                               }
                             }}
-                            className={`px-2.5 py-1 rounded transition-all text-[11px] font-semibold cursor-pointer border ${
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded transition-all text-[11px] font-semibold cursor-pointer border disabled:opacity-50 ${
                               sym.isActive
                                 ? 'text-rose-400 hover:text-rose-300 bg-rose-950/20 border-rose-900/30 hover:bg-rose-900/20'
                                 : 'text-emerald-400 hover:text-emerald-300 bg-emerald-950/20 border-emerald-900/30 hover:bg-emerald-900/20'
                             }`}
                           >
+                            <Power className={`w-3 h-3 ${isToggling ? 'animate-spin' : ''}`} />
                             {sym.isActive ? 'Deactivate' : 'Activate'}
                           </button>
                         </div>

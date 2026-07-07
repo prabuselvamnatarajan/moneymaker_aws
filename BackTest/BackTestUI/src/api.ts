@@ -328,12 +328,23 @@ export const api = {
 
   // Symbols API
   symbols: {
-    async list() {
-      const res = await fetch(`${BASE_URL}/symbols?limit=100`, {
+    async list(params?: { is_active?: string; instrument_class?: string; search?: string; limit?: number }) {
+      const query = new URLSearchParams();
+      query.append('limit', String(params?.limit || 100));
+      if (params?.is_active !== undefined) {
+        query.append('is_active', params.is_active);
+      }
+      if (params?.instrument_class) {
+        query.append('instrument_class', params.instrument_class);
+      }
+      if (params?.search) {
+        query.append('search', params.search);
+      }
+      const res = await fetch(`${BASE_URL}/symbols?${query.toString()}`, {
         method: 'GET',
         headers: getHeaders(),
       });
-      return handleResponse<{ items: any[] }>(res);
+      return handleResponse<{ items: any[]; pagination?: any }>(res);
     },
 
     async get(id: string) {
