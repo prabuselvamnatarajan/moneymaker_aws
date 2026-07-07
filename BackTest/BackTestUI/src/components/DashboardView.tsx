@@ -557,7 +557,7 @@ export default function DashboardView({
                       onChange={(e) => handleSymbolChange(e.target.value)}
                       className="w-full bg-slate-900 border border-slate-800 rounded-md p-2 text-slate-200 font-mono focus:outline-hidden focus:border-indigo-500"
                     >
-                      {symbols.map(sym => (
+                      {symbols.filter(sym => sym.isActive).map(sym => (
                         <option key={sym.ticker} value={sym.ticker}>
                           {sym.ticker}
                         </option>

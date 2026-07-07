@@ -367,6 +367,15 @@ export const api = {
       });
       return handleResponse<{ data: any }>(res);
     },
+
+    async update(id: string, updateData: { is_active?: boolean }) {
+      const res = await fetch(`${BASE_URL}/symbols/${id}`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(updateData),
+      });
+      return handleResponse<{ data: any }>(res);
+    },
   },
 
   // Strategies API

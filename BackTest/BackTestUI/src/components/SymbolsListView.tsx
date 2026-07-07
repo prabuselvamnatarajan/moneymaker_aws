@@ -15,13 +15,15 @@ interface SymbolsListViewProps {
   onAddSymbol: (newSym: SymbolData) => void;
   onNavigateToEntity: (type: 'symbol', id: string) => void;
   onRefreshData?: () => Promise<void> | void;
+  onToggleSymbolActive: (id: string, isActive: boolean) => void;
 }
 
 export default function SymbolsListView({
   symbols,
   onAddSymbol,
   onNavigateToEntity,
-  onRefreshData
+  onRefreshData,
+  onToggleSymbolActive
 }: SymbolsListViewProps) {
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -38,6 +40,7 @@ export default function SymbolsListView({
     }
   };
   const [typeFilter, setTypeFilter] = useState<'all' | 'crypto' | 'equity' | 'forex'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   
   // Form fields
   const [name, setName] = useState('');
@@ -60,8 +63,12 @@ export default function SymbolsListView({
       s.exchange.toLowerCase().includes(search.toLowerCase());
     
     const matchesType = typeFilter === 'all' || s.instrumentType === typeFilter;
+    const matchesStatus = 
+      statusFilter === 'all' ||
+      (statusFilter === 'active' && s.isActive) ||
+      (statusFilter === 'inactive' && !s.isActive);
 
-    return matchesSearch && matchesType;
+    return matchesSearch && matchesType && matchesStatus;
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -204,6 +211,25 @@ export default function SymbolsListView({
             ))}
           </div>
         </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-bold px-2">Status:</span>
+          <div className="flex gap-1 bg-slate-900 p-1 rounded-lg border border-slate-850">
+            {(['all', 'active', 'inactive'] as const).map(status => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-3 py-1 rounded text-[10px] font-mono uppercase tracking-wider transition-colors cursor-pointer ${
+                  statusFilter === status 
+                    ? 'bg-slate-850 text-indigo-400 font-bold' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Symbols Records Table */}
@@ -221,6 +247,7 @@ export default function SymbolsListView({
                   <th className="p-4">Ticker / Asset Name</th>
                   <th className="p-4">Exchange Platform</th>
                   <th className="p-4">Instrument Class</th>
+                  <th className="p-4 font-mono">Status</th>
                   <th className="p-4 text-right">Last price quote</th>
                   <th className="p-4 text-right">24h Market Swing</th>
                   <th className="p-4 text-right">Trading Volume (24h)</th>
@@ -252,6 +279,16 @@ export default function SymbolsListView({
                           {sym.instrumentType}
                         </span>
                       </td>
+                      <td className="p-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-mono tracking-wider font-bold uppercase border ${
+                          sym.isActive 
+                            ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/30' 
+                            : 'bg-slate-950/40 text-slate-450 border-slate-800/30'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${sym.isActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                          {sym.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
                       <td className="p-4 text-right font-bold font-mono text-slate-200">
                         ₹{sym.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                       </td>
@@ -265,12 +302,28 @@ export default function SymbolsListView({
                         ₹{sym.volume24h.toLocaleString()}
                       </td>
                       <td className="p-4 text-center">
-                        <button
-                          onClick={() => onNavigateToEntity('symbol', sym.ticker)}
-                          className="px-2.5 py-1 text-slate-500 hover:text-slate-200 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded transition-all text-[11px] font-semibold cursor-pointer"
-                        >
-                          Audit Chart
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => onNavigateToEntity('symbol', sym.ticker)}
+                            className="px-2.5 py-1 text-slate-500 hover:text-slate-200 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded transition-all text-[11px] font-semibold cursor-pointer"
+                          >
+                            Audit Chart
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (sym.id) {
+                                onToggleSymbolActive(sym.id, !sym.isActive);
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded transition-all text-[11px] font-semibold cursor-pointer border ${
+                              sym.isActive
+                                ? 'text-rose-400 hover:text-rose-300 bg-rose-950/20 border-rose-900/30 hover:bg-rose-900/20'
+                                : 'text-emerald-400 hover:text-emerald-300 bg-emerald-950/20 border-emerald-900/30 hover:bg-emerald-900/20'
+                            }`}
+                          >
+                            {sym.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

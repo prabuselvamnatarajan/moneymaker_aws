@@ -1,12 +1,18 @@
 import express from 'express';
 import cors from 'cors';
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
-import { get_WS_URL } from './websocket.js';
+import { get_WS_URL, initRedisSubscriber } from './websocket.js';
 
 const app = express();
 const port = process.env.PORT || 80;
 
 app.use(cors());
+
+// Initialize Redis Subscriber for symbol updates
+initRedisSubscriber().catch(err => {
+    console.error('Failed to initialize Redis Subscriber in server.js:', err);
+});
+
 
 app.get('/', async (req, res) => {
     try {

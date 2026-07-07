@@ -2,6 +2,7 @@ import Deployment from "../models/deployment.js";
 import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
 import Account from "../models/account.js";
+import UserSymbol from "../models/userSymbol.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
@@ -113,6 +114,19 @@ const resetBacktestDeployment = async (deployment) => {
 };
 
 export const createDeployment = async (userId, deploymentData) => {
+  if (deploymentData.user_symbol_id) {
+    const symbol = await UserSymbol.findOne({
+      _id: deploymentData.user_symbol_id,
+      user_id: userId,
+    });
+    if (!symbol) {
+      throw new Error("Associated symbol not found");
+    }
+    if (!symbol.is_active) {
+      throw new Error("Cannot associate an inactive symbol to deployment");
+    }
+  }
+
   const deployment = new Deployment({ ...deploymentData, user_id: userId });
   const result = await deployment.save();
   await resetBacktestDeployment(result);

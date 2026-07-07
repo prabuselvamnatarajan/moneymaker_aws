@@ -38,6 +38,7 @@ export interface Strategy {
 }
 
 export interface SymbolData {
+  id?: string;
   ticker: string;
   name: string;
   exchange: string;
@@ -48,6 +49,7 @@ export interface SymbolData {
   instrumentToken?: string;
   description?: string;
   instrumentClass?: string;
+  isActive?: boolean;
 }
 
 export interface AuditTrailEvent {
