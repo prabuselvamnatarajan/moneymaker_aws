@@ -5,6 +5,75 @@
 
 const BASE_URL = '/backtestapp';
 
+// Global fetch interceptor for token refresh
+const originalFetch = window.fetch;
+let refreshPromise: Promise<string> | null = null;
+
+window.fetch = async function (input, init) {
+  let res = await originalFetch(input, init);
+
+  if (res.status === 401) {
+    const urlString = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url || '');
+    if (
+      !urlString.includes('/auth/refresh-token') &&
+      !urlString.includes('/auth/login') &&
+      !urlString.includes('/auth/signup') &&
+      !urlString.includes('/auth/mfa/login-verify')
+    ) {
+      try {
+        console.log('[Auth Interceptor] 401 detected, attempting to refresh token...');
+        
+        // Deduplicate concurrent refresh requests
+        if (!refreshPromise) {
+          refreshPromise = (async () => {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) throw new Error('No refresh token available');
+            
+            const refreshRes = await originalFetch(`${BASE_URL}/auth/refresh-token`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken }),
+            });
+            
+            if (!refreshRes.ok) {
+              throw new Error('Refresh token request failed');
+            }
+            
+            const data = await refreshRes.json() as { accessToken: string };
+            if (!data.accessToken) {
+              throw new Error('No access token in refresh response');
+            }
+            
+            localStorage.setItem('accessToken', data.accessToken);
+            return data.accessToken;
+          })();
+        }
+        
+        const newAccessToken = await refreshPromise;
+        refreshPromise = null;
+        
+        // Clone init to update Authorization header
+        const newInit = { ...(init || {}) };
+        const headers = { ...(newInit.headers || {}) } as Record<string, string>;
+        headers['Authorization'] = `Bearer ${newAccessToken}`;
+        newInit.headers = headers;
+        
+        console.log('[Auth Interceptor] Retrying original request with new access token...');
+        res = await originalFetch(input, newInit);
+      } catch (err) {
+        refreshPromise = null;
+        console.error('[Auth Interceptor] Transparent token refresh failed:', err);
+        // Clean up tokens and dispatch event so the UI updates
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        window.dispatchEvent(new Event('auth-unauthorized'));
+      }
+    }
+  }
+
+  return res;
+};
+
 // Helper to get authorization headers
 function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
   const token = localStorage.getItem('accessToken');
@@ -50,6 +119,22 @@ export const api = {
         localStorage.setItem('refreshToken', data.refreshToken);
       }
       return data;
+    },
+
+    async refreshToken() {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) throw new Error('No refresh token available');
+      const res = await fetch(`${BASE_URL}/auth/refresh-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      const data = await handleResponse<{ accessToken: string }>(res);
+      if (data.accessToken) {
+        localStorage.setItem('accessToken', data.accessToken);
+        return data.accessToken;
+      }
+      throw new Error('Access token not returned');
     },
 
     async signup(name: string, email: string, username: string, password: string) {

@@ -130,22 +130,82 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
+  // --- Periodic Token Refresh ---
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Refresh token periodically (every 10 minutes, since access token expires in 15 minutes)
+    const refreshInterval = setInterval(async () => {
+      try {
+        console.log('[Auth] Periodically refreshing access token...');
+        await api.auth.refreshToken();
+        console.log('[Auth] Access token refreshed successfully.');
+      } catch (err) {
+        console.error('[Auth] Failed to refresh token periodically:', err);
+        // If refresh fails, we treat it as unauthorized/session expired
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        window.dispatchEvent(new Event('auth-unauthorized'));
+      }
+    }, 10 * 60 * 1000); // 10 minutes in milliseconds
+
+    // Also run an initial check/refresh when the app loads to make sure we have a fresh token
+    const initialRefresh = async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        if (token) {
+          // Check if token is close to expiry (less than 5 minutes remaining)
+          const base64Url = token.split('.')[1];
+          if (base64Url) {
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const payload = JSON.parse(decodeURIComponent(
+              atob(base64)
+                .split('')
+                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+            ));
+            if (payload && payload.exp) {
+              const expTime = payload.exp * 1000;
+              const timeToExpiry = expTime - Date.now();
+              console.log(`[Auth] Time to access token expiry: ${Math.round(timeToExpiry / 1000 / 60)} minutes`);
+              if (timeToExpiry < 5 * 60 * 1000) {
+                console.log('[Auth] Token is close to expiry, refreshing immediately...');
+                await api.auth.refreshToken();
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Auth] Failed initial token refresh check:', err);
+      }
+    };
+    initialRefresh();
+
+    return () => clearInterval(refreshInterval);
+  }, [isAuthenticated]);
+
   // --- Live WebSocket Pricing Stream ---
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const token = localStorage.getItem('accessToken');
-    if (!token) return;
-
     const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsHost = window.location.host;
-    const wsUrl = `${wsProto}//${wsHost}/backtestapp/ws?token=${encodeURIComponent(token)}`;
 
-    console.log('[Live Feed] Connecting to WebSocket:', wsUrl);
-    let ws = new WebSocket(wsUrl);
-    let reconnectTimeout: any;
+    console.log('[Live Feed] Initiating WebSocket connection flow...');
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+    let isDisposed = false;
 
     const connect = () => {
+      if (isDisposed) return;
+      const currentToken = localStorage.getItem('accessToken') || '';
+      const wsUrl = `${wsProto}//${wsHost}/backtestapp/ws?token=${encodeURIComponent(currentToken)}`;
+
+      console.log('[Live Feed] Connecting to WebSocket...');
+      ws = new WebSocket(wsUrl);
+
       ws.onopen = () => {
         console.log('[Live Feed] Connected to BackTest live WebSocket');
       };
@@ -168,9 +228,9 @@ export default function App() {
       };
 
       ws.onclose = () => {
+        if (isDisposed) return;
         console.log('[Live Feed] BackTest live WebSocket disconnected. Reconnecting in 3s...');
         reconnectTimeout = setTimeout(() => {
-          ws = new WebSocket(wsUrl);
           connect();
         }, 3000);
       };
@@ -183,8 +243,9 @@ export default function App() {
     connect();
 
     return () => {
+      isDisposed = true;
       clearTimeout(reconnectTimeout);
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close();
       }
     };
