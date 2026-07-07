@@ -39,7 +39,7 @@ function sanitize(str) {
 })();
 
 app.get('/', (req, res) => {
-    const { symbolName, date, time_ms } = req.query;
+    const { symbolName, date, time_ms, deployment_id } = req.query;
     if (!symbolName || !date) {
         return res.status(400).send('Missing symbolName or date');
     }
@@ -59,7 +59,7 @@ app.get('/', (req, res) => {
     const partitionKey = `backtest-${sanitize(symbolName)}-${sanitize(date)}-${sanitize(timeMsNum)}`;
 
     // Log the WebSocket URL and payload for debugging
-    console.log(`Starting WebSocket client for symbol: ${symbolName}, date: ${date}, time_ms: ${timeMsNum} at WS_URL: ${WS_URL}`);
+    console.log(`Starting WebSocket client for symbol: ${symbolName}, date: ${date}, time_ms: ${timeMsNum}, deployment_id: ${deployment_id} at WS_URL: ${WS_URL}`);
 
     const ws = new WebSocket(WS_URL);
 
@@ -95,7 +95,17 @@ app.get('/', (req, res) => {
     }
 
     ws.on('message', (data) => {
-        queue.push(data.toString());
+        let msgStr = data.toString();
+        if (deployment_id) {
+            try {
+                const parsed = JSON.parse(msgStr);
+                parsed.deployment_id = deployment_id;
+                msgStr = JSON.stringify(parsed);
+            } catch (err) {
+                console.error('Failed to parse WebSocket message to append deployment_id:', err.message);
+            }
+        }
+        queue.push(msgStr);
         processQueue().catch(err => console.error('Error in processQueue:', err));
     });
 

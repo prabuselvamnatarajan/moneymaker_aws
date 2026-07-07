@@ -13,7 +13,7 @@ const triggerBacktestIfNeeded = (deployment) => {
     const symbolName = deployment.symbol;
     const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
     const timeMs = (deployment.backtest_speed !== undefined && deployment.backtest_speed !== null) ? deployment.backtest_speed : 1000;
-    const triggerUrl = `${process.env.BACKTEST_CLIENT_URL || "http://backtest-client"}/?symbolName=${encodeURIComponent(symbolName)}&date=${encodeURIComponent(date)}&time_ms=${timeMs}`;
+    const triggerUrl = `${process.env.BACKTEST_CLIENT_URL || "http://backtest-client"}/?symbolName=${encodeURIComponent(symbolName)}&date=${encodeURIComponent(date)}&time_ms=${timeMs}&deployment_id=${encodeURIComponent(deployment._id.toString())}`;
     console.log(`[Backtest] Triggering backtest client: ${triggerUrl}`);
     fetch(triggerUrl)
       .then(res => res.text())

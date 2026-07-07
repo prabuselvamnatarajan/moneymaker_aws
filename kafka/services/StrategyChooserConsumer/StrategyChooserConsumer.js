@@ -52,27 +52,36 @@ async function createConsumer() {
             logger.debug(`Active strategies for ${symbol}: ${JSON.stringify(strategies)}`);
             const data = JSON.parse(value.toString());
 
-            await Promise.all(strategies.map(async (strategy) => {
+            let filteredStrategies = strategies;
+            if (isBackTest && data.deployment_id) {
+                filteredStrategies = strategies.filter(strategy => strategy.deployment_id === data.deployment_id);
+                logger.info(`Filtered strategies for symbol ${symbol} to deployment ${data.deployment_id}. Count: ${filteredStrategies.length}`);
+            }
+
+            await Promise.all(filteredStrategies.map(async (strategy) => {
                 try {
                     let { name: strategyName, isTest = true } = strategy;
                     const isTestMode = isTest || isBackTest;
                     const topicName = isTestMode
                         ? `${strategyName}_backtest_data`
                         : `${strategyName}_live_data`;
-                    data.strategy_details = strategy;
+                    
+                    // Clone data to avoid concurrent in-place mutation race conditions
+                    const strategyData = { ...data };
+                    strategyData.strategy_details = { ...strategy };
                     if (isTestMode) {
-                        data.strategy_details.isTest = true;
+                        strategyData.strategy_details.isTest = true;
                     } else {
-                        data.strategy_details.isTest = false;
+                        strategyData.strategy_details.isTest = false;
                     }
                     await producer.send({
                         topic: topicName,
                         messages: [
-                            { key: symbol, value: JSON.stringify(data) },
+                            { key: symbol, value: JSON.stringify(strategyData) },
                         ],
                     });
                     logger.debug(`Produced message to topic ${topicName} with key ${symbol}`);
-                    logger.debug(`sending msg: ${JSON.stringify(data)}`);
+                    logger.debug(`sending msg: ${JSON.stringify(strategyData)}`);
                 } catch (error) {
                     logger.error(`Failed to produce message to topic ${strategyName}_live_data for symbol ${symbol}:`, error.message);
                 }
