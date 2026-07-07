@@ -188,7 +188,9 @@ async function get_WS_URL({ access_token, symbol = [] }) {
 
     console.log('Redirection detected: ' + ws);
     activeWS = ws;
-    connectWebSocket({ ws, symbol });
+    connectWebSocket({ ws, symbol }).catch((err) => {
+      console.error('[WS Upstox] Connection error in connectWebSocket:', err.message || err);
+    });
 
   } catch (error) {
     console.error('Error during WebSocket connection setup:', error.message);
