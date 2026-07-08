@@ -4,7 +4,7 @@ import { parseQueryParams } from "../utils/queryHelper.js";
 import { createClient } from "redis";
 
 
-const publishSymbolUpdate = async (payload) => {
+export const publishSymbolUpdate = async (payload) => {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
     console.warn("⚠️ REDIS_URL not set, skipping symbol update publishing");
