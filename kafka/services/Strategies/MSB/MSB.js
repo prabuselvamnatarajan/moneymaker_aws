@@ -53,7 +53,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag)
         product,
         validity,
         price: order_type === "MARKET" ? 0 : ltp,
-        tag,
+        tag: tag ? tag.replace(/[^a-zA-Z0-9_-]/g, "_") : "",
         instrument_token,
         order_type,
         transaction_type,
