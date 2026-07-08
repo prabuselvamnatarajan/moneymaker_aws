@@ -227,6 +227,29 @@ export const transitionDeployment = async (userId, id, action) => {
     deployment.end_time = new Date();
   }
 
+  // Auto-activate associated symbol and publish subscription update if transitioning to RUNNING (LIVE/PAPER)
+  if ((action === "start" || action === "restart" || action === "resume") && deployment.strategy_mode !== "BACKTEST") {
+    if (deployment.user_symbol_id) {
+      const symbolObj = await UserSymbol.findOne({ _id: deployment.user_symbol_id, user_id: userId });
+      if (symbolObj) {
+        if (!symbolObj.is_active) {
+          symbolObj.is_active = true;
+          await symbolObj.save();
+          console.log(`[Deployment Service] Auto-activated symbol ${symbolObj.symbol} for running deployment ${deployment._id}`);
+        }
+        try {
+          const { publishSymbolUpdate } = await import("./symbol.js");
+          await publishSymbolUpdate({
+            action: "subscribe",
+            instrument_token: symbolObj.instrument_token
+          });
+        } catch (err) {
+          console.error("[Deployment Service] Failed to publish symbol subscription:", err.message);
+        }
+      }
+    }
+  }
+
   await deployment.save();
   triggerBacktestIfNeeded(deployment);
   await syncAllDeploymentsToRedis();
