@@ -140,6 +140,21 @@ async function initRedisSubscriber() {
     await redisSubscriber.connect();
     console.log('✅ ConnectWS-Upstox connected to Redis subscriber for symbol_updates');
 
+    // Auto-subscribe to symbols of already running deployments on startup
+    try {
+      const tempClient = createClient({ url: redisUrl });
+      await tempClient.connect();
+      const keys = await tempClient.keys('strategies:live:*');
+      if (keys && keys.length > 0) {
+        const startupSymbols = keys.map(key => key.replace('strategies:live:', ''));
+        console.log('[WS Upstox] Auto-subscribing on startup to running deployment symbols:', startupSymbols);
+        subscribeSymbols(startupSymbols);
+      }
+      await tempClient.disconnect();
+    } catch (err) {
+      console.error('[WS Upstox] Failed to load active symbols from Redis on startup:', err.message);
+    }
+
     await redisSubscriber.subscribe('symbol_updates', (message) => {
       try {
         const payload = JSON.parse(message);
