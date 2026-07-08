@@ -14,7 +14,36 @@ let connectionPromise = null;
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 
-async function ensureWSConnection() {
+async function getUserIdForSymbol(symbol) {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) return '';
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    await client.connect();
+    const liveKey = `strategies:live:${symbol}`;
+    let redisData;
+    if (typeof client.json?.get === 'function') {
+      redisData = await client.json.get(liveKey);
+    } else {
+      const rawData = await client.get(liveKey);
+      redisData = rawData ? JSON.parse(rawData) : null;
+    }
+    if (redisData && redisData.activeStrategies && redisData.activeStrategies.length > 0) {
+      const userId = redisData.activeStrategies[0].user_id;
+      if (userId) return userId;
+    }
+  } catch (err) {
+    console.error('[WS Upstox] Error getting userId for symbol:', err.message);
+  } finally {
+    if (client) {
+      await client.disconnect();
+    }
+  }
+  return '';
+}
+
+async function ensureWSConnection(userId = '') {
   if (activeWS && (activeWS.readyState === WebSocket.OPEN || activeWS.readyState === WebSocket.CONNECTING)) {
     return;
   }
@@ -25,10 +54,10 @@ async function ensureWSConnection() {
 
   connectionPromise = (async () => {
     try {
-      console.log('[WS Upstox] Auto-initiating new WebSocket connection...');
-      const access_token = await getAccessTokenFromRedis();
+      console.log(`[WS Upstox] Auto-initiating new WebSocket connection for userId: ${userId || 'default'}...`);
+      const access_token = await getAccessTokenFromRedis(userId);
       if (!access_token) {
-        console.warn('[WS Upstox] Cannot auto-initiate connection: Upstox access token missing or expired — re-authenticate via Brokers page.');
+        console.warn(`[WS Upstox] Cannot auto-initiate connection: Upstox access token missing or expired for userId: ${userId || 'default'} — re-authenticate via Brokers page.`);
         return;
       }
       await get_WS_URL({ access_token });
@@ -78,8 +107,12 @@ function subscribeSymbols(symbolInput) {
     activeWS.send(content);
   } else {
     console.log('[WS Upstox] WebSocket not open. Added symbols to active/pending list:', symbolArray);
-    ensureWSConnection().catch((err) => {
-      console.error('[WS Upstox] Failed auto-connection trigger:', err);
+    const targetSymbol = symbolArray[0];
+    getUserIdForSymbol(targetSymbol).then((userId) => {
+      console.log(`[WS Upstox] Triggering connection for symbol ${targetSymbol} with userId ${userId || 'default'}`);
+      ensureWSConnection(userId).catch((err) => {
+        console.error('[WS Upstox] Failed auto-connection trigger:', err);
+      });
     });
   }
 }
