@@ -21,7 +21,20 @@ async function triggerOrder(requestBody) {
 }
 
 async function computeOrderPayload(strategy_details, transaction_type, ltp, tag) {
-    let { account_id, use_full_amount = false, quantity = 1, lot_size, instrument_token, product = "D", validity = "DAY", order_type = "MARKET" } = strategy_details;
+    let { 
+        account_id, 
+        use_full_amount = false, 
+        quantity = 1, 
+        lot_size, 
+        instrument_token, 
+        product = "D", 
+        validity = "DAY", 
+        order_type = "MARKET",
+        is_amo = false,
+        slice = true,
+        disclosed_quantity = 0,
+        trigger_price = 0
+    } = strategy_details;
     if ( transaction_type == "BUY" && use_full_amount) {
         let current_acc_balance = await getAccountBalanceFromRedis(account_id);
         if (lot_size) {
@@ -34,18 +47,20 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag)
         // For SELL orders, quantity should be determined based on holdings.
         // so we get the last bought quantity from redis with the tag.
         quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
-    };
+    }
     let orderPayLoad = {
         quantity,
         product,
         validity,
-        "price": ltp,
+        price: order_type === "MARKET" ? 0 : ltp,
         tag,
         instrument_token,
         order_type,
         transaction_type,
-        "disclosed_quantity": 0,
-        "trigger_price": 0,
+        disclosed_quantity: Number(disclosed_quantity),
+        trigger_price: Number(trigger_price),
+        is_amo: String(is_amo) === 'true',
+        slice: String(slice) === 'true',
         strategy_details
     };
     return orderPayLoad;

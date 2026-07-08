@@ -1,7 +1,7 @@
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 
-const base_url = 'https://api-hft.upstox.com/v2';
+const base_url = 'https://api-hft.upstox.com/v3';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
