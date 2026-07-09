@@ -399,14 +399,16 @@ export default function Sidebar({
                         key={sym.ticker}
                         id={`sidebar-sym-${sym.ticker.replace('/', '-')}`}
                         onClick={() => handleEntity('symbol', sym.ticker)}
-                        className={`w-full text-left px-3 py-1.5 rounded text-[11px] font-mono flex items-center justify-between transition-colors cursor-pointer ${
+                        className={`w-full text-left px-3 py-1.5 rounded text-[11px] flex items-center justify-between transition-colors cursor-pointer ${
                           isSelected 
                             ? 'bg-slate-900 text-slate-100 font-bold border-l-2 border-indigo-500 pl-2' 
                             : 'text-slate-400 hover:bg-slate-900/30 hover:text-slate-200'
                         }`}
                       >
-                        <span className="truncate">{sym.ticker}</span>
-                        <span className={`shrink-0 ml-1.5 text-[9px] ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        <span className="truncate font-sans font-medium" title={sym.name || sym.ticker}>
+                          {sym.name || sym.ticker}
+                        </span>
+                        <span className={`shrink-0 ml-1.5 text-[9px] font-mono ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
                           {isPositive ? '+' : ''}{sym.change24h}%
                         </span>
                       </button>

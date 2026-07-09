@@ -101,9 +101,9 @@ export default function SymbolDetailsView({
         <span>/</span>
         <button
           onClick={() => onNavigateToScreen?.('symbols-list')}
-          className="text-slate-200 font-bold font-mono hover:text-indigo-400 transition-colors cursor-pointer"
+          className="text-slate-200 font-bold hover:text-indigo-400 transition-colors cursor-pointer"
         >
-          {symbol.ticker}
+          {symbol.name || symbol.ticker}
         </button>
       </div>
 
@@ -115,12 +115,23 @@ export default function SymbolDetailsView({
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-bold text-white font-mono tracking-tight">{symbol.ticker}</h2>
+              <h2 className="text-xl font-black text-white tracking-tight">{symbol.name || symbol.ticker}</h2>
               <span className="text-[10px] uppercase font-mono tracking-wider font-semibold bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-800">
                 {symbol.instrumentType}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">{symbol.name} • Traded via {symbol.exchange}</p>
+            <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-1.5 font-sans">
+              <span className="font-mono text-slate-400 lowercase" title="Instrument Token / Ticker (Server communication ID)">
+                {symbol.instrumentToken ? symbol.instrumentToken.toLowerCase() : symbol.ticker.toLowerCase()}
+              </span>
+              {symbol.instrumentToken && symbol.instrumentToken !== symbol.ticker && (
+                <span className="font-mono text-[10px] text-slate-600 lowercase">
+                  ({symbol.ticker.toLowerCase()})
+                </span>
+              )}
+              <span className="text-slate-600">•</span>
+              <span>Traded via {symbol.exchange}</span>
+            </p>
           </div>
         </div>
 
@@ -204,7 +215,7 @@ export default function SymbolDetailsView({
       {/* Active Algorithmic Strategies mapping */}
       <div className="bg-slate-950 p-4 sm:p-6 rounded-xl border border-slate-800 space-y-4 font-sans">
         <div>
-          <h3 className="text-sm font-bold text-slate-200">Active Strategies Deployed on {symbol.ticker}</h3>
+          <h3 className="text-sm font-bold text-slate-200">Active Strategies Deployed on {symbol.name || symbol.ticker}</h3>
           <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Strategies configured to analyze and execute contract orders on this asset.</p>
         </div>
 
