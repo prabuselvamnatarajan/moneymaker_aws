@@ -315,6 +315,8 @@ export default function SymbolsListView({
                 {tableSymbols.map(sym => {
                   const isPositive = sym.change24h >= 0;
                   const isToggling = togglingId === sym.id;
+                  const liveSym = symbols.find(s => s.id === sym.id || s.instrumentToken === sym.instrumentToken);
+                  const currentPrice = liveSym ? liveSym.lastPrice : sym.lastPrice;
                   return (
                     <tr key={sym.id || sym.ticker} className="hover:bg-indigo-600/5 transition-colors">
                       <td className="p-4">
@@ -348,7 +350,7 @@ export default function SymbolsListView({
                         </span>
                       </td>
                       <td className="p-4 text-right font-bold font-mono text-slate-200">
-                        ₹{sym.lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                        ₹{currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                       </td>
                       <td className="p-4 text-right">
                         <span className={`inline-flex items-center gap-1 font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>

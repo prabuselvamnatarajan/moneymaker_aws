@@ -11,6 +11,13 @@ connectDB().then(async () => {
   } catch (err) {
     console.error("⚠️ Failed to perform initial deployment sync to Redis:", err.message);
   }
+  try {
+    const { syncAllActiveSymbolsToRedis } = await import("./services/symbol.js");
+    await syncAllActiveSymbolsToRedis();
+    console.log("✅ Initial active symbols sync to Redis completed");
+  } catch (err) {
+    console.error("⚠️ Failed to perform initial active symbols sync to Redis:", err.message);
+  }
   const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
   });

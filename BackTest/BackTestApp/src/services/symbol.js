@@ -34,6 +34,7 @@ export const createSymbol = async (userId, symbolData) => {
       instrument_token: result.instrument_token
     });
   }
+  await syncAllActiveSymbolsToRedis();
   return result;
 };
 
@@ -124,6 +125,7 @@ export const updateSymbol = async (userId, id, updateData) => {
         });
       }
     }
+    await syncAllActiveSymbolsToRedis();
   }
 
   return result;
@@ -145,6 +147,38 @@ export const deleteSymbol = async (userId, id) => {
       instrument_token: result.instrument_token
     });
   }
+  await syncAllActiveSymbolsToRedis();
   return result;
 };
+
+export const syncAllActiveSymbolsToRedis = async () => {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    console.warn("⚠️ REDIS_URL not set, skipping active symbols sync to Redis");
+    return;
+  }
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    await client.connect();
+
+    const activeSymbols = await UserSymbol.find({ is_active: true });
+    const activeTokens = activeSymbols.map(s => s.instrument_token).filter(Boolean);
+
+    await client.del("symbols:active");
+    if (activeTokens.length > 0) {
+      await client.sAdd("symbols:active", activeTokens);
+      console.log(`[Symbol Service] Synced ${activeTokens.length} active symbols to Redis`);
+    } else {
+      console.log("[Symbol Service] No active symbols to sync to Redis");
+    }
+  } catch (err) {
+    console.error("[Symbol Service] Failed to sync active symbols to Redis:", err.message);
+  } finally {
+    if (client) {
+      await client.disconnect();
+    }
+  }
+};
+
 
