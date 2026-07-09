@@ -13,9 +13,8 @@ app.get('/', async (req, res) => {
 
         let { symbol = "NSE_INDEX|Nifty 50", expiry, userId } = req.query;
         let options = expiry ? { expiryDate: expiry } : null;
-        const resolvedUserId = userId || '';
 
-        const UpstoxClient = await getAuthorisedClient(resolvedUserId);
+        const UpstoxClient = await getAuthorisedClient(userId || '');
 
         let apiInstance  = new UpstoxClient.OptionsApi();
 

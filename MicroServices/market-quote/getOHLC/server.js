@@ -10,8 +10,7 @@ app.use(cors());
 
 app.get('/', async (req, res) => {
     try {
-        const userId = req.query.userId || '';
-        const UpstoxClient = await getAuthorisedClient(userId);
+        const UpstoxClient = await getAuthorisedClient(req.query.userId || '');
 
         let marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
 
