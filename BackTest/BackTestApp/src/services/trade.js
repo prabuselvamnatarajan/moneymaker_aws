@@ -50,6 +50,9 @@ export const createTrade = async (tradeData) => {
       if (!deployment) {
         throw new Error("Associated deployment not found");
       }
+      if (String(deployment.user_id) !== String(user_id)) {
+        throw new Error("Associated deployment does not belong to the authenticated user");
+      }
       tradeData.strategy_id = deployment.strategy_id;
       tradeData.user_symbol_id = deployment.user_symbol_id;
       tradeData.instrument_token = deployment.instrument_token;
