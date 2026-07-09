@@ -64,14 +64,8 @@ async function getAccessTokenFromRedis(userId = '') {
         let resolvedKey = redisKey;
 
         if (!access_token && !userId) {
-            console.log("No default token, checking for user-specific tokens in Redis...");
-            const client = redisClientInstance.getClient();
-            const keys = await client.keys(`${DEFAULT_REDIS_KEY}:*`);
-            if (keys && keys.length > 0) {
-                resolvedKey = keys[0];
-                access_token = await redisString.get(resolvedKey);
-                console.log(`Fallback: Fetched Access Token from key ${resolvedKey}`);
-            }
+            console.log("No default token, and no userId supplied. Returning null.");
+            return null;
         }
 
         if (!access_token) {
