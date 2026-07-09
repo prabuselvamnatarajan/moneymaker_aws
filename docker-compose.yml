@@ -380,6 +380,7 @@ services:
       BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+      GET_LTP_SERVICE_URL: http://get-ltp:80
     deploy:
       replicas: 1
       restart_policy:

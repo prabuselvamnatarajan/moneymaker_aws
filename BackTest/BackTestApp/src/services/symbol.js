@@ -189,9 +189,10 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
   }
 
   // 1. Fetch LTP for the underlying symbol
+  const ltpServiceUrl = process.env.GET_LTP_SERVICE_URL || "http://get-ltp:80";
   let ltp;
   try {
-    const ltpResponse = await fetch(`http://get-ltp:80/?symbol=${encodeURIComponent(underlyingSymbol)}&userId=${userId}`);
+    const ltpResponse = await fetch(`${ltpServiceUrl}/?symbol=${encodeURIComponent(underlyingSymbol)}&userId=${userId}`);
     if (!ltpResponse.ok) {
       throw new Error(`LTP service returned status ${ltpResponse.status}`);
     }
