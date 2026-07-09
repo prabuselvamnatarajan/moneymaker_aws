@@ -50,7 +50,7 @@ app.post('/', async (req, res) => {
             }
 
             // Sync live account balance
-            let new_balance = await getLiveAccountBalance();
+            let new_balance = await getLiveAccountBalance(strategy_details.user_id);
             if (new_balance !== undefined && new_balance !== null) {
                 await setAccountBalanceToRedis(strategy_details.account_id, new_balance);
             }

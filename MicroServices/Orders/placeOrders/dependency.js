@@ -31,7 +31,8 @@ async function storeOrderDetails(symbol, order_details) {
 
     // Fetch additional data from Nginx API (load-balanced)
     try {
-        let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}`; // Use Nginx reverse proxy
+        const userId = order_details.strategy_details ? order_details.strategy_details.user_id : '';
+        let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}${userId ? `&userId=${userId}` : ''}`; // Use Nginx reverse proxy
         console.log(`Fetching LTP from URL: ${getLTP_URL}`);
         const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
         const ltpData = await ltpResponse.json();
@@ -133,8 +134,8 @@ async function triggerBackTestApp(body) {
     }
 }
 
-async function getLiveAccountBalance() {
-    const url = `${NGINX_ADDRESS}${FUNDS_AND_MARGIN_API_URL}`;
+async function getLiveAccountBalance(userId) {
+    const url = `${NGINX_ADDRESS}${FUNDS_AND_MARGIN_API_URL}${userId ? `?userId=${userId}` : ''}`;
     try {
         const response = await fetch(url, {
             method: 'GET',
