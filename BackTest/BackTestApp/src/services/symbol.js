@@ -181,4 +181,169 @@ export const syncAllActiveSymbolsToRedis = async () => {
   }
 };
 
+export const bulkCreateSymbols = async (userId, bulkData) => {
+  const { symbol: underlyingSymbol, range_count, range_option, option_type } = bulkData;
+
+  if (!underlyingSymbol || !range_option || !option_type) {
+    throw new Error("underlyingSymbol, range_option, and option_type are required");
+  }
+
+  // 1. Fetch LTP for the underlying symbol
+  let ltp;
+  try {
+    const ltpResponse = await fetch(`http://get-ltp:80/?symbol=${encodeURIComponent(underlyingSymbol)}&userId=${userId}`);
+    if (!ltpResponse.ok) {
+      throw new Error(`LTP service returned status ${ltpResponse.status}`);
+    }
+    const ltpData = await ltpResponse.json();
+    if (ltpData.status !== "success" || !ltpData.data) {
+      throw new Error("Invalid response format from LTP service");
+    }
+    const entries = Object.entries(ltpData.data);
+    if (entries.length === 0) {
+      throw new Error(`Symbol ${underlyingSymbol} not found in LTP service`);
+    }
+    const val = entries[0][1];
+    ltp = val.last_price || val.lastPrice;
+  } catch (err) {
+    console.error(`Failed to fetch LTP for ${underlyingSymbol}:`, err.message);
+    throw new Error(`Failed to fetch LTP for underlying symbol: ${err.message}`);
+  }
+
+  if (!ltp) {
+    throw new Error(`Could not retrieve LTP for underlying symbol ${underlyingSymbol}`);
+  }
+
+  // 2. Fetch Option Chain for the underlying symbol
+  let chainItems;
+  try {
+    const optionChainResponse = await fetch(`http://get-put-call-option-chain:80/?symbol=${encodeURIComponent(underlyingSymbol)}&expiry=current_week&userId=${userId}`);
+    if (!optionChainResponse.ok) {
+      throw new Error(`Option chain service returned status ${optionChainResponse.status}`);
+    }
+    const optionChainData = await optionChainResponse.json();
+    if (optionChainData.status !== "success" || !Array.isArray(optionChainData.data)) {
+      throw new Error("Invalid response format from Option Chain service");
+    }
+    chainItems = optionChainData.data;
+  } catch (err) {
+    console.error(`Failed to fetch Option Chain for ${underlyingSymbol}:`, err.message);
+    throw new Error(`Failed to fetch Option Chain for underlying symbol: ${err.message}`);
+  }
+
+  if (chainItems.length === 0) {
+    throw new Error(`No option contracts found in the option chain for ${underlyingSymbol}`);
+  }
+
+  // 3. Find the ATM strike price: closest to the underlying LTP
+  let atmStrike = null;
+  let minDiff = Infinity;
+  for (const item of chainItems) {
+    const diff = Math.abs(item.strike_price - ltp);
+    if (diff < minDiff) {
+      minDiff = diff;
+      atmStrike = item.strike_price;
+    }
+  }
+
+  // 4. Categorize options relative to ATM
+  const sortedItems = [...chainItems].sort((a, b) => a.strike_price - b.strike_price);
+
+  // Split into ITM and OTM groups relative to atmStrike
+  // CE ITM: strike < atmStrike, OTM: strike > atmStrike
+  // PE ITM: strike > atmStrike, OTM: strike < atmStrike
+  const ceItmItems = sortedItems.filter(item => item.strike_price < atmStrike && item.call_options).reverse(); // closest to ATM first
+  const ceOtmItems = sortedItems.filter(item => item.strike_price > atmStrike && item.call_options); // closest to ATM first
+  const peItmItems = sortedItems.filter(item => item.strike_price > atmStrike && item.put_options); // closest to ATM first
+  const peOtmItems = sortedItems.filter(item => item.strike_price < atmStrike && item.put_options).reverse(); // closest to ATM first
+
+  const atmItem = sortedItems.find(item => item.strike_price === atmStrike);
+
+  let selectedStrikesCE = [];
+  let selectedStrikesPE = [];
+
+  const count = parseInt(range_count, 10) || 1;
+
+  if (range_option === "ATM") {
+    if (atmItem) {
+      if (atmItem.call_options) selectedStrikesCE.push(atmItem);
+      if (atmItem.put_options) selectedStrikesPE.push(atmItem);
+    }
+  } else if (range_option === "ITM") {
+    selectedStrikesCE = ceItmItems.slice(0, count);
+    selectedStrikesPE = peItmItems.slice(0, count);
+  } else if (range_option === "OTM") {
+    selectedStrikesCE = ceOtmItems.slice(0, count);
+    selectedStrikesPE = peOtmItems.slice(0, count);
+  } else if (range_option === "ALL") {
+    if (atmItem) {
+      if (atmItem.call_options) selectedStrikesCE.push(atmItem);
+      if (atmItem.put_options) selectedStrikesPE.push(atmItem);
+    }
+    selectedStrikesCE = [...selectedStrikesCE, ...ceItmItems.slice(0, count), ...ceOtmItems.slice(0, count)];
+    selectedStrikesPE = [...selectedStrikesPE, ...peItmItems.slice(0, count), ...peOtmItems.slice(0, count)];
+  }
+
+  const addedSymbols = [];
+
+  const formatSymbolName = (underlying, strike, type, expiry) => {
+    const cleanUnderlying = underlying.includes("|") ? underlying.split("|")[1] : underlying;
+    return `${cleanUnderlying} ${expiry || ""} ${strike} ${type}`;
+  };
+
+  const saveSymbol = async (optionData, typeLabel) => {
+    const instrumentToken = optionData.instrument_key;
+    let existing = await UserSymbol.findOne({ user_id: userId, instrument_token: instrumentToken });
+    if (!existing) {
+      const symbol_name = formatSymbolName(underlyingSymbol, optionData.strike_price || optionData.strike || optionData.strikePrice, typeLabel, optionData.expiry);
+      const newSym = new UserSymbol({
+        user_id: userId,
+        instrument_token: instrumentToken,
+        symbol: instrumentToken,
+        symbol_name: symbol_name,
+        exchange: "NFO",
+        instrument_class: "OPTION",
+        description: `${underlyingSymbol} ${typeLabel} Option Contract`,
+        is_active: true
+      });
+      const saved = await newSym.save();
+      addedSymbols.push(saved);
+      if (saved.is_active) {
+        try {
+          await publishSymbolUpdate({
+            action: "subscribe",
+            instrument_token: saved.instrument_token
+          });
+        } catch (e) {
+          console.error("Failed to publish symbol subscribe for bulk symbol:", e);
+        }
+      }
+    }
+  };
+
+  if (option_type === "Call" || option_type === "Both") {
+    for (const item of selectedStrikesCE) {
+      if (item.call_options) {
+        await saveSymbol(item.call_options, "CE");
+      }
+    }
+  }
+
+  if (option_type === "Put" || option_type === "Both") {
+    for (const item of selectedStrikesPE) {
+      if (item.put_options) {
+        await saveSymbol(item.put_options, "PE");
+      }
+    }
+  }
+
+  await syncAllActiveSymbolsToRedis();
+
+  return {
+    message: `Successfully processed bulk symbol addition. Added ${addedSymbols.length} new symbols.`,
+    data: addedSymbols
+  };
+};
+
+
 

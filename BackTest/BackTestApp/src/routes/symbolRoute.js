@@ -5,11 +5,13 @@ import {
   getAllSymbolsController,
   getSymbolByIdController,
   updateSymbolController,
-  deleteSymbolController
+  deleteSymbolController,
+  bulkCreateSymbolController
 } from "../controllers/symbol.js";
 
 const router = express.Router();
 
+router.post("/bulk", authenticate, bulkCreateSymbolController);
 router.post("/", authenticate, createSymbolController);
 router.get("/", authenticate, getAllSymbolsController);
 router.get("/:id", authenticate, getSymbolByIdController);

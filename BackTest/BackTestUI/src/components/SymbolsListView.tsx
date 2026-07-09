@@ -29,6 +29,8 @@ export default function SymbolsListView({
 }: SymbolsListViewProps) {
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | 'crypto' | 'equity' | 'forex'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -45,6 +47,15 @@ export default function SymbolsListView({
   const [instrumentToken, setInstrumentToken] = useState('');
   const [description, setDescription] = useState('');
   const [instrumentClass, setInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
+
+  // Bulk addition form fields
+  const [bulkSymbol, setBulkSymbol] = useState('');
+  const [rangeCount, setRangeCount] = useState(3);
+  const [rangeOption, setRangeOption] = useState<'ITM' | 'ATM' | 'OTM' | 'ALL'>('ITM');
+  const [optionType, setOptionType] = useState<'Call' | 'Put' | 'Both'>('Call');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
 
   // Debounce search input (300ms)
   useEffect(() => {
@@ -136,6 +147,42 @@ export default function SymbolsListView({
     setTimeout(() => fetchTableData(), 500);
   };
 
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bulkSymbol) {
+      setBulkError('Please select a symbol');
+      return;
+    }
+    setBulkLoading(true);
+    setBulkError(null);
+    setBulkSuccess(null);
+
+    try {
+      const res = await api.symbols.bulkCreate({
+        symbol: bulkSymbol,
+        range_count: rangeOption === 'ATM' ? 1 : rangeCount,
+        range_option: rangeOption,
+        option_type: optionType,
+      });
+      setBulkSuccess(res.message);
+      // Re-fetch symbols
+      await fetchTableData();
+      if (onRefreshData) await onRefreshData();
+      
+      // Auto close after 2 seconds
+      setTimeout(() => {
+        setShowBulkModal(false);
+        setBulkSuccess(null);
+        setBulkSymbol('');
+      }, 2000);
+    } catch (err: any) {
+      console.error('Failed to add bulk symbols:', err);
+      setBulkError(err.message || 'An error occurred while adding bulk symbols');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       
@@ -161,13 +208,42 @@ export default function SymbolsListView({
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <button
-            id="btn-track-symbol-trigger"
-            onClick={() => setShowAddForm(true)}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-md text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/10 shrink-0"
-          >
-            <Plus className="w-4 h-4" /> Track New Asset
-          </button>
+          <div className="relative">
+            <button
+              id="btn-track-symbol-trigger"
+              onClick={() => setShowDropdown(prev => !prev)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-md text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/10 shrink-0"
+            >
+              <Plus className="w-4 h-4" /> Track New Asset
+            </button>
+            {showDropdown && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
+                <div className="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-md shadow-xl z-50 divide-y divide-slate-800 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddForm(true);
+                      setShowDropdown(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
+                  >
+                    Track Single Asset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBulkModal(true);
+                      setShowDropdown(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
+                  >
+                    Add Bulk Symbols
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -505,6 +581,127 @@ export default function SymbolsListView({
         </div>
       )}
 
+      {showBulkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl animate-in fade-in duration-200">
+            
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                <Sparkles className="w-4 h-4 text-indigo-400" />
+                Add Bulk Option Symbols
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setShowBulkModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-sm cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              {bulkError && (
+                <div className="p-3 rounded-md bg-rose-950/40 border border-rose-900/50 text-rose-450 text-xs font-medium">
+                  {bulkError}
+                </div>
+              )}
+              {bulkSuccess && (
+                <div className="p-3 rounded-md bg-emerald-950/40 border border-emerald-900/50 text-emerald-450 text-xs font-medium">
+                  {bulkSuccess}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Choose Underlying Asset</label>
+                <select
+                  required
+                  value={bulkSymbol}
+                  onChange={(e) => setBulkSymbol(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
+                >
+                  <option value="">Select active asset...</option>
+                  {tableSymbols
+                    .filter(s => s.isActive && (s.instrumentClass === 'INDEX' || s.instrumentClass === 'EQUITY'))
+                    .map(sym => (
+                      <option key={sym.id || sym.ticker} value={sym.ticker}>
+                        {sym.ticker} ({sym.name})
+                      </option>
+                    ))}
+                </select>
+                <p className="text-[10px] text-slate-505">Only active index or equity assets can fetch option chains.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Range Option</label>
+                  <select
+                    value={rangeOption}
+                    onChange={(e) => setRangeOption(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                  >
+                    <option value="ITM">ITM (In The Money)</option>
+                    <option value="ATM">ATM (At The Money)</option>
+                    <option value="OTM">OTM (Out of The Money)</option>
+                    <option value="ALL">ALL (ITM + ATM + OTM)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Option Type</label>
+                  <select
+                    value={optionType}
+                    onChange={(e) => setOptionType(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                  >
+                    <option value="Call">Call (CE Only)</option>
+                    <option value="Put">Put (PE Only)</option>
+                    <option value="Both">Both (CE & PE)</option>
+                  </select>
+                </div>
+              </div>
+
+              {rangeOption !== 'ATM' && (
+                <div className="space-y-1 animate-in fade-in duration-200">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Range Count</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={20}
+                    value={rangeCount}
+                    onChange={(e) => setRangeCount(parseInt(e.target.value, 10) || 1)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-505">Specifies how many strike levels in each direction to import.</p>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkModal(false)}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-md font-semibold text-slate-300 transition-colors cursor-pointer"
+                  disabled={bulkLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={bulkLoading || !bulkSymbol}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-md transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {bulkLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
+                  {bulkLoading ? 'Adding Options...' : 'Fetch & Add Chain'}
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+

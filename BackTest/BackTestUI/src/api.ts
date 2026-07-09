@@ -434,6 +434,20 @@ export const api = {
       return handleResponse<{ data: any }>(res);
     },
 
+    async bulkCreate(bulkData: {
+      symbol: string;
+      range_count: number;
+      range_option: 'ITM' | 'ATM' | 'OTM' | 'ALL';
+      option_type: 'Call' | 'Put' | 'Both';
+    }) {
+      const res = await fetch(`${BASE_URL}/symbols/bulk`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(bulkData),
+      });
+      return handleResponse<{ message: string; data: any[] }>(res);
+    },
+
     async delete(id: string) {
       const res = await fetch(`${BASE_URL}/symbols/${id}`, {
         method: 'DELETE',

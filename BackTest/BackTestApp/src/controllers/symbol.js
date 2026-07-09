@@ -3,8 +3,22 @@ import {
   getAllSymbols,
   getSymbolById,
   updateSymbol,
-  deleteSymbol
+  deleteSymbol,
+  bulkCreateSymbols
 } from "../services/symbol.js";
+
+export const bulkCreateSymbolController = async (req, res, next) => {
+  try {
+    const userId = req.auth.userId;
+    const result = await bulkCreateSymbols(userId, req.body);
+    res.status(200).json({
+      message: result.message,
+      data: result.data
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const createSymbolController = async (req, res, next) => {
   try {
