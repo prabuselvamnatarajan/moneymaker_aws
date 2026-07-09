@@ -12,7 +12,7 @@ app.use(cors());
 
 app.get('/', async (req, res) => {
     try {
-        const userId = req.query.userId || req.query.user_id || '';
+        const userId = req.query.userId || '';
         const UpstoxClient = await getAuthorisedClient(userId);
 
         let apiInstance = new UpstoxClient.UserApi();

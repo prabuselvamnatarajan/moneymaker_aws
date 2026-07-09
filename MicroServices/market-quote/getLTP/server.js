@@ -12,7 +12,7 @@ app.use(cors());
 
 app.get('/', async (req, res) => {
     try {
-        const userId = req.query.userId || req.query.user_id || '';
+        const userId = req.query.userId || '';
         const UpstoxClient = await getAuthorisedClient(userId);
         let marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
         marketQuoteApiInstance.getLtp({instrumentKey: req.query.symbol || 'NSE_INDEX|Nifty 50'}, (error, data, response) => {

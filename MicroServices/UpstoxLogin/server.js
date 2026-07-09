@@ -20,7 +20,7 @@ app.get('/', async (req, res) => {
             res.status(500).send('Internal Server Error');
         }
     } else {
-        const userId = req.query.userId || req.query.user_id || '';
+        const userId = req.query.userId || '';
         console.log('No code received, redirecting to Upstox login for user:', userId);
         try {
             const redirectUrl = await start_app_upstox(userId);
