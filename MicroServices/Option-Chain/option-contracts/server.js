@@ -11,10 +11,11 @@ app.use(cors());
 app.get('/', async (req, res) => {
     try {
 
-        let { symbol = "NSE_INDEX|Nifty 50", expiry } = req.query;
+        let { symbol = "NSE_INDEX|Nifty 50", expiry, userId, user_id } = req.query;
         let options = expiry ? { expiryDate: expiry } : null;
+        const resolvedUserId = userId || user_id || '';
 
-        const UpstoxClient = await getAuthorisedClient();
+        const UpstoxClient = await getAuthorisedClient(resolvedUserId);
 
         let apiInstance  = new UpstoxClient.OptionsApi();
 
