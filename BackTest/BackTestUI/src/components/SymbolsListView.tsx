@@ -53,6 +53,7 @@ export default function SymbolsListView({
   const [rangeCount, setRangeCount] = useState(3);
   const [rangeOption, setRangeOption] = useState<'ITM' | 'ATM' | 'OTM' | 'ALL'>('ITM');
   const [optionType, setOptionType] = useState<'Call' | 'Put' | 'Both'>('Call');
+  const [expiry, setExpiry] = useState(new Date().toISOString().split('T')[0]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
@@ -62,6 +63,13 @@ export default function SymbolsListView({
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timer);
   }, [search]);
+
+  // Initialize/Reset expiry date when bulk modal opens
+  useEffect(() => {
+    if (showBulkModal) {
+      setExpiry(new Date().toISOString().split('T')[0]);
+    }
+  }, [showBulkModal]);
 
   // Fetch filtered data from server
   const fetchTableData = useCallback(async () => {
@@ -163,6 +171,7 @@ export default function SymbolsListView({
         range_count: rangeOption === 'ATM' ? 1 : rangeCount,
         range_option: rangeOption,
         option_type: optionType,
+        expiry: expiry || undefined,
       });
       setBulkSuccess(res.message);
       // Re-fetch symbols
@@ -617,7 +626,7 @@ export default function SymbolsListView({
                   required
                   value={bulkSymbol}
                   onChange={(e) => setBulkSymbol(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
                 >
                   <option value="">Select active asset...</option>
                   {tableSymbols
@@ -629,6 +638,17 @@ export default function SymbolsListView({
                     ))}
                 </select>
                 <p className="text-[10px] text-slate-505">Only active index or equity assets can fetch option chains.</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Expiry Date</label>
+                <input
+                  type="date"
+                  required
+                  value={expiry}
+                  onChange={(e) => setExpiry(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

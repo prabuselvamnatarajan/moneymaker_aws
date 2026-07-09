@@ -182,7 +182,7 @@ export const syncAllActiveSymbolsToRedis = async () => {
 };
 
 export const bulkCreateSymbols = async (userId, bulkData) => {
-  const { symbol: underlyingSymbol, range_count, range_option, option_type } = bulkData;
+  const { symbol: underlyingSymbol, range_count, range_option, option_type, expiry } = bulkData;
 
   if (!underlyingSymbol || !range_option || !option_type) {
     throw new Error("underlyingSymbol, range_option, and option_type are required");
@@ -216,9 +216,10 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
   }
 
   // 2. Fetch Option Chain for the underlying symbol
+  const optionChainServiceUrl = process.env.GET_OPTION_CHAIN_SERVICE_URL || "http://get-put-call-option-chain:80";
   let chainItems;
   try {
-    const optionChainResponse = await fetch(`http://get-put-call-option-chain:80/?symbol=${encodeURIComponent(underlyingSymbol)}&expiry=current_week&userId=${userId}`);
+    const optionChainResponse = await fetch(`${optionChainServiceUrl}/?symbol=${encodeURIComponent(underlyingSymbol)}&expiry=${encodeURIComponent(expiry || 'current_week')}&userId=${userId}`);
     if (!optionChainResponse.ok) {
       throw new Error(`Option chain service returned status ${optionChainResponse.status}`);
     }
@@ -226,7 +227,22 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
     if (optionChainData.status !== "success" || !Array.isArray(optionChainData.data)) {
       throw new Error("Invalid response format from Option Chain service");
     }
-    chainItems = optionChainData.data;
+    chainItems = optionChainData.data.map(item => ({
+      expiry: item.expiry,
+      strike_price: item.strikePrice !== undefined ? item.strikePrice : item.strike_price,
+      underlying_key: item.underlyingKey !== undefined ? item.underlyingKey : item.underlying_key,
+      underlying_spot_price: item.underlyingSpotPrice !== undefined ? item.underlyingSpotPrice : item.underlying_spot_price,
+      call_options: item.callOptions ? {
+        instrument_key: item.callOptions.instrumentKey !== undefined ? item.callOptions.instrumentKey : item.callOptions.instrument_key,
+        market_data: item.callOptions.marketData,
+        option_greeks: item.callOptions.optionGreeks
+      } : item.call_options,
+      put_options: item.putOptions ? {
+        instrument_key: item.putOptions.instrumentKey !== undefined ? item.putOptions.instrumentKey : item.putOptions.instrument_key,
+        market_data: item.putOptions.marketData,
+        option_greeks: item.putOptions.optionGreeks
+      } : item.put_options
+    }));
   } catch (err) {
     console.error(`Failed to fetch Option Chain for ${underlyingSymbol}:`, err.message);
     throw new Error(`Failed to fetch Option Chain for underlying symbol: ${err.message}`);
@@ -289,14 +305,15 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
 
   const formatSymbolName = (underlying, strike, type, expiry) => {
     const cleanUnderlying = underlying.includes("|") ? underlying.split("|")[1] : underlying;
-    return `${cleanUnderlying} ${expiry || ""} ${strike} ${type}`;
+    const cleanExpiry = expiry && expiry.includes("T") ? expiry.split("T")[0] : expiry;
+    return `${cleanUnderlying} ${cleanExpiry || ""} ${strike} ${type}`;
   };
 
-  const saveSymbol = async (optionData, typeLabel) => {
+  const saveSymbol = async (optionData, strikePrice, expiryDate, typeLabel) => {
     const instrumentToken = optionData.instrument_key;
     let existing = await UserSymbol.findOne({ user_id: userId, instrument_token: instrumentToken });
     if (!existing) {
-      const symbol_name = formatSymbolName(underlyingSymbol, optionData.strike_price || optionData.strike || optionData.strikePrice, typeLabel, optionData.expiry);
+      const symbol_name = formatSymbolName(underlyingSymbol, strikePrice, typeLabel, expiryDate);
       const newSym = new UserSymbol({
         user_id: userId,
         instrument_token: instrumentToken,
@@ -325,7 +342,7 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
   if (option_type === "Call" || option_type === "Both") {
     for (const item of selectedStrikesCE) {
       if (item.call_options) {
-        await saveSymbol(item.call_options, "CE");
+        await saveSymbol(item.call_options, item.strike_price, item.expiry, "CE");
       }
     }
   }
@@ -333,7 +350,7 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
   if (option_type === "Put" || option_type === "Both") {
     for (const item of selectedStrikesPE) {
       if (item.put_options) {
-        await saveSymbol(item.put_options, "PE");
+        await saveSymbol(item.put_options, item.strike_price, item.expiry, "PE");
       }
     }
   }

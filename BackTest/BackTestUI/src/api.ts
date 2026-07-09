@@ -439,6 +439,7 @@ export const api = {
       range_count: number;
       range_option: 'ITM' | 'ATM' | 'OTM' | 'ALL';
       option_type: 'Call' | 'Put' | 'Both';
+      expiry?: string;
     }) {
       const res = await fetch(`${BASE_URL}/symbols/bulk`, {
         method: 'POST',
