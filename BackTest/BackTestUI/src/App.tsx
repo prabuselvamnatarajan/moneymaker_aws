@@ -140,43 +140,23 @@ export default function App() {
         console.log('[Auth] Periodically refreshing access token...');
         await api.auth.refreshToken();
         console.log('[Auth] Access token refreshed successfully.');
-      } catch (err) {
+      } catch (err: any) {
         console.error('[Auth] Failed to refresh token periodically:', err);
-        // If refresh fails, we treat it as unauthorized/session expired
-        setIsAuthenticated(false);
-        setCurrentUser(null);
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        window.dispatchEvent(new Event('auth-unauthorized'));
+        // Only treat as session expired if it is explicitly an authentication error (like 401/403/400 or missing refresh token)
+        if (err?.isAuthError) {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          window.dispatchEvent(new Event('auth-unauthorized'));
+        }
       }
     }, 10 * 60 * 1000); // 10 minutes in milliseconds
 
     // Also run an initial check/refresh when the app loads to make sure we have a fresh token
     const initialRefresh = async () => {
       try {
-        const token = localStorage.getItem('accessToken');
-        if (token) {
-          // Check if token is close to expiry (less than 5 minutes remaining)
-          const base64Url = token.split('.')[1];
-          if (base64Url) {
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const payload = JSON.parse(decodeURIComponent(
-              atob(base64)
-                .split('')
-                .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                .join('')
-            ));
-            if (payload && payload.exp) {
-              const expTime = payload.exp * 1000;
-              const timeToExpiry = expTime - Date.now();
-              console.log(`[Auth] Time to access token expiry: ${Math.round(timeToExpiry / 1000 / 60)} minutes`);
-              if (timeToExpiry < 5 * 60 * 1000) {
-                console.log('[Auth] Token is close to expiry, refreshing immediately...');
-                await api.auth.refreshToken();
-              }
-            }
-          }
-        }
+        await api.auth.ensureValidToken();
       } catch (err) {
         console.error('[Auth] Failed initial token refresh check:', err);
       }
@@ -198,10 +178,20 @@ export default function App() {
     let reconnectTimeout: any = null;
     let isDisposed = false;
 
-    const connect = () => {
+    const connect = async () => {
       if (isDisposed) return;
-      const currentToken = localStorage.getItem('accessToken') || '';
-      const wsUrl = `${wsProto}//${wsHost}/backtestapp/ws?token=${encodeURIComponent(currentToken)}`;
+      
+      let token = '';
+      try {
+        // Ensure we have a valid token (refreshes if close to expiry or expired)
+        const freshToken = await api.auth.ensureValidToken();
+        token = freshToken || '';
+      } catch (err) {
+        console.error('[Live Feed] Token refresh failed for WebSocket:', err);
+      }
+      
+      if (isDisposed) return;
+      const wsUrl = `${wsProto}//${wsHost}/backtestapp/ws?token=${encodeURIComponent(token)}`;
 
       console.log('[Live Feed] Connecting to WebSocket...');
       ws = new WebSocket(wsUrl);

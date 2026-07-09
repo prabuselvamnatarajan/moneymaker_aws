@@ -5,6 +5,15 @@
 
 const BASE_URL = '/backtestapp';
 
+// Custom authentication error class to identify session invalidation/expiration
+export class AuthError extends Error {
+  isAuthError = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
 // Global fetch interceptor for token refresh
 const originalFetch = window.fetch;
 let refreshPromise: Promise<string> | null = null;
@@ -27,16 +36,26 @@ window.fetch = async function (input, init) {
         if (!refreshPromise) {
           refreshPromise = (async () => {
             const refreshToken = localStorage.getItem('refreshToken');
-            if (!refreshToken) throw new Error('No refresh token available');
+            if (!refreshToken) throw new AuthError('No refresh token available');
             
-            const refreshRes = await originalFetch(`${BASE_URL}/auth/refresh-token`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refreshToken }),
-            });
+            let refreshRes: Response;
+            try {
+              refreshRes = await originalFetch(`${BASE_URL}/auth/refresh-token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken }),
+              });
+            } catch (networkErr) {
+              console.error('[Auth Interceptor] Network error during refresh:', networkErr);
+              throw networkErr; // Propagate network error, do NOT throw AuthError
+            }
+            
+            if (refreshRes.status === 401 || refreshRes.status === 403 || refreshRes.status === 400) {
+              throw new AuthError(`Session expired with status: ${refreshRes.status}`);
+            }
             
             if (!refreshRes.ok) {
-              throw new Error('Refresh token request failed');
+              throw new Error(`Refresh token request failed with status: ${refreshRes.status}`);
             }
             
             const data = await refreshRes.json() as { accessToken: string };
@@ -60,13 +79,15 @@ window.fetch = async function (input, init) {
         
         console.log('[Auth Interceptor] Retrying original request with new access token...');
         res = await originalFetch(input, newInit);
-      } catch (err) {
+      } catch (err: any) {
         refreshPromise = null;
         console.error('[Auth Interceptor] Transparent token refresh failed:', err);
-        // Clean up tokens and dispatch event so the UI updates
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        window.dispatchEvent(new Event('auth-unauthorized'));
+        // Only log out if it is an explicit auth error (like 401/403/400 or missing refresh token)
+        if (err instanceof AuthError || err?.isAuthError) {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          window.dispatchEvent(new Event('auth-unauthorized'));
+        }
       }
     }
   }
@@ -86,14 +107,14 @@ function getHeaders(extraHeaders: Record<string, string> = {}): Record<string, s
 
 // Global handle response wrapper
 async function handleResponse<T>(response: Response): Promise<T> {
-  if (response.status === 401) {
+  if (response.status === 401 || response.status === 403) {
     // Session expired or invalid
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     // We can dispatch a custom event or reload to trigger login redirect
     window.dispatchEvent(new Event('auth-unauthorized'));
     const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.message || 'Unauthorized');
+    throw new AuthError(errData.message || 'Unauthorized');
   }
 
   if (!response.ok) {
@@ -123,18 +144,60 @@ export const api = {
 
     async refreshToken() {
       const refreshToken = localStorage.getItem('refreshToken');
-      if (!refreshToken) throw new Error('No refresh token available');
-      const res = await fetch(`${BASE_URL}/auth/refresh-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-      const data = await handleResponse<{ accessToken: string }>(res);
-      if (data.accessToken) {
-        localStorage.setItem('accessToken', data.accessToken);
-        return data.accessToken;
+      if (!refreshToken) throw new AuthError('No refresh token available');
+      try {
+        const res = await fetch(`${BASE_URL}/auth/refresh-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        
+        if (res.status === 401 || res.status === 403 || res.status === 400) {
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          window.dispatchEvent(new Event('auth-unauthorized'));
+          throw new AuthError(`Session expired with status: ${res.status}`);
+        }
+        
+        const data = await handleResponse<{ accessToken: string }>(res);
+        if (data.accessToken) {
+          localStorage.setItem('accessToken', data.accessToken);
+          return data.accessToken;
+        }
+        throw new Error('Access token not returned');
+      } catch (err: any) {
+        if (err instanceof AuthError || err?.isAuthError) throw err;
+        throw err;
       }
-      throw new Error('Access token not returned');
+    },
+
+    async ensureValidToken(): Promise<string | null> {
+      const token = localStorage.getItem('accessToken');
+      if (!token) return null;
+      
+      try {
+        const base64Url = token.split('.')[1];
+        if (base64Url) {
+          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+          const payload = JSON.parse(decodeURIComponent(
+            atob(base64)
+              .split('')
+              .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+              .join('')
+          ));
+          if (payload && payload.exp) {
+            const expTime = payload.exp * 1000;
+            // If expired or expiring in less than 30 seconds
+            if (expTime - Date.now() < 30 * 1000) {
+              console.log('[Auth] Token is expired or close to expiry, refreshing before action...');
+              return await this.refreshToken();
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Auth] Error checking token expiration:', err);
+      }
+      return token;
     },
 
     async signup(name: string, email: string, username: string, password: string) {
