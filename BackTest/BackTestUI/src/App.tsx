@@ -436,6 +436,7 @@ export default function App() {
         notes: newStrat.description,
         backtest_date: newStrat.backtestDate,
         backtest_speed: newStrat.backtestSpeed,
+        use_full_amount: newStrat.useFullAmount,
       });
 
       const mappedStrat = mapDeployment(depRes.data);

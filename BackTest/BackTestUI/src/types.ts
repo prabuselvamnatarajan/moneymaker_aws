@@ -35,6 +35,7 @@ export interface Strategy {
   accountId?: string;
   backtestDate?: string;
   backtestSpeed?: number;
+  useFullAmount?: boolean;
 }
 
 export interface SymbolData {

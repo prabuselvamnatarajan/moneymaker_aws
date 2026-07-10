@@ -80,6 +80,10 @@ const deploymentSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  use_full_amount: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 // Update timestamp on save

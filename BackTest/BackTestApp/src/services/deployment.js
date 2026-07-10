@@ -7,7 +7,7 @@ import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount"];
 
 const triggerBacktestIfNeeded = (deployment) => {
   if (deployment.strategy_mode === "BACKTEST" && deployment.current_status === "RUNNING") {
@@ -563,6 +563,7 @@ export const syncAllDeploymentsToRedis = async () => {
         user_id: dep.user_id.toString(),
         strategy_mode: dep.strategy_mode,
         is_internal_broker: dep.account_id.broker_id ? dep.account_id.broker_id.is_internal : false,
+        use_full_amount: dep.use_full_amount || false,
       });
 
       // Sync account balance to Redis

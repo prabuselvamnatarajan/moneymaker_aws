@@ -56,6 +56,7 @@ export default function StrategiesListView({
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [backtestDate, setBacktestDate] = useState(new Date().toISOString().slice(0, 10));
   const [backtestSpeed, setBacktestSpeed] = useState(1000);
+  const [useFullAmount, setUseFullAmount] = useState(false);
 
   // Computed metrics
   const visibleStrategies = strategies.filter(s => s.name.toLowerCase() !== 'manual');
@@ -103,6 +104,7 @@ export default function StrategiesListView({
       description: description || `Deployed ${targetStrategyName} bot workload.`,
       backtestDate: mode === 'backtest' ? backtestDate : undefined,
       backtestSpeed: mode === 'backtest' ? backtestSpeed : undefined,
+      useFullAmount: useFullAmount,
     };
 
     const targetSymbol = selectedSymbols.length > 0 ? selectedSymbols[0] : 'NSE_INDEX|Nifty 50';
@@ -116,6 +118,7 @@ export default function StrategiesListView({
     setInitialStatus('active');
     setSelectedAccountId('');
     setSelectedStrategyId('');
+    setUseFullAmount(false);
     setShowAddForm(false);
   };
 
@@ -465,6 +468,20 @@ export default function StrategiesListView({
                   </div>
                 </div>
               )}
+
+              {/* Checkbox for Use Full Amount */}
+              <div className="flex items-center gap-2 py-1">
+                <input
+                  id="chk-use-full-amount"
+                  type="checkbox"
+                  checked={useFullAmount}
+                  onChange={(e) => setUseFullAmount(e.target.checked)}
+                  className="w-4 h-4 rounded-sm bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="chk-use-full-amount" className="text-[11px] text-slate-350 select-none cursor-pointer font-bold font-sans">
+                  Use Full Account Balance for Allocation
+                </label>
+              </div>
 
               {/* Targeted Market Symbols */}
               <div className="space-y-1">

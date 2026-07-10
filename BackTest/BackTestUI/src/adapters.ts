@@ -162,6 +162,7 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     symbols: [backendDeployment.symbol || 'NSE_INDEX|Nifty 50'],
     description: backendDeployment.notes || 'Algorithmic deployment workload.',
     accountId: backendDeployment.account_id ? String(backendDeployment.account_id) : undefined,
+    useFullAmount: !!backendDeployment.use_full_amount,
   };
 }
 

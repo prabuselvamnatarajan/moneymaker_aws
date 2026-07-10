@@ -518,6 +518,7 @@ export const api = {
       notes?: string;
       backtest_date?: string;
       backtest_speed?: number;
+      use_full_amount?: boolean;
     }) {
       const res = await fetch(`${BASE_URL}/deployments`, {
         method: 'POST',
