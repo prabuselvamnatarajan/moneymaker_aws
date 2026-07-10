@@ -4,9 +4,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Search } from 'lucide-react';
-import { DeploymentAnalysis, TimeSeriesDataPoint } from '../types';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ScatterChart, Scatter, ZAxis } from 'recharts';
+import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Search, Clock } from 'lucide-react';
+import { DeploymentAnalysis, TimeSeriesDataPoint, IntradayTradeDataPoint, Deployment } from '../types';
 import { api } from '../api';
 import { useToast } from './Toast';
 
@@ -23,6 +23,9 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
   const [analysis, setAnalysis] = useState<DeploymentAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [chartData, setChartData] = useState<TimeSeriesDataPoint[]>([]);
+  const [intradayData, setIntradayData] = useState<IntradayTradeDataPoint[]>([]);
+  const [deployments, setDeployments] = useState<Deployment[]>([]);
+  const [defaultDomain, setDefaultDomain] = useState<[number, number]>([0, 24]);
 
   useEffect(() => {
     if (selectedDeploymentId) {
@@ -30,10 +33,23 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
     }
   }, [selectedDeploymentId]);
 
+  // Fetch user's deployments on mount
+  useEffect(() => {
+    const fetchDeployments = async () => {
+      try {
+        const result = await api.deployments.list();
+        setDeployments(result.items || []);
+      } catch (err: any) {
+        console.error('Failed to fetch deployments:', err.message);
+      }
+    };
+    fetchDeployments();
+  }, []);
+
   const fetchAnalysis = async () => {
     const idToFetch = deploymentId.trim();
     if (!idToFetch) {
-      showError('Please enter a deployment ID');
+      showError('Please select a deployment');
       return;
     }
 
@@ -46,10 +62,45 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
       );
       setAnalysis(result.data);
       setChartData(result.data.time_series || []);
+      
+      // Process intraday trades and find data-heavy region
+      const intradayTrades = result.data.intraday_trades || [];
+      setIntradayData(intradayTrades);
+      
+      // Calculate the default zoom domain based on trade density
+      if (intradayTrades.length > 0) {
+        const hourBuckets = new Map<number, number>();
+        for (let i = 0; i < 24; i++) {
+          hourBuckets.set(i, 0);
+        }
+        
+        intradayTrades.forEach(trade => {
+          const count = hourBuckets.get(trade.hour) || 0;
+          hourBuckets.set(trade.hour, count + 1);
+        });
+        
+        // Find the hour with most trades
+        let maxHour = 0;
+        let maxCount = 0;
+        hourBuckets.forEach((count, hour) => {
+          if (count > maxCount) {
+            maxCount = count;
+            maxHour = hour;
+          }
+        });
+        
+        // Set default domain to center around the busiest hour (±3 hours)
+        const startHour = Math.max(0, maxHour - 3);
+        const endHour = Math.min(24, maxHour + 3);
+        setDefaultDomain([startHour, endHour]);
+      } else {
+        setDefaultDomain([0, 24]);
+      }
     } catch (err: any) {
       showError(`Failed to fetch analysis: ${err.message}`);
       setAnalysis(null);
       setChartData([]);
+      setIntradayData([]);
     } finally {
       setIsLoading(false);
     }
@@ -110,20 +161,25 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
       {/* Input Section */}
       <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Deployment ID Input */}
+          {/* Deployment ID Dropdown */}
           <div className="lg:col-span-1">
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              Deployment ID
+              Deployment
             </label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input
-                type="text"
+              <select
                 value={deploymentId}
                 onChange={(e) => setDeploymentId(e.target.value)}
-                placeholder="Enter deployment ID"
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none"
+              >
+                <option value="">Select deployment</option>
+                {deployments.map((dep) => (
+                  <option key={dep._id} value={dep._id}>
+                    {dep.deployment_name || dep.symbol} ({dep.strategy_mode})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -376,6 +432,83 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
               )}
             </div>
           </div>
+
+          {/* Intraday Trade Distribution Chart */}
+          <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+            <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-cyan-400" />
+              Intraday Trade Distribution (UTC)
+            </h3>
+            <p className="text-slate-400 text-xs mb-4">
+              Shows individual trades spread across the day (00:00 - 23:59). Zoom and pan to explore. Chart auto-zooms to the most active trading hours on load.
+            </p>
+            <div className="h-[400px]">
+              {intradayData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart
+                    margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis
+                      type="number"
+                      dataKey="hour"
+                      name="Hour"
+                      domain={defaultDomain}
+                      allowDataOverflow={true}
+                      stroke="#94a3b8"
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => `${String(Math.floor(value)).padStart(2, '0')}:00`}
+                      label={{ value: 'Time of Day (Hours)', position: 'insideBottom', offset: -10, fill: '#94a3b8', fontSize: 12 }}
+                    />
+                    <YAxis
+                      type="number"
+                      dataKey="minute"
+                      name="Minute"
+                      domain={[0, 59]}
+                      stroke="#94a3b8"
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => String(value).padStart(2, '0')}
+                      label={{ value: 'Minutes', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 12 }}
+                    />
+                    <ZAxis type="number" dataKey="pnl" range={[50, 200]} name="P&L" />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      contentStyle={{
+                        backgroundColor: '#1e293b',
+                        border: '1px solid #334155',
+                        borderRadius: '8px',
+                        color: '#f1f5f9',
+                      }}
+                      labelFormatter={(label) => `Hour: ${String(Math.floor(label)).padStart(2, '0')}`}
+                      formatter={(value: any, name: string, props: any) => {
+                        const payload = props?.payload;
+                        if (payload) {
+                          return [
+                            `${String(payload.hour).padStart(2, '0')}:${String(payload.minute).padStart(2, '0')}:${String(payload.second).padStart(2, '0')}`,
+                            'Time'
+                          ];
+                        }
+                        return [value, name];
+                      }}
+                    />
+                    <Legend />
+                    <ReferenceLine x={0} stroke="#64748b" strokeDasharray="3 3" />
+                    <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
+                    <Scatter
+                      name="Trades"
+                      data={intradayData}
+                      fill="#06b6d4"
+                      shape="circle"
+                    />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-slate-500">
+                  No intraday trade data available
+                </div>
+              )}
+            </div>
+          </div>
         </>
       )}
 
@@ -385,7 +518,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
           <Activity className="w-16 h-16 text-slate-700 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-slate-400 mb-2">No Analysis Data</h3>
           <p className="text-slate-500 text-sm max-w-md mx-auto">
-            Enter a deployment ID and click "Analyze" to view performance metrics and P&L visualization
+            Select a deployment from the dropdown and click "Analyze" to view performance metrics and P&L visualization
           </p>
         </div>
       )}
