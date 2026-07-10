@@ -48,11 +48,12 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag)
         // so we get the last bought quantity from redis with the tag.
         quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
     }
+    const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
     let orderPayLoad = {
         quantity,
         product,
         validity,
-        price: order_type === "MARKET" ? 0 : ltp,
+        price: (order_type === "MARKET" && isLive) ? 0 : ltp,
         tag: tag ? tag.replace(/[^a-zA-Z0-9_-]/g, "_") : "",
         instrument_token,
         order_type,

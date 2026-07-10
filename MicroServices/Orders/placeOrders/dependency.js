@@ -21,6 +21,32 @@ const kafka = new Kafka({
     }
   });
 
+async function fetchLTP(symbol, userId) {
+    if (!userId || !symbol) {
+        return null;
+    }
+    try {
+        let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}&userId=${userId}`; // Use Nginx reverse proxy
+        console.log(`Fetching LTP from URL: ${getLTP_URL}`);
+        const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
+        const ltpData = await ltpResponse.json();
+
+        if (ltpData.status === 'success' && ltpData.data) {
+            const property = Object.entries(ltpData.data).find(([key, item]) => item.instrumentToken.includes(symbol));
+            if (property) {
+                const [propertyName, propertyValue] = property;
+                return {
+                    ltp: propertyValue.lastPrice,
+                    symbolName: propertyName
+                };
+            }
+        }
+    } catch (error) {
+        console.error(`Failed to fetch LTP for symbol ${symbol}:`, error.message);
+    }
+    return null;
+}
+
 async function storeOrderDetails(symbol, order_details) {
     const producer = kafka.producer();
     await producer.connect();
@@ -31,32 +57,18 @@ async function storeOrderDetails(symbol, order_details) {
 
     try {
         const userId = order_details.strategy_details ? order_details.strategy_details.user_id : '';
-        if (!userId) {
-            throw new Error('userId is required to fetch LTP');
-        }
-        let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}&userId=${userId}`; // Use Nginx reverse proxy
-        console.log(`Fetching LTP from URL: ${getLTP_URL}`);
-        const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
-        const ltpData = await ltpResponse.json();
-
-        if (ltpData.status === 'success' && ltpData.data) {
-            const property = Object.entries(ltpData.data).find(([key, item]) => item.instrumentToken.includes(symbol));
-            if (property) {
-                const [propertyName, propertyValue] = property;
-                order_details.ltp = propertyValue.lastPrice; // Add the last_price as ltp
-                order_details.Symbol_Name = propertyName; // Add the property name as Symbol_Name
-            } else {
-                order_details.ltp = null; // Fallback if symbol not found
-                order_details.Symbol_Name = null; // Fallback if symbol not found
-            }
+        const ltpInfo = await fetchLTP(symbol, userId);
+        if (ltpInfo) {
+            order_details.ltp = ltpInfo.ltp;
+            order_details.Symbol_Name = ltpInfo.symbolName;
         } else {
-            order_details.ltp = null; // Fallback in case of error or invalid status
-            order_details.Symbol_Name = null; // Fallback in case of error or invalid status
+            order_details.ltp = null;
+            order_details.Symbol_Name = null;
         }
     } catch (error) {
-        console.error(`Failed to fetch LTP for symbol ${symbol}:`, error.message);
-        order_details.ltp = null; // Fallback in case of error
-        order_details.Symbol_Name = null; // Fallback in case of error
+        console.error(`Failed to fetch LTP in storeOrderDetails for symbol ${symbol}:`, error.message);
+        order_details.ltp = null;
+        order_details.Symbol_Name = null;
     }
 
     await retry(async () => {
@@ -107,10 +119,20 @@ async function triggerBackTestApp(body) {
     const url = `${NGINX_ADDRESS}${BACKTEST_APP_URL}${BACKTEST_TRADE_URL}`;
 
     try {
-        let { strategy_details } = body;
+        let { strategy_details = {} } = body;
+        const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
+
+        let price = body.price;
+        if (!isLive && (price === 0 || price === '0' || price === undefined || price === null)) {
+            const ltpInfo = await fetchLTP(body.instrument_token, strategy_details.user_id);
+            if (ltpInfo && ltpInfo.ltp) {
+                price = ltpInfo.ltp;
+            }
+        }
+
         let testAPIBody = {
             "type_of_order": body.transaction_type,
-            "price": body.price,
+            "price": price,
             "quantity": body.quantity,
             ...strategy_details
         }
