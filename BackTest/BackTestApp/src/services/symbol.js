@@ -31,7 +31,8 @@ export const createSymbol = async (userId, symbolData) => {
   if (result.is_active) {
     await publishSymbolUpdate({
       action: "subscribe",
-      instrument_token: result.instrument_token
+      instrument_token: result.instrument_token,
+      userId
     });
   }
   await syncAllActiveSymbolsToRedis();
@@ -109,19 +110,22 @@ export const updateSymbol = async (userId, id, updateData) => {
     if (wasActive && !isActive) {
       await publishSymbolUpdate({
         action: "unsubscribe",
-        instrument_token: oldToken
+        instrument_token: oldToken,
+        userId
       });
     } else if (!wasActive && isActive) {
       await publishSymbolUpdate({
         action: "subscribe",
-        instrument_token: newToken
+        instrument_token: newToken,
+        userId
       });
     } else if (wasActive && isActive) {
       if (oldToken !== newToken) {
         await publishSymbolUpdate({
           action: "update",
           old_instrument_token: oldToken,
-          instrument_token: newToken
+          instrument_token: newToken,
+          userId
         });
       }
     }
@@ -144,7 +148,8 @@ export const deleteSymbol = async (userId, id) => {
   if (result && result.is_active) {
     await publishSymbolUpdate({
       action: "unsubscribe",
-      instrument_token: result.instrument_token
+      instrument_token: result.instrument_token,
+      userId
     });
   }
   await syncAllActiveSymbolsToRedis();
@@ -330,7 +335,8 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
         try {
           await publishSymbolUpdate({
             action: "subscribe",
-            instrument_token: saved.instrument_token
+            instrument_token: saved.instrument_token,
+            userId
           });
         } catch (e) {
           console.error("Failed to publish symbol subscribe for bulk symbol:", e);
