@@ -2,6 +2,9 @@
 # Dependencies
 node_modules/
 
+# Ignore exportedData in BackTest directory
+BackTest/exportedData
+
 # Build outputs
 dist/
 build/
