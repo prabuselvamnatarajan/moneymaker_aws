@@ -385,6 +385,7 @@ export const getDeploymentAnalysis = async (userId, id, startTime, endTime) => {
   let runningPnL = 0;
 
   const timeSeriesData = [];
+  const intradayTrades = [];
 
   for (const trade of trades) {
     const qty = trade.quantity || 0;
@@ -468,6 +469,24 @@ export const getDeploymentAnalysis = async (userId, id, startTime, endTime) => {
         pnl: parseFloat(runningPnL.toFixed(2)),
         trade_id: trade.trade_id,
       });
+
+      // Add to intraday trades with time-of-day breakdown
+      const tradeDate = new Date(trade.created_at);
+      const hour = tradeDate.getUTCHours();
+      const minute = tradeDate.getUTCMinutes();
+      const second = tradeDate.getUTCSeconds();
+      const timeOfDay = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+      
+      intradayTrades.push({
+        timestamp: trade.created_at,
+        time_of_day: timeOfDay,
+        hour,
+        minute,
+        second,
+        pnl: parseFloat(pnl.toFixed(2)),
+        trade_id: trade.trade_id,
+        type_of_order: trade.type_of_order,
+      });
     }
   }
 
@@ -496,6 +515,7 @@ export const getDeploymentAnalysis = async (userId, id, startTime, endTime) => {
       max_drawup: parseFloat(maxDrawup.toFixed(2)),
     },
     time_series: timeSeriesData,
+    intraday_trades: intradayTrades,
   };
 };
 

@@ -163,10 +163,42 @@ export interface DeploymentAnalysis {
     pnl: number;
     trade_id: string;
   }>;
+  intraday_trades: Array<{
+    timestamp: string;
+    time_of_day: string; // HH:MM:SS format
+    hour: number;
+    minute: number;
+    second: number;
+    pnl: number;
+    trade_id: string;
+    type_of_order: string;
+  }>;
 }
 
 export interface TimeSeriesDataPoint {
   timestamp: string;
   pnl: number;
   trade_id: string;
+}
+
+export interface IntradayTradeDataPoint {
+  timestamp: string;
+  time_of_day: string;
+  hour: number;
+  minute: number;
+  second: number;
+  pnl: number;
+  trade_id: string;
+  type_of_order: string;
+}
+
+export interface Deployment {
+  _id: string;
+  deployment_name: string;
+  strategy_id: string;
+  account_id: string;
+  symbol: string;
+  strategy_mode: string;
+  current_status: string;
+  created_at: string;
 }
