@@ -1,6 +1,8 @@
 import Session from "../models/session.js";
 import Role from "../models/role.js";
 import User from "../models/user.js";
+import Permission from "../models/permission.js";
+
 
 function hasUserRole(userRoles, roleId) {
   if (!Array.isArray(userRoles)) return false;
