@@ -8,6 +8,7 @@ import {
   getDeploymentStatus,
   getDeploymentLogs,
   getDeploymentMetrics,
+  getDeploymentAnalysis,
 } from "../services/deployment.js";
 
 export const createDeploymentController = async (req, res, next) => {
@@ -154,6 +155,23 @@ export const getDeploymentMetricsController = async (req, res, next) => {
     }
     res.status(200).json({
       message: "Deployment metrics retrieved successfully",
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getDeploymentAnalysisController = async (req, res, next) => {
+  try {
+    const userId = req.auth.userId;
+    const { start_time, end_time } = req.query;
+    const result = await getDeploymentAnalysis(userId, req.params.id, start_time, end_time);
+    if (!result) {
+      return res.status(404).json({ message: "Deployment not found" });
+    }
+    res.status(200).json({
+      message: "Deployment analysis retrieved successfully",
       data: result,
     });
   } catch (err) {

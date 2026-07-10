@@ -178,6 +178,19 @@ export default function Sidebar({
               <Globe className="w-4 h-4 text-amber-400 shrink-0" />
               <span>Brokers Directory</span>
             </button>
+
+            <button
+              id="nav-analysis-btn"
+              onClick={() => handleNav('deployment-analysis')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                activeScreen === 'deployment-analysis' 
+                  ? 'bg-slate-900 text-white shadow-xs border-l-2 border-indigo-500 pl-2.5' 
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+              }`}
+            >
+              <LineChart className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>Deployment Analysis</span>
+            </button>
           </div>
 
           {/* Collapsible Accordion Groups */}
