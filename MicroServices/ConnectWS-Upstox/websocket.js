@@ -71,7 +71,7 @@ async function ensureWSConnection(userId = '') {
   return connectionPromise;
 }
 
-function subscribeSymbols(symbolInput) {
+function subscribeSymbols(symbolInput, userId = '') {
   const symbolArray = Array.isArray(symbolInput) ? symbolInput : [symbolInput];
   if (symbolArray.length === 0) return;
 
@@ -108,9 +108,14 @@ function subscribeSymbols(symbolInput) {
   } else {
     console.log('[WS Upstox] WebSocket not open. Added symbols to active/pending list:', symbolArray);
     const targetSymbol = symbolArray[0];
-    getUserIdForSymbol(targetSymbol).then((userId) => {
-      console.log(`[WS Upstox] Triggering connection for symbol ${targetSymbol} with userId ${userId || 'default'}`);
-      ensureWSConnection(userId).catch((err) => {
+    const resolveUserId = async () => {
+      if (userId) return userId;
+      return await getUserIdForSymbol(targetSymbol);
+    };
+
+    resolveUserId().then((resolvedId) => {
+      console.log(`[WS Upstox] Triggering connection for symbol ${targetSymbol} with userId ${resolvedId || 'default'}`);
+      ensureWSConnection(resolvedId).catch((err) => {
         console.error('[WS Upstox] Failed auto-connection trigger:', err);
       });
     });
@@ -205,10 +210,10 @@ async function initRedisSubscriber() {
       try {
         const payload = JSON.parse(message);
         console.log('[WS Upstox Redis Sub] Received update:', payload);
-        const { action, instrument_token, old_instrument_token } = payload;
+        const { action, instrument_token, old_instrument_token, userId } = payload;
 
         if (action === 'subscribe' && instrument_token) {
-          subscribeSymbols([instrument_token]);
+          subscribeSymbols([instrument_token], userId);
         } else if (action === 'unsubscribe' && instrument_token) {
           unsubscribeSymbols([instrument_token]);
         } else if (action === 'update') {
@@ -216,7 +221,7 @@ async function initRedisSubscriber() {
             unsubscribeSymbols([old_instrument_token]);
           }
           if (instrument_token) {
-            subscribeSymbols([instrument_token]);
+            subscribeSymbols([instrument_token], userId);
           }
         }
       } catch (err) {
