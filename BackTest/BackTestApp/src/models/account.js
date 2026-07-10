@@ -37,6 +37,15 @@ const accountSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  commission_type: {
+    type: String,
+    enum: ["PERCENTAGE", "FLAT"],
+    default: "PERCENTAGE",
+  },
+  commission_rate: {
+    type: Number,
+    default: 0,
+  },
   created_on: {
     type: Date,
     default: Date.now,
@@ -45,11 +54,29 @@ const accountSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  broker_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Broker",
+  },
 });
 
-// Update timestamp on save
-accountSchema.pre("save", function (next) {
+// Update timestamp and validate broker on save
+accountSchema.pre("save", async function (next) {
   this.updated_at = Date.now();
+  if (this.broker_id) {
+    try {
+      const Broker = mongoose.model("Broker");
+      const broker = await Broker.findById(this.broker_id);
+      if (!broker) {
+        return next(new Error("Associated broker not found"));
+      }
+      if (this.account_type !== "LIVE" && !broker.is_internal) {
+        return next(new Error("Only LIVE accounts can be associated with external brokers. PAPER and SIMULATION accounts must use Cobra Trades broker."));
+      }
+    } catch (err) {
+      return next(err);
+    }
+  }
   next();
 });
 

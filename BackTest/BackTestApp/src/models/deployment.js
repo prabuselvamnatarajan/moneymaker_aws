@@ -33,7 +33,6 @@ const deploymentSchema = new mongoose.Schema({
   symbol: {
     type: String,
     required: true,
-    uppercase: true,
   },
   start_time: {
     type: Date,
@@ -50,7 +49,7 @@ const deploymentSchema = new mongoose.Schema({
   },
   strategy_mode: {
     type: String,
-    enum: ["LIVE", "TEST", "BACKTEST"],
+    enum: ["LIVE", "PAPER", "BACKTEST"],
     required: true,
   },
   deployment_name: {
@@ -59,6 +58,12 @@ const deploymentSchema = new mongoose.Schema({
   notes: {
     type: String,
   },
+  backtest_date: {
+    type: String,
+  },
+  backtest_speed: {
+    type: Number,
+  },
   created_at: {
     type: Date,
     default: Date.now,
@@ -66,6 +71,14 @@ const deploymentSchema = new mongoose.Schema({
   updated_at: {
     type: Date,
     default: Date.now,
+  },
+  position_size: {
+    type: Number,
+    default: 0,
+  },
+  average_entry_price: {
+    type: Number,
+    default: 0,
   },
 });
 

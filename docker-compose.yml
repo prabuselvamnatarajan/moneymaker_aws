@@ -21,6 +21,7 @@ services:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
       KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker-1:9092
       KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
@@ -44,6 +45,7 @@ services:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 2
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
       KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker-2:9092
       KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
@@ -67,6 +69,7 @@ services:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 3
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
       KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker-3:9092
       KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
@@ -364,14 +367,30 @@ services:
       - mongo1
       - mongo2
       - mongo3
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
     environment:
       PORT: 80
       MONGO_DB: BacktestApp
       MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       JWT_ACCESS_SECRET: iam-access-secret
       JWT_REFRESH_SECRET: iam-refresh-secret
-    volumes:
-      - ./MicroServices/Shared/IAM:/app/iam:ro
+      BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+      GET_LTP_SERVICE_URL: http://get-ltp:80
+      GET_OPTION_CHAIN_SERVICE_URL: http://get-put-call-option-chain:80
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
+
+  backtest-ui:
+    image: backtestui:latest
     deploy:
       replicas: 1
       restart_policy:
@@ -409,9 +428,6 @@ services:
     ports:
       - "8080:80"
     environment:
-      CLIENT_ID: 50b489f2-22c5-4824-9da5-9b815aab9667
-      CLIENT_SECRET: d51apkeb3c
-      REDIRECT_URI: http://localhost/logedin
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
@@ -496,6 +512,7 @@ services:
       FUNDS_AND_MARGIN_API_URL: /fundsandmargin
       BACKTEST_APP_URL: /backtestapp
       BACKTEST_TRADE_URL: /api/trade
+      BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
@@ -574,6 +591,7 @@ services:
       - placeorder
       - backtest-streamer
       - backtest-client
+      - backtest-ui
     networks:
       - app-net
 
@@ -642,6 +660,7 @@ volumes:
 networks:
   app-net:
     driver: overlay
+    attachable: true
 
 
 

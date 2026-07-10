@@ -33,11 +33,25 @@ process.on('unhandledRejection', (reason) => {
     handleFatalError(reason, 'unhandled rejection');
 });
 
+async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await target.connect();
+            logger.info(`Successfully connected to ${name}.`);
+            return;
+        } catch (err) {
+            logger.warn(`Connection attempt ${i + 1}/${retries} to ${name} failed: ${err.message}. Retrying in ${delay}ms...`);
+            await new Promise(res => setTimeout(res, delay));
+        }
+    }
+    throw new Error(`Failed to connect to ${name} after maximum retries.`);
+}
+
 async function processAndProduceMessages(data) {
     const producer = kafka.producer();
 
     try {
-        await producer.connect();
+        await connectWithRetry(producer, 'Kafka Producer');
 
         for (const [key, value] of Object.entries(data)) {
             value.latency = {
@@ -77,7 +91,7 @@ async function createConsumer() {
     const consumer = kafka.consumer({ groupId: 'WS_data_splitter', sessionTimeout: 30000 });
 
     try {
-        await consumer.connect();
+        await connectWithRetry(consumer, 'Kafka Consumer');
         await consumer.subscribe({ topic: 'incoming-ws-msg', fromBeginning: false });
 
         await consumer.run({
@@ -98,7 +112,7 @@ async function createConsumer() {
 async function startServer() {
     try {
         await initLogger();
-        await redisPubSub.connect();
+        await connectWithRetry(redisPubSub, 'Redis PubSub');
         await createConsumer();
     } catch (error) {
         handleFatalError(error, 'server startup');

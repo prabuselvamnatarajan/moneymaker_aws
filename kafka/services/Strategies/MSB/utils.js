@@ -1,7 +1,8 @@
 import { logger } from '/app/utils/logUtils.js';
 
 function getLatestOHLCByInterval(dataObject, interval) {
-  const ohlcArray = dataObject?.fullFeed?.marketFF?.marketOHLC?.ohlc || [];
+  const feed = dataObject?.fullFeed?.marketFF || dataObject?.fullFeed?.indexFF || dataObject?.marketFF || dataObject?.indexFF;
+  const ohlcArray = feed?.marketOHLC?.ohlc || [];
 
   logger.debug(`Extracted OHLC Array:`, ohlcArray);
   // Filter only matching interval entries
@@ -12,7 +13,7 @@ function getLatestOHLCByInterval(dataObject, interval) {
     ohlcArray.forEach(item => logger.debug(`Available interval: ${item.interval}`));
     let oneDayOHLC = ohlcArray.filter(item => item.interval === '1d');
     if (oneDayOHLC.length > 0) {
-      return oneDayOHLC[0];
+      return { ...oneDayOHLC[0] };
     }
     return {};
   }
@@ -26,7 +27,8 @@ function getLatestOHLCByInterval(dataObject, interval) {
 }
 
 function getLTP(dataObject) {
-  return dataObject?.fullFeed?.marketFF?.ltpc?.ltp ?? null;
+  const feed = dataObject?.fullFeed?.marketFF || dataObject?.fullFeed?.indexFF || dataObject?.marketFF || dataObject?.indexFF;
+  return feed?.ltpc?.ltp ?? null;
 }
 
 

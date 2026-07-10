@@ -1,0 +1,6 @@
+{
+  "name": "CobraTrades",
+  "description": "An advanced algorithmic trading platform UI for multi-account trade monitoring, strategy execution tracking, and interactive transaction ledger auditing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -15,6 +15,7 @@ router.post("/", authenticate, createStrategyController);
 router.get("/", authenticate, getAllStrategiesController);
 router.get("/:id", authenticate, getStrategyByIdController);
 router.put("/:id", authenticate, updateStrategyController);
+router.patch("/:id", authenticate, updateStrategyController);
 router.delete("/:id", authenticate, deleteStrategyController);
 
 export default router;

@@ -22,7 +22,16 @@ async function getCollectionsToExport() {
         const db = client.db(dbName);
         const prefColl = db.collection(prefCollection);
         const results = await prefColl.find({}).toArray();
-        return results.map(doc => doc.collectionName).filter(Boolean);
+        const collections = [];
+        for (const doc of results) {
+            if (doc.collectionName) {
+                collections.push(doc.collectionName);
+            }
+            if (doc.symbolName) {
+                collections.push(doc.symbolName);
+            }
+        }
+        return [...new Set(collections)].filter(Boolean);
     } catch (err) {
         console.error('Error fetching export preferences:', err.message);
         return [];

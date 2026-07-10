@@ -18,12 +18,23 @@ const userSymbolSchema = new mongoose.Schema({
   symbol: {
     type: String,
     required: true,
-    uppercase: true,
+  },
+  symbol_name: {
+    type: String,
+    required: true,
   },
   exchange: {
     type: String,
     enum: ["NSE", "BSE", "NFO"],
     default: "NSE",
+  },
+  description: {
+    type: String,
+    default: "",
+  },
+  instrument_class: {
+    type: String,
+    default: "EQUITY",
   },
   added_at: {
     type: Date,

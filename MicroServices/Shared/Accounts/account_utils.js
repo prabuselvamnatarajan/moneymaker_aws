@@ -34,8 +34,8 @@ async function setAccountBalanceToRedis(account_id, balance) {
     }
 }
 
-async function getBoughtQuantityWithTagFromRedis(tag) {
-    let redisKey = `bought_quantity:${tag}`;
+async function getBoughtQuantityWithTagFromRedis(tag, deploymentId) {
+    let redisKey = deploymentId ? `bought_quantity:${deploymentId}:${tag}` : `bought_quantity:${tag}`;
     if (!redisJson) {
         await redisClientInstance.connect();
         redisJson = new RedisJson(redisClientInstance.getClient());
@@ -44,22 +44,22 @@ async function getBoughtQuantityWithTagFromRedis(tag) {
         const response = await redisJson.getJson(redisKey);
         return response.quantity || 0;
     } catch (error) {
-        console.error(`Error fetching bought quantity for tag ${tag} from Redis:`, error.message);
+        console.error(`Error fetching bought quantity for tag ${tag} from Redis (key: ${redisKey}):`, error.message);
         return 0;
     }
 }
 
-async function setBoughtQuantityWithTagToRedis(tag, quantity) {
-    let redisKey = `bought_quantity:${tag}`;
+async function setBoughtQuantityWithTagToRedis(tag, quantity, deploymentId) {
+    let redisKey = deploymentId ? `bought_quantity:${deploymentId}:${tag}` : `bought_quantity:${tag}`;
     if (!redisJson) {
         await redisClientInstance.connect();
         redisJson = new RedisJson(redisClientInstance.getClient());
     }
     try {
         await redisJson.setJson(redisKey, { quantity });
-        console.log(`Set bought quantity for tag ${tag}: ${quantity}`);
+        console.log(`Set bought quantity for tag ${tag} (key: ${redisKey}): ${quantity}`);
     } catch (error) {
-        console.error(`Error setting bought quantity for tag ${tag} in Redis:`, error.message);
+        console.error(`Error setting bought quantity for tag ${tag} in Redis (key: ${redisKey}):`, error.message);
     }
 }
 

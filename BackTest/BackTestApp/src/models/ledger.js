@@ -14,12 +14,18 @@ const ledgerSchema = new mongoose.Schema({
   trade_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Trade",
-    required: true,
-    unique: true,
   },
   deployment_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Deployment",
+  },
+  transaction_type: {
+    type: String,
+    enum: ["TRADE", "DEPOSIT", "WITHDRAW", "TRANSFER_IN", "TRANSFER_OUT"],
+    default: "TRADE",
+  },
+  description: {
+    type: String,
   },
   user_id: {
     type: mongoose.Schema.Types.ObjectId,
@@ -47,7 +53,6 @@ const ledgerSchema = new mongoose.Schema({
   },
   symbol: {
     type: String,
-    uppercase: true,
   },
   order_type: {
     type: String,

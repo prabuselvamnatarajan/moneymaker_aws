@@ -28,11 +28,25 @@ async function storeInMongoDB(symbol, data) {
     await collection.insertOne({ timestamp: new Date(), ...data });
 }
 
+async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await target.connect();
+            logger.info(`Successfully connected to ${name}.`);
+            return;
+        } catch (err) {
+            logger.warn(`Connection attempt ${i + 1}/${retries} to ${name} failed: ${err.message}. Retrying in ${delay}ms...`);
+            await new Promise(res => setTimeout(res, delay));
+        }
+    }
+    throw new Error(`Failed to connect to ${name} after maximum retries.`);
+}
+
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
 
-    await client.connect(); // Ensure MongoDB client is connected
-    await consumer.connect();
+    await connectWithRetry(client, 'MongoDB Client'); // Ensure MongoDB client is connected
+    await connectWithRetry(consumer, 'Kafka Consumer');
     await consumer.subscribe({ topic: TARGET_TOPIC, fromBeginning: false });
 
     await consumer.run({

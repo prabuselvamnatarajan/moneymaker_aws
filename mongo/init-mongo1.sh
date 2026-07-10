@@ -63,7 +63,7 @@ mongosh admin --eval "
 "
 
 echo "🛑 Stopping bootstrap mongod..."
-mongod --shutdown --dbpath /data/db
+mongod --shutdown --dbpath /data/db || true
 
 echo "🚦 Writing signal for mongo2/mongo3..."
 touch /init-signal/done

@@ -9,7 +9,7 @@ const SHARED_DIR = process.env.SHARED_DIR || path.join(__dirname, '..');
 const wss = new WebSocket.Server({ port: PORT });
 
 function sanitize(str) {
-    return String(str).replace(/[^a-zA-Z0-9]/g, '_');
+    return String(str).replace(/[^a-zA-Z0-9-_]/g, '_');
 }
 
 wss.on('connection', ws => {

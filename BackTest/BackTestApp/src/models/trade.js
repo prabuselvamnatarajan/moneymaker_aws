@@ -66,6 +66,14 @@ const tradeSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  pnl: {
+    type: Number,
+    default: 0,
+  },
+  commission: {
+    type: Number,
+    default: 0,
+  },
 });
 
 // Indexes

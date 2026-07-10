@@ -16,7 +16,11 @@ async function getLTP({ symbol }) {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        let ltp = Object.values(response.data)[0].last_price;
+        const responseData = await response.json();
+        if (responseData.status !== 'success' || !responseData.data) {
+            throw new Error(`Invalid response structure: ${JSON.stringify(responseData)}`);
+        }
+        let ltp = Object.values(responseData.data)[0].lastPrice;
         return ltp;
     } catch (error) {
         console.error('Error fetching LTP:', error);

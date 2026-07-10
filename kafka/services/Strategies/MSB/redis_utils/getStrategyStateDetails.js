@@ -6,15 +6,17 @@ const redisUrl = process.env.REDIS_URL;
 const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
 let redisJson;
 
-function getRedisKey(symbol, isTestMode) {
+function getRedisKey(symbol, isTestMode, deploymentId) {
     const mode = isTestMode ? 'backtest' : 'live';
-    let key = `strategies:${STRATEGY_NAME}:${mode}:${symbol}`;
+    let key = deploymentId 
+        ? `strategies:${STRATEGY_NAME}:${mode}:${deploymentId}:${symbol}`
+        : `strategies:${STRATEGY_NAME}:${mode}:${symbol}`;
     return key;
 }
 
-async function getMSBStrategyStateForSymbol(symbol, isTestMode = false) {
+async function getMSBStrategyStateForSymbol(symbol, isTestMode = false, deploymentId) {
     try {
-        let redisKey = getRedisKey(symbol, isTestMode);
+        let redisKey = getRedisKey(symbol, isTestMode, deploymentId);
         logger.debug(`Fetching MSB strategy state for key: ${redisKey}`);
         if (!redisJson) {
             await redisClientInstance.connect();
@@ -35,9 +37,9 @@ async function getMSBStrategyStateForSymbol(symbol, isTestMode = false) {
     }
 }
 
-async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newState) {
+async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newState, deploymentId) {
     try {
-        let redisKey = getRedisKey(symbol, isTestMode);
+        let redisKey = getRedisKey(symbol, isTestMode, deploymentId);
         if (!redisJson) {
             await redisClientInstance.connect();
             redisJson = new RedisJson(redisClientInstance.getClient());
@@ -56,9 +58,25 @@ async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newSta
     }
 }
 
-
+async function setBacktestCompleted(deploymentId) {
+    try {
+        if (!redisJson) {
+            await redisClientInstance.connect();
+            redisJson = new RedisJson(redisClientInstance.getClient());
+        }
+        const client = redisClientInstance.getClient();
+        const key = `backtest_completed:${deploymentId}`;
+        await client.set(key, 'true');
+        await client.expire(key, 120);
+        logger.info(`Set backtest completion flag in Redis for key ${key}`);
+    } catch (error) {
+        logger.error(`Error setting backtest completion for deployment ${deploymentId}:`, error.message);
+    }
+}
 
 export {
     getMSBStrategyStateForSymbol,
-    writeMSBStrategyStateForSymbol
+    writeMSBStrategyStateForSymbol,
+    setBacktestCompleted
 };
+

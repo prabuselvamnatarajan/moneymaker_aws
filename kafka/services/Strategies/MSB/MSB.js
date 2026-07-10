@@ -3,22 +3,38 @@ import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBough
 import { logger } from '/app/utils/logUtils.js';
 
 async function triggerOrder(requestBody) {
+    if (!requestBody || requestBody.quantity <= 0) {
+        logger.warn('Order quantity is zero or negative, skipping order trigger.');
+        return;
+    }
     const placeOrderApi = process.env.PLACEORDER_API;
     if (placeOrderApi) {
-        axios.post(placeOrderApi, requestBody)
-            .then(res => {
-                logger.debug('Order API response:', res.data);
-            })
-            .catch(err => {
-                logger.error('Order API error:', err.message);
-            });
+        try {
+            const res = await axios.post(placeOrderApi, requestBody);
+            logger.debug('Order API response:', res.data);
+        } catch (err) {
+            logger.error('Order API error:', err.message);
+        }
     } else {
         logger.error('PLACEORDER_API env variable not set');
     }
 }
 
 async function computeOrderPayload(strategy_details, transaction_type, ltp, tag) {
-    let { account_id, use_full_amount = false, quantity = 1, lot_size, instrument_token, product = "D", validity = "DAY", order_type = "MARKET" } = strategy_details;
+    let { 
+        account_id, 
+        use_full_amount = false, 
+        quantity = 1, 
+        lot_size, 
+        instrument_token, 
+        product = "D", 
+        validity = "DAY", 
+        order_type = "MARKET",
+        is_amo = false,
+        slice = true,
+        disclosed_quantity = 0,
+        trigger_price = 0
+    } = strategy_details;
     if ( transaction_type == "BUY" && use_full_amount) {
         let current_acc_balance = await getAccountBalanceFromRedis(account_id);
         if (lot_size) {
@@ -30,19 +46,21 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag)
     if (transaction_type == "SELL" && use_full_amount) {
         // For SELL orders, quantity should be determined based on holdings.
         // so we get the last bought quantity from redis with the tag.
-        quantity = await getBoughtQuantityWithTagFromRedis(tag);
-    };
+        quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+    }
     let orderPayLoad = {
         quantity,
         product,
         validity,
-        "price": ltp,
-        tag,
+        price: order_type === "MARKET" ? 0 : ltp,
+        tag: tag ? tag.replace(/[^a-zA-Z0-9_-]/g, "_") : "",
         instrument_token,
         order_type,
         transaction_type,
-        "disclosed_quantity": 0,
-        "trigger_price": 0,
+        disclosed_quantity: Number(disclosed_quantity),
+        trigger_price: Number(trigger_price),
+        is_amo: String(is_amo) === 'true',
+        slice: String(slice) === 'true',
         strategy_details
     };
     return orderPayLoad;
@@ -69,13 +87,17 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp = false;
             // need to close long position
             if (isTest) {
-                logger.info(`MSB Test: Closing Live long position at ${low}`);
+                logger.info(`MSB Test: Closing Test long position at ${low}`);
             } else {
-                logger.info(`MSB: Closing Test long position at ${low}`);
+                logger.info(`MSB: Closing Live long position at ${low}`);
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol);
-            await triggerOrder(requestBody);
+            if (requestBody && requestBody.quantity > 0) {
+                await triggerOrder(requestBody);
+            } else {
+                logger.warn(`MSB: Skipping SELL order due to zero/negative quantity: ${requestBody?.quantity}`);
+            }
         }
         else {
             // trend continuation
@@ -92,14 +114,18 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp = true;
             // need to open long position
             if (isTest) {
-                logger.info(`MSB Test: Opening Live long position at ${high}`);
+                logger.info(`MSB Test: Opening Test long position at ${high}`);
             } else {
-                logger.info(`MSB: Opening Test long position at ${high}`);
+                logger.info(`MSB: Opening Live long position at ${high}`);
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);
-            await triggerOrder(requestBody);
-            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity);
+            if (requestBody && requestBody.quantity > 0) {
+                await triggerOrder(requestBody);
+                await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+            } else {
+                logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
+            }
         }
         else {
             // trend continuation

@@ -8,20 +8,26 @@ const port = process.env.PORT || 80; // Use port from environment variables
 app.use(cors());
 
 app.get('/', async (req, res) => {
-    const { code } = req.query;
+    const { code, state } = req.query;
 
     if (code) {
         try {
-            console.log('Calling get_new_access_token with code:', code); // Log before calling the function
-            await get_new_access_token(code);
+            console.log('Calling get_new_access_token with code:', code, 'and state (userId):', state);
+            await get_new_access_token(code, state || '');
             res.send("Success!!!");
         } catch (error) {
             console.error('Error getting access token or performing operation:', error);
             res.status(500).send('Internal Server Error');
         }
     } else {
-        console.log('No code received, redirecting to Upstox login.');
-        res.redirect(start_app_upstox());
+        console.log('No code received, redirecting to Upstox login for user:', req.query.userId || '');
+        try {
+            const redirectUrl = await start_app_upstox(req.query.userId || '');
+            res.redirect(redirectUrl);
+        } catch (err) {
+            console.error('Error redirecting to Upstox authorization dialog:', err);
+            res.status(500).send('Internal Server Error: ' + err.message);
+        }
     }
 });
 

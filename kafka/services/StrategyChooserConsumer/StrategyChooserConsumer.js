@@ -17,12 +17,26 @@ const kafka = new Kafka({
   }
 });
 
+async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await target.connect();
+            logger.info(`Successfully connected to ${name}.`);
+            return;
+        } catch (err) {
+            logger.warn(`Connection attempt ${i + 1}/${retries} to ${name} failed: ${err.message}. Retrying in ${delay}ms...`);
+            await new Promise(res => setTimeout(res, delay));
+        }
+    }
+    throw new Error(`Failed to connect to ${name} after maximum retries.`);
+}
+
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
     const producer = kafka.producer();
 
-    await consumer.connect();
-    await producer.connect();
+    await connectWithRetry(consumer, 'Kafka Consumer');
+    await connectWithRetry(producer, 'Kafka Producer');
 
     // Subscribe to all topics in TARGET_TOPICS
     for (const topic of TARGET_TOPICS) {
@@ -38,27 +52,36 @@ async function createConsumer() {
             logger.debug(`Active strategies for ${symbol}: ${JSON.stringify(strategies)}`);
             const data = JSON.parse(value.toString());
 
-            await Promise.all(strategies.map(async (strategy) => {
+            let filteredStrategies = strategies;
+            if (isBackTest && data.deployment_id) {
+                filteredStrategies = strategies.filter(strategy => strategy.deployment_id === data.deployment_id);
+                logger.info(`Filtered strategies for symbol ${symbol} to deployment ${data.deployment_id}. Count: ${filteredStrategies.length}`);
+            }
+
+            await Promise.all(filteredStrategies.map(async (strategy) => {
                 try {
                     let { name: strategyName, isTest = true } = strategy;
                     const isTestMode = isTest || isBackTest;
                     const topicName = isTestMode
                         ? `${strategyName}_backtest_data`
                         : `${strategyName}_live_data`;
-                    data.strategy_details = strategy;
+                    
+                    // Clone data to avoid concurrent in-place mutation race conditions
+                    const strategyData = { ...data };
+                    strategyData.strategy_details = { ...strategy };
                     if (isTestMode) {
-                        data.strategy_details.isTest = true;
+                        strategyData.strategy_details.isTest = true;
                     } else {
-                        data.strategy_details.isTest = false;
+                        strategyData.strategy_details.isTest = false;
                     }
                     await producer.send({
                         topic: topicName,
                         messages: [
-                            { key: symbol, value: JSON.stringify(data) },
+                            { key: symbol, value: JSON.stringify(strategyData) },
                         ],
                     });
                     logger.debug(`Produced message to topic ${topicName} with key ${symbol}`);
-                    logger.debug(`sending msg: ${JSON.stringify(data)}`);
+                    logger.debug(`sending msg: ${JSON.stringify(strategyData)}`);
                 } catch (error) {
                     logger.error(`Failed to produce message to topic ${strategyName}_live_data for symbol ${symbol}:`, error.message);
                 }

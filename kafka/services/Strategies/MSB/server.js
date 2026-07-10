@@ -2,7 +2,7 @@ import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
 import { getLatestOHLCByInterval, getLTP } from './utils.js';
 import { calculateLatency } from './utils/latencyUtil.js';
-import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol } from './redis_utils/getStrategyStateDetails.js';
+import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 
 // Use environment variables with fallback defaults
@@ -20,10 +20,24 @@ const kafka = new Kafka({
     }
 });
 
+async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await target.connect();
+            logger.info(`Successfully connected to ${name}.`);
+            return;
+        } catch (err) {
+            logger.warn(`Connection attempt ${i + 1}/${retries} to ${name} failed: ${err.message}. Retrying in ${delay}ms...`);
+            await new Promise(res => setTimeout(res, delay));
+        }
+    }
+    throw new Error(`Failed to connect to ${name} after maximum retries.`);
+}
+
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
 
-    await consumer.connect();
+    await connectWithRetry(consumer, 'Kafka Consumer');
     logger.info(`Subscribing to topic: ${TARGET_TOPIC}`);
     await consumer.subscribe({ topic: TARGET_TOPIC, fromBeginning: false });
 
@@ -32,23 +46,26 @@ async function createConsumer() {
             const symbol = message.key.toString();
             const msg = JSON.parse(message.value.toString());
             console.log(`msg: ${JSON.stringify(msg)}`);
+            let { strategy_details = {} } = msg;
             if (msg.done) {
                 logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
+                if (strategy_details.deployment_id) {
+                    await setBacktestCompleted(strategy_details.deployment_id);
+                }
                 return;
             }
+
             msg.latency = {
                 ...msg.latency,
                 beforeStrategyExecution: calculateLatency(symbol, msg)
             };
-            let { strategy_details = {} } = msg;
 
 
             const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
             if (isBackTest) {
                 strategy_details.isTest = true;
             }
-            logger.info(`Received message for symbol ${symbol}`);
-            const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest);
+            const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest, strategy_details.deployment_id);
 
             logger.debug(`Message content for ${symbol}:`, msg);
             
@@ -62,7 +79,7 @@ async function createConsumer() {
             // call the actual strategy function here
             let newState = await MSB(lastState, data, symbol, strategy_details);
 
-            await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState);
+            await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState, strategy_details.deployment_id);
             
             //after strategy execution latency
             msg.latency.afterStrategyExecution = calculateLatency(symbol, msg);

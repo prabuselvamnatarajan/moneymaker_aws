@@ -1,7 +1,7 @@
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 
-const base_url = 'https://api-hft.upstox.com/v2';
+const base_url = 'https://api-hft.upstox.com/v3';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -9,6 +9,7 @@ const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const NGINX_ADDRESS = process.env.NGINX_ADDRESS;
 const BACKTEST_APP_URL = process.env.BACKTEST_APP_URL || '/backtestapp';
 const BACKTEST_TRADE_URL = process.env.BACKTEST_TRADE_URL || '/api/trade';
+const BACKTEST_SERVICE_TOKEN = process.env.BACKTEST_SERVICE_TOKEN;
 const FUNDS_AND_MARGIN_API_URL = process.env.FUNDS_AND_MARGIN_API_URL || '/funds_and_margin';
 
 const kafka = new Kafka({
@@ -28,9 +29,12 @@ async function storeOrderDetails(symbol, order_details) {
     console.log(`Processing ${symbol} details:`, order_details);
     console.log(`Topic : ${topic}`);
 
-    // Fetch additional data from Nginx API (load-balanced)
     try {
-        let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}`; // Use Nginx reverse proxy
+        const userId = order_details.strategy_details ? order_details.strategy_details.user_id : '';
+        if (!userId) {
+            throw new Error('userId is required to fetch LTP');
+        }
+        let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}&userId=${userId}`; // Use Nginx reverse proxy
         console.log(`Fetching LTP from URL: ${getLTP_URL}`);
         const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
         const ltpData = await ltpResponse.json();
@@ -72,7 +76,6 @@ async function storeOrderDetails(symbol, order_details) {
 }
 
 async function placeOrders(access_token, body) {
-
     const url = `${base_url}/order/place`;
     const headers = {
         'Accept': 'application/json',
@@ -80,30 +83,30 @@ async function placeOrders(access_token, body) {
         'Authorization': `Bearer ${access_token}`
     };
 
+    console.log('In API Call Body:', body);
     try {
-        console.log('In API Call Body:', body);
-        const response = fetch(url, {
+        const res = await fetch(url, {
             method: 'POST',
             headers: headers,
             body
-        }).then(res => res.json()).then(data => {
-            console.log('Response:', data);
-            return data;
-        }).catch(error => { console.error('Error:', error); });
-        // console.log(response.data);
-        return response;
+        });
+        const data = await res.json();
+        console.log('Response from Upstox:', data);
+        if (data.status !== 'success') {
+            const errorMsg = data.errors ? JSON.stringify(data.errors) : 'Unknown broker error';
+            throw new Error(`Upstox order placement failed: ${errorMsg}`);
+        }
+        return data;
     } catch (err) {
-        console.error('Error:', err);
-        throw new Error('Failed Make Order ...');
+        console.error('Error placing order to Upstox:', err.message);
+        throw err;
     }
 }
 
 async function triggerBackTestApp(body) {
-
     const url = `${NGINX_ADDRESS}${BACKTEST_APP_URL}${BACKTEST_TRADE_URL}`;
 
     try {
-        
         let { strategy_details } = body;
         let testAPIBody = {
             "type_of_order": body.transaction_type,
@@ -113,26 +116,31 @@ async function triggerBackTestApp(body) {
         }
         console.log('Triggering Test API Call Body:', testAPIBody);
         console.log('URL:', url);
-        const response = fetch(url, {
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        if (BACKTEST_SERVICE_TOKEN) {
+            headers['X-Service-Token'] = BACKTEST_SERVICE_TOKEN;
+        }
+        const res = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(testAPIBody), 
-        }).then(res => res.json()).then(data => {
-            console.log('Response:', data);
-            return data;
-        }).catch(error => { console.error('Error:', error); });
-        // console.log(response.data);
-        return response;
+            headers,
+            body: JSON.stringify(testAPIBody),
+        });
+        const data = await res.json();
+        console.log('Response from BackTestApp:', data);
+        return data;
     } catch (err) {
-        console.error('Error:', err);
-        throw new Error('Failed Make Order ...');
+        console.error('Error triggering BackTestApp:', err.message);
+        throw err;
     }
 }
 
-async function getLiveAccountBalance() {
-    const url = `${NGINX_ADDRESS}${FUNDS_AND_MARGIN_API_URL}`;
+async function getLiveAccountBalance(userId) {
+    if (!userId) {
+        throw new Error('userId is required to fetch live account balance');
+    }
+    const url = `${NGINX_ADDRESS}${FUNDS_AND_MARGIN_API_URL}?userId=${userId}`;
     try {
         const response = await fetch(url, {
             method: 'GET',
@@ -145,6 +153,7 @@ async function getLiveAccountBalance() {
         return data.equity.availableMargin;
     } catch (error) {
         console.error('Error fetching live account balance:', error);
+        throw error;
     }
 }
 

@@ -31,7 +31,7 @@ const producer = kafka.producer({
 });
 
 function sanitize(str) {
-    return String(str).replace(/[^a-zA-Z0-9]/g, '_');
+    return String(str).replace(/[^a-zA-Z0-9-_]/g, '_');
 }
 
 (async () => {
@@ -39,7 +39,7 @@ function sanitize(str) {
 })();
 
 app.get('/', (req, res) => {
-    const { symbolName, date, time_ms } = req.query;
+    const { symbolName, date, time_ms, deployment_id } = req.query;
     if (!symbolName || !date) {
         return res.status(400).send('Missing symbolName or date');
     }
@@ -59,7 +59,7 @@ app.get('/', (req, res) => {
     const partitionKey = `backtest-${sanitize(symbolName)}-${sanitize(date)}-${sanitize(timeMsNum)}`;
 
     // Log the WebSocket URL and payload for debugging
-    console.log(`Starting WebSocket client for symbol: ${symbolName}, date: ${date}, time_ms: ${timeMsNum} at WS_URL: ${WS_URL}`);
+    console.log(`Starting WebSocket client for symbol: ${symbolName}, date: ${date}, time_ms: ${timeMsNum}, deployment_id: ${deployment_id} at WS_URL: ${WS_URL}`);
 
     const ws = new WebSocket(WS_URL);
 
@@ -72,18 +72,41 @@ app.get('/', (req, res) => {
         ws.send(JSON.stringify(payload));
     });
 
-    ws.on('message', async (data) => {
-        //console.log('Received:', data.toString());
-        // Produce to Kafka
-        try {
-            await producer.send({
-                topic,
-                messages: [{ value: data.toString(), key: partitionKey }]
-            });
-            console.log(`Message sent to Kafka topic ${topic} with key ${partitionKey}`);
-        } catch (err) {
-            console.error('Kafka produce error:', err.message);
+    let queue = [];
+    let processing = false;
+
+    async function processQueue() {
+        if (processing) return;
+        processing = true;
+        while (queue.length > 0) {
+            const batch = queue.splice(0, 100);
+            const messages = batch.map(msg => ({ value: msg, key: symbolName }));
+            try {
+                await producer.send({
+                    topic,
+                    messages
+                });
+                console.log(`Sent batch of ${messages.length} messages to Kafka topic ${topic} with key ${symbolName}`);
+            } catch (err) {
+                console.error('Kafka produce error:', err.message);
+            }
         }
+        processing = false;
+    }
+
+    ws.on('message', (data) => {
+        let msgStr = data.toString();
+        if (deployment_id) {
+            try {
+                const parsed = JSON.parse(msgStr);
+                parsed.deployment_id = deployment_id;
+                msgStr = JSON.stringify(parsed);
+            } catch (err) {
+                console.error('Failed to parse WebSocket message to append deployment_id:', err.message);
+            }
+        }
+        queue.push(msgStr);
+        processQueue().catch(err => console.error('Error in processQueue:', err));
     });
 
     ws.on('close', () => {
