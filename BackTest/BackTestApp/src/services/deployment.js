@@ -353,6 +353,152 @@ export const getDeploymentMetrics = async (userId, id) => {
   };
 };
 
+export const getDeploymentAnalysis = async (userId, id, startTime, endTime) => {
+  const deployment = await Deployment.findOne({ _id: id, user_id: userId });
+  if (!deployment) return null;
+
+  const Trade = (await import("../models/trade.js")).default;
+  
+  // Build time filter
+  const timeFilter = { deployment_id: deployment._id };
+  if (startTime || endTime) {
+    timeFilter.created_at = {};
+    if (startTime) timeFilter.created_at.$gte = new Date(startTime);
+    if (endTime) timeFilter.created_at.$lte = new Date(endTime);
+  }
+
+  const trades = await Trade.find(timeFilter).sort({ created_at: 1 });
+
+  const totalTrades = trades.length;
+  let totalPnL = 0;
+  let grossProfit = 0;
+  let grossLoss = 0;
+  let wins = 0;
+  let losses = 0;
+
+  let positionSize = 0;
+  let averageEntryPrice = 0;
+  let peakEquity = 0;
+  let troughEquity = 0;
+  let maxDrawdown = 0;
+  let maxDrawup = 0;
+  let runningPnL = 0;
+
+  const timeSeriesData = [];
+
+  for (const trade of trades) {
+    const qty = trade.quantity || 0;
+    const price = trade.price || 0;
+    const isBuy = trade.type_of_order === "BUY";
+    const commission = trade.commission || 0;
+    let pnl = 0;
+
+    if (isBuy) {
+      if (positionSize >= 0) {
+        const newSize = positionSize + qty;
+        averageEntryPrice = newSize > 0 ? (averageEntryPrice * positionSize + price * qty + commission) / newSize : 0;
+        positionSize = newSize;
+      } else {
+        const coveredQty = Math.min(Math.abs(positionSize), qty);
+        pnl = (averageEntryPrice - price) * coveredQty - commission;
+        const remainingQty = qty - coveredQty;
+        positionSize += coveredQty;
+        if (remainingQty > 0) {
+          positionSize = remainingQty;
+          averageEntryPrice = price;
+        } else if (positionSize === 0) {
+          averageEntryPrice = 0;
+        }
+      }
+    } else {
+      if (positionSize <= 0) {
+        const newSize = positionSize - qty;
+        const absNewSize = Math.abs(newSize);
+        averageEntryPrice = absNewSize > 0 ? (averageEntryPrice * Math.abs(positionSize) + price * qty + commission) / absNewSize : 0;
+        positionSize = newSize;
+      } else {
+        const exitedQty = Math.min(positionSize, qty);
+        pnl = (price - averageEntryPrice) * exitedQty - commission;
+        const remainingQty = qty - exitedQty;
+        positionSize -= exitedQty;
+        if (remainingQty > 0) {
+          positionSize = -remainingQty;
+          averageEntryPrice = price;
+        } else if (positionSize === 0) {
+          averageEntryPrice = 0;
+        }
+      }
+    }
+
+    if (pnl !== 0) {
+      totalPnL += pnl;
+      runningPnL += pnl;
+      
+      if (pnl > 0) {
+        wins++;
+        grossProfit += pnl;
+      } else if (pnl < 0) {
+        losses++;
+        grossLoss += Math.abs(pnl);
+      }
+
+      // Track peak and trough for drawdown/drawup
+      if (runningPnL > peakEquity) {
+        peakEquity = runningPnL;
+      }
+      if (runningPnL < troughEquity) {
+        troughEquity = runningPnL;
+      }
+
+      // Calculate drawdown (peak to current)
+      const currentDrawdown = peakEquity - runningPnL;
+      if (currentDrawdown > maxDrawdown) {
+        maxDrawdown = currentDrawdown;
+      }
+
+      // Calculate drawup (trough to current)
+      const currentDrawup = runningPnL - troughEquity;
+      if (currentDrawup > maxDrawup) {
+        maxDrawup = currentDrawup;
+      }
+
+      // Add to time series
+      timeSeriesData.push({
+        timestamp: trade.created_at,
+        pnl: parseFloat(runningPnL.toFixed(2)),
+        trade_id: trade.trade_id,
+      });
+    }
+  }
+
+  // Calculate profitability factor
+  const profitabilityFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
+
+  return {
+    deployment_id: deployment._id,
+    deployment_name: deployment.deployment_name,
+    symbol: deployment.symbol,
+    strategy_mode: deployment.strategy_mode,
+    time_range: {
+      start: startTime || null,
+      end: endTime || null,
+    },
+    metrics: {
+      total_trades: totalTrades,
+      total_pnl: parseFloat(totalPnL.toFixed(2)),
+      gross_profit: parseFloat(grossProfit.toFixed(2)),
+      gross_loss: parseFloat(grossLoss.toFixed(2)),
+      profitability_factor: profitabilityFactor === Infinity ? "Infinity" : parseFloat(profitabilityFactor.toFixed(2)),
+      wins,
+      losses,
+      win_rate: (wins + losses) > 0 ? ((wins / (wins + losses)) * 100).toFixed(2) + "%" : "0.00%",
+      max_drawdown: parseFloat(maxDrawdown.toFixed(2)),
+      max_drawup: parseFloat(maxDrawup.toFixed(2)),
+    },
+    time_series: timeSeriesData,
+  };
+};
+
 export const syncAllDeploymentsToRedis = async () => {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {

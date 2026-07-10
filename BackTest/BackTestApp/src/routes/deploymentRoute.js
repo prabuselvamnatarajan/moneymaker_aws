@@ -14,6 +14,7 @@ import {
   getDeploymentStatusController,
   getDeploymentLogsController,
   getDeploymentMetricsController,
+  getDeploymentAnalysisController,
 } from "../controllers/deployment.js";
 
 const router = express.Router();
@@ -37,5 +38,6 @@ router.post("/:id/restart", authenticate, restartDeploymentController);
 router.get("/:id/status", authenticate, getDeploymentStatusController);
 router.get("/:id/logs", authenticate, getDeploymentLogsController);
 router.get("/:id/metrics", authenticate, getDeploymentMetricsController);
+router.get("/:id/analysis", authenticate, getDeploymentAnalysisController);
 
 export default router;

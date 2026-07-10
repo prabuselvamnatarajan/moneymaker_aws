@@ -582,6 +582,45 @@ export const api = {
       });
       return handleResponse<{ data: any }>(res);
     },
+
+    async getAnalysis(id: string, startTime?: string, endTime?: string) {
+      const params = new URLSearchParams();
+      if (startTime) params.append('start_time', startTime);
+      if (endTime) params.append('end_time', endTime);
+      const queryString = params.toString();
+      const url = `${BASE_URL}/deployments/${id}/analysis${queryString ? `?${queryString}` : ''}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{
+        deployment_id: string;
+        deployment_name: string;
+        symbol: string;
+        strategy_mode: string;
+        time_range: {
+          start: string | null;
+          end: string | null;
+        };
+        metrics: {
+          total_trades: number;
+          total_pnl: number;
+          gross_profit: number;
+          gross_loss: number;
+          profitability_factor: number | string;
+          wins: number;
+          losses: number;
+          win_rate: string;
+          max_drawdown: number;
+          max_drawup: number;
+        };
+        time_series: Array<{
+          timestamp: string;
+          pnl: number;
+          trade_id: string;
+        }>;
+      }>(res);
+    },
   },
 
   // Trades API

@@ -23,6 +23,7 @@ import UserProfileView from './components/UserProfileView';
 import LoginView from './components/LoginView';
 import BrokersListView from './components/BrokersListView';
 import StrategyTemplatesView from './components/StrategyTemplatesView';
+import DeploymentAnalysisView from './components/DeploymentAnalysisView';
 import { api } from './api';
 import { mapAccount, mapSymbol, mapTrade, mapDeployment, mapLedger } from './adapters';
 
@@ -657,6 +658,10 @@ export default function App() {
       case 'brokers-list':
         return (
           <BrokersListView />
+        );
+      case 'deployment-analysis':
+        return (
+          <DeploymentAnalysisView selectedDeploymentId={selectedEntityId} />
         );
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;

@@ -134,4 +134,39 @@ export type ViewScreen =
   | 'symbol-detail'
   | 'profile'
   | 'brokers-list'
-  | 'strategy-templates';
+  | 'strategy-templates'
+  | 'deployment-analysis';
+
+export interface DeploymentAnalysis {
+  deployment_id: string;
+  deployment_name: string;
+  symbol: string;
+  strategy_mode: string;
+  time_range: {
+    start: string | null;
+    end: string | null;
+  };
+  metrics: {
+    total_trades: number;
+    total_pnl: number;
+    gross_profit: number;
+    gross_loss: number;
+    profitability_factor: number | string;
+    wins: number;
+    losses: number;
+    win_rate: string;
+    max_drawdown: number;
+    max_drawup: number;
+  };
+  time_series: Array<{
+    timestamp: string;
+    pnl: number;
+    trade_id: string;
+  }>;
+}
+
+export interface TimeSeriesDataPoint {
+  timestamp: string;
+  pnl: number;
+  trade_id: string;
+}
