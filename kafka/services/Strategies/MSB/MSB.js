@@ -33,14 +33,25 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag)
         is_amo = false,
         slice = true,
         disclosed_quantity = 0,
-        trigger_price = 0
+        trigger_price = 0,
+        commission_type = "PERCENTAGE",
+        commission_rate = 0
     } = strategy_details;
     if ( transaction_type == "BUY" && use_full_amount) {
         let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+        let maxAffordableValue = current_acc_balance;
+        if (commission_type === "FLAT") {
+            maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
+        } else if (commission_type === "PERCENTAGE") {
+            maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
+        }
+        // Subtract a tiny safety buffer of 0.05 to prevent floating-point or rounding-off failures
+        maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+
         if (lot_size) {
-            quantity = Math.floor(current_acc_balance / (ltp * lot_size)) * lot_size;
+            quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
         } else {
-            quantity = Math.floor(current_acc_balance / ltp);
+            quantity = Math.floor(maxAffordableValue / ltp);
         }
     }
     if (transaction_type == "SELL" && use_full_amount) {

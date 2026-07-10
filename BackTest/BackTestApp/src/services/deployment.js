@@ -564,6 +564,8 @@ export const syncAllDeploymentsToRedis = async () => {
         strategy_mode: dep.strategy_mode,
         is_internal_broker: dep.account_id.broker_id ? dep.account_id.broker_id.is_internal : false,
         use_full_amount: dep.use_full_amount || false,
+        commission_type: dep.account_id.commission_type || "PERCENTAGE",
+        commission_rate: dep.account_id.commission_rate || 0,
       });
 
       // Sync account balance to Redis
