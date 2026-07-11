@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ScatterChart, Scatter, ZAxis, ReferenceArea } from 'recharts';
-import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Search, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Search, Clock, ChevronDown, ChevronRight, ExternalLink, RefreshCw, Link } from 'lucide-react';
 import { DeploymentAnalysis, TimeSeriesDataPoint, IntradayTradeDataPoint, Deployment } from '../types';
 import { api } from '../api';
 import { useToast } from './Toast';
@@ -155,6 +155,11 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const [intradayData, setIntradayData] = useState<IntradayTradeDataPoint[]>([]);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [defaultDomain, setDefaultDomain] = useState<[number, number]>([0, 24]);
+
+  // Trades list state
+  const [rawTrades, setRawTrades] = useState<any[]>([]);
+  const [tradesLoading, setTradesLoading] = useState(false);
+  const [expandedPairs, setExpandedPairs] = useState<Set<string>>(new Set());
 
   // Zooming states and handlers
   const pnlContainerRef = useRef<HTMLDivElement>(null);
@@ -890,11 +895,24 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       setChartData(result.data.time_series || []);
       handlePnLResetZoom();
       handleIntraResetZoom();
+
+      // Fetch raw trades for the trades list
+      setTradesLoading(true);
+      try {
+        const tradesRes = await api.trades.listForDeployment(idToFetch);
+        setRawTrades(tradesRes.items || []);
+      } catch (tErr: any) {
+        console.error('Failed to fetch trades:', tErr.message);
+        setRawTrades([]);
+      } finally {
+        setTradesLoading(false);
+      }
     } catch (err: any) {
       showError(`Failed to fetch analysis: ${err.message}`);
       setAnalysis(null);
       setChartData([]);
       setIntradayData([]);
+      setRawTrades([]);
     } finally {
       setIsLoading(false);
     }
@@ -1479,6 +1497,17 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
               )}
             </div>
           </div>
+
+          {/* ===== Trades List ===== */}
+          <TradesList
+            rawTrades={rawTrades}
+            timeSeries={analysis.time_series || []}
+            tradesLoading={tradesLoading}
+            timezone={timezone}
+            expandedPairs={expandedPairs}
+            setExpandedPairs={setExpandedPairs}
+            formatCurrency={formatCurrency}
+          />
         </>
       )}
 
@@ -1492,6 +1521,288 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Trades List Sub-Component ────────────────────────────────────────────────
+interface TradesListProps {
+  rawTrades: any[];
+  timeSeries: Array<{ timestamp: string; pnl: number; trade_id: string }>;
+  tradesLoading: boolean;
+  timezone: string;
+  expandedPairs: Set<string>;
+  setExpandedPairs: React.Dispatch<React.SetStateAction<Set<string>>>;
+  formatCurrency: (v: number) => string;
+}
+
+function TradesList({
+  rawTrades,
+  timeSeries,
+  tradesLoading,
+  timezone,
+  expandedPairs,
+  setExpandedPairs,
+  formatCurrency,
+}: TradesListProps) {
+  // Build a map of trade_id -> pnl delta from timeSeries
+  const pnlDeltaMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    timeSeries.forEach((point, idx) => {
+      const prevPnl = idx === 0 ? 0 : timeSeries[idx - 1].pnl;
+      map[point.trade_id] = point.pnl - prevPnl;
+    });
+    return map;
+  }, [timeSeries]);
+
+  // Sort raw trades chronologically
+  const sortedTrades = useMemo(() => {
+    return [...rawTrades].sort((a, b) => {
+      const ta = new Date(a.execution_time || a.created_at || 0).getTime();
+      const tb = new Date(b.execution_time || b.created_at || 0).getTime();
+      return ta - tb;
+    });
+  }, [rawTrades]);
+
+  // Build enriched trade rows with serial number and P&L delta
+  const enrichedTrades = useMemo(() => {
+    return sortedTrades.map((trade, idx) => {
+      const tradeId = trade.trade_id || trade._id;
+      const qty = trade.quantity || 0;
+      const price = trade.price || 0;
+      const isSell = (trade.type_of_order || '').toUpperCase() === 'SELL';
+      const amountSpent = isSell ? qty * price : -(qty * price);
+      const pnlDelta = pnlDeltaMap[tradeId] ?? null;
+      return {
+        ...trade,
+        tradeId,
+        serial: idx + 1,
+        amountSpent,
+        pnlDelta,
+        isSell,
+        executionTime: trade.execution_time || trade.created_at || '',
+        linkedOrderId: trade.linked_order_id || null,
+      };
+    });
+  }, [sortedTrades, pnlDeltaMap]);
+
+  // Group into linked pairs (BUY + SELL) by linked_order_id or sequential pairing
+  const pairedGroups = useMemo(() => {
+    // Try to use linked_order_id first
+    const pairs: { key: string; buy?: typeof enrichedTrades[0]; sell?: typeof enrichedTrades[0] }[] = [];
+    const used = new Set<string>();
+
+    // Group by linked_order_id if available
+    const linkedMap: Record<string, typeof enrichedTrades> = {};
+    for (const t of enrichedTrades) {
+      if (t.linkedOrderId) {
+        if (!linkedMap[t.linkedOrderId]) linkedMap[t.linkedOrderId] = [];
+        linkedMap[t.linkedOrderId].push(t);
+        used.add(t.tradeId);
+      }
+    }
+
+    for (const [key, group] of Object.entries(linkedMap)) {
+      const buy = group.find(t => !t.isSell);
+      const sell = group.find(t => t.isSell);
+      pairs.push({ key, buy, sell });
+    }
+
+    // Pair remaining unmatched trades sequentially (BUY followed by SELL)
+    const unmatched = enrichedTrades.filter(t => !used.has(t.tradeId));
+    let i = 0;
+    while (i < unmatched.length) {
+      const curr = unmatched[i];
+      const next = unmatched[i + 1];
+      if (!curr.isSell && next?.isSell) {
+        pairs.push({ key: `seq-${curr.tradeId}`, buy: curr, sell: next });
+        i += 2;
+      } else {
+        pairs.push({ key: `lone-${curr.tradeId}`, buy: curr.isSell ? undefined : curr, sell: curr.isSell ? curr : undefined });
+        i++;
+      }
+    }
+
+    return pairs;
+  }, [enrichedTrades]);
+
+  const togglePair = (key: string) => {
+    setExpandedPairs(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const formatTime = (ts: string) => {
+    if (!ts) return '—';
+    try {
+      const d = new Date(ts);
+      return d.toLocaleString('en-IN', {
+        timeZone: timezone === 'UTC' ? 'UTC' : undefined,
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+    } catch { return ts; }
+  };
+
+  if (tradesLoading) {
+    return (
+      <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+        <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
+          <Link className="w-5 h-5 text-indigo-400" />
+          Linked Trades
+        </h3>
+        <div className="space-y-2">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-12 bg-slate-800 rounded animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (enrichedTrades.length === 0) {
+    return (
+      <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+        <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
+          <Link className="w-5 h-5 text-indigo-400" />
+          Linked Trades
+        </h3>
+        <div className="text-center py-8 text-slate-500 text-sm">No trades found for this deployment in the selected period.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+          <Link className="w-5 h-5 text-indigo-400" />
+          Linked Trades
+          <span className="text-xs font-normal text-slate-500 ml-1">({enrichedTrades.length} trades, {pairedGroups.length} pairs)</span>
+        </h3>
+      </div>
+
+      {/* Header row */}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[780px] text-xs">
+          <thead>
+            <tr className="text-slate-500 uppercase tracking-wider border-b border-slate-800">
+              <th className="py-2 px-2 text-left w-8">#</th>
+              <th className="py-2 px-2 text-left">Trade ID</th>
+              <th className="py-2 px-2 text-left">Type</th>
+              <th className="py-2 px-2 text-left">Trade Time</th>
+              <th className="py-2 px-2 text-right">Qty</th>
+              <th className="py-2 px-2 text-right">Price</th>
+              <th className="py-2 px-2 text-right">Amount Spent</th>
+              <th className="py-2 px-2 text-right">P&amp;L Change</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60">
+            {pairedGroups.map((group, groupIdx) => {
+              const isExpanded = expandedPairs.has(group.key);
+              const hasBoth = group.buy && group.sell;
+              const representative = group.buy || group.sell!;
+              const pairPnl = (group.sell?.pnlDelta ?? 0);
+              const pairSerial = group.buy?.serial ?? group.sell?.serial ?? groupIdx + 1;
+
+              return (
+                <React.Fragment key={group.key}>
+                  {/* Pair summary accordion row */}
+                  <tr
+                    className={`cursor-pointer transition-colors ${
+                      isExpanded ? 'bg-slate-800/60' : 'hover:bg-slate-800/30'
+                    }`}
+                    onClick={() => togglePair(group.key)}
+                  >
+                    <td className="py-2.5 px-2 text-slate-500 font-mono">{pairSerial}</td>
+                    <td className="py-2.5 px-2">
+                      <div className="flex items-center gap-1.5">
+                        {hasBoth ? (
+                          isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        ) : null}
+                        <span className="font-mono text-slate-300 truncate max-w-[120px]" title={representative.tradeId}>
+                          {String(representative.tradeId).slice(-10)}
+                        </span>
+                        {hasBoth && <span className="text-[9px] px-1 py-0.5 bg-indigo-500/20 text-indigo-400 rounded font-bold">PAIR</span>}
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-2">
+                      <div className="flex flex-col gap-0.5">
+                        {group.buy && <span className="text-emerald-400 font-bold text-[10px]">BUY</span>}
+                        {group.sell && <span className="text-rose-400 font-bold text-[10px]">SELL</span>}
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-2 text-slate-400">{formatTime(representative.executionTime)}</td>
+                    <td className="py-2.5 px-2 text-right text-slate-300 font-mono">
+                      {representative.quantity ?? '—'}
+                    </td>
+                    <td className="py-2.5 px-2 text-right text-slate-400 font-mono">
+                      {representative.price ? formatCurrency(representative.price) : '—'}
+                    </td>
+                    <td className="py-2.5 px-2 text-right font-mono">
+                      <span className={representative.amountSpent >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {formatCurrency(representative.amountSpent)}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-2 text-right font-mono">
+                      {pairPnl !== null ? (
+                        <span className={`font-bold ${ pairPnl >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
+                          {pairPnl >= 0 ? '+' : ''}{formatCurrency(pairPnl)}
+                        </span>
+                      ) : <span className="text-slate-600">—</span>}
+                    </td>
+                  </tr>
+
+                  {/* Expanded detail rows */}
+                  {isExpanded && [
+                    group.buy ? { trade: group.buy, label: 'BUY' } : null,
+                    group.sell ? { trade: group.sell, label: 'SELL' } : null,
+                  ].filter(Boolean).map(({ trade, label }: any) => (
+                    <tr key={trade.tradeId + '-detail'} className="bg-slate-950/50">
+                      <td className="py-2 px-2 text-slate-600 font-mono pl-6">{trade.serial}</td>
+                      <td className="py-2 px-2">
+                        <div className="flex items-center gap-1.5 pl-4">
+                          <span className="font-mono text-slate-400 text-[11px] truncate max-w-[130px]" title={trade.tradeId}>
+                            {trade.tradeId}
+                          </span>
+                          <ExternalLink className="w-3 h-3 text-slate-600 cursor-pointer hover:text-indigo-400 shrink-0" />
+                        </div>
+                      </td>
+                      <td className="py-2 px-2">
+                        <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded ${
+                          label === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                        }`}>{label}</span>
+                      </td>
+                      <td className="py-2 px-2 text-slate-400 text-[11px]">{formatTime(trade.executionTime)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-slate-300">{trade.quantity ?? '—'}</td>
+                      <td className="py-2 px-2 text-right font-mono text-slate-400">{trade.price ? formatCurrency(trade.price) : '—'}</td>
+                      <td className="py-2 px-2 text-right font-mono">
+                        <span className={trade.amountSpent >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                          {formatCurrency(trade.amountSpent)}
+                        </span>
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono">
+                        {trade.pnlDelta !== null ? (
+                          <span className={`font-bold ${ trade.pnlDelta >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
+                            {trade.pnlDelta >= 0 ? '+' : ''}{formatCurrency(trade.pnlDelta)}
+                          </span>
+                        ) : <span className="text-slate-600">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
