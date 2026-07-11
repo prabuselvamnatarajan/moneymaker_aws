@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis } from './redis_utils/account_utils.js';
+import { isWithinTradingWindow } from './utils.js';
 import { logger } from '/app/utils/logUtils.js';
 
 async function triggerOrder(requestBody) {
@@ -91,7 +92,18 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
     }
     let { isUp, prevHigh, prevLow, lastBuyPrice } = prevData;
     let { isTest } = strategy_details;
-    let { high, low, ltp } = currentData;
+    let { high, low, ltp, ts } = currentData;
+
+    // ── Trading Window Check ─────────────────────────────────────────────────
+    // Compute whether this feed tick falls within the allowed order window.
+    // The strategy state machine always runs; only order dispatch is gated.
+    const withinTradingWindow = isWithinTradingWindow(ts, strategy_details);
+    if (!withinTradingWindow) {
+        logger.info(
+            `msb_pts [${symbol}]: Feed ts=${ts} is outside trading window ` +
+            `(${strategy_details.trading_window?.start || '11:30'} – ${strategy_details.trading_window?.end || '14:00'} IST). Strategy runs but orders are blocked.`
+        );
+    }
     
     let target_pts = strategy_details.target_pts !== undefined ? strategy_details.target_pts : 500;
     let sl_pts = strategy_details.sl_pts !== undefined ? strategy_details.sl_pts : 500;
@@ -114,7 +126,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol);
-            if (!strategy_details.within_trading_window) {
+            if (!withinTradingWindow) {
                 logger.info(`msb_pts [${symbol}]: SELL signal detected but order blocked – outside trading window.`);
             } else if (requestBody && requestBody.quantity > 0) {
                 await triggerOrder(requestBody);
@@ -143,7 +155,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);
-            if (!strategy_details.within_trading_window) {
+            if (!withinTradingWindow) {
                 logger.info(`msb_pts [${symbol}]: BUY signal detected but order blocked – outside trading window.`);
             } else if (requestBody && requestBody.quantity > 0) {
                 await triggerOrder(requestBody);

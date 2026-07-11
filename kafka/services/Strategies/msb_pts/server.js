@@ -1,6 +1,6 @@
 import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
-import { getLatestOHLCByInterval, getLTP, isWithinTradingWindow } from './utils.js';
+import { getLatestOHLCByInterval, getLTP } from './utils.js';
 import { calculateLatency } from './utils/latencyUtil.js';
 import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
@@ -76,19 +76,7 @@ async function createConsumer() {
             logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
             data.ltp = ltp;
 
-            // ── Trading Window Check ────────────────────────────────────────
-            // Stamp within_trading_window onto strategy_details so MSB.js can
-            // gate order placement internally while the strategy state machine
-            // always continues to run (high/low tracking, trend state, etc.).
-            strategy_details.within_trading_window = isWithinTradingWindow(data.ts, strategy_details);
-            if (!strategy_details.within_trading_window) {
-                logger.info(
-                    `msb_pts [${symbol}]: Feed ts=${data.ts} is outside trading window ` +
-                    `(${strategy_details.trading_window?.start || '11:30'} – ${strategy_details.trading_window?.end || '14:00'} IST). Strategy runs but orders are blocked.`
-                );
-            }
-
-            // call the actual strategy function here (always runs regardless of window)
+            // call the actual strategy function here
             let newState = await MSB(lastState, data, symbol, strategy_details);
 
             await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState, strategy_details.deployment_id);
