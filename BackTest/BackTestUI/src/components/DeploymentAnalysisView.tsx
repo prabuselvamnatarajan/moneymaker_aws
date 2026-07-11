@@ -1545,14 +1545,16 @@ function TradesList({
   setExpandedPairs,
   formatCurrency,
 }: TradesListProps) {
-  // Build a map of trade_id -> pnl delta from timeSeries
-  const pnlDeltaMap = useMemo(() => {
-    const map: Record<string, number> = {};
+  // Build maps of trade_id -> pnl delta AND trade_id -> cumulative pnl from timeSeries
+  const { pnlDeltaMap, cumulativePnlMap } = useMemo(() => {
+    const deltaMap: Record<string, number> = {};
+    const cumulMap: Record<string, number> = {};
     timeSeries.forEach((point, idx) => {
       const prevPnl = idx === 0 ? 0 : timeSeries[idx - 1].pnl;
-      map[point.trade_id] = point.pnl - prevPnl;
+      deltaMap[point.trade_id] = point.pnl - prevPnl;
+      cumulMap[point.trade_id] = point.pnl;
     });
-    return map;
+    return { pnlDeltaMap: deltaMap, cumulativePnlMap: cumulMap };
   }, [timeSeries]);
 
   // Sort raw trades chronologically
@@ -1564,7 +1566,7 @@ function TradesList({
     });
   }, [rawTrades]);
 
-  // Build enriched trade rows with serial number and P&L delta
+  // Build enriched trade rows with serial number, P&L delta, and cumulative P&L
   const enrichedTrades = useMemo(() => {
     return sortedTrades.map((trade, idx) => {
       const tradeId = trade.trade_id || trade._id;
@@ -1573,18 +1575,20 @@ function TradesList({
       const isSell = (trade.type_of_order || '').toUpperCase() === 'SELL';
       const amountSpent = isSell ? qty * price : -(qty * price);
       const pnlDelta = pnlDeltaMap[tradeId] ?? null;
+      const cumulativePnl = cumulativePnlMap[tradeId] ?? null;
       return {
         ...trade,
         tradeId,
         serial: idx + 1,
         amountSpent,
         pnlDelta,
+        cumulativePnl,
         isSell,
         executionTime: trade.execution_time || trade.created_at || '',
         linkedOrderId: trade.linked_order_id || null,
       };
     });
-  }, [sortedTrades, pnlDeltaMap]);
+  }, [sortedTrades, pnlDeltaMap, cumulativePnlMap]);
 
   // Group into linked pairs (BUY + SELL) by linked_order_id or sequential pairing
   const pairedGroups = useMemo(() => {
@@ -1691,7 +1695,7 @@ function TradesList({
 
       {/* Header row */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[780px] text-xs">
+        <table className="w-full min-w-[920px] text-xs">
           <thead>
             <tr className="text-slate-500 uppercase tracking-wider border-b border-slate-800">
               <th className="py-2 px-2 text-left w-8">#</th>
@@ -1702,6 +1706,7 @@ function TradesList({
               <th className="py-2 px-2 text-right">Price</th>
               <th className="py-2 px-2 text-right">Amount Spent</th>
               <th className="py-2 px-2 text-right">P&amp;L Change</th>
+              <th className="py-2 px-2 text-right">Cumul. P&amp;L</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60">
@@ -1710,6 +1715,8 @@ function TradesList({
               const hasBoth = group.buy && group.sell;
               const representative = group.buy || group.sell!;
               const pairPnl = (group.sell?.pnlDelta ?? 0);
+              // Cumulative P&L at the end of this pair = sell trade's cumulative pnl (or buy if lone)
+              const pairCumulPnl = group.sell?.cumulativePnl ?? group.buy?.cumulativePnl ?? null;
               const pairSerial = group.buy?.serial ?? group.sell?.serial ?? groupIdx + 1;
 
               return (
@@ -1758,6 +1765,13 @@ function TradesList({
                         </span>
                       ) : <span className="text-slate-600">—</span>}
                     </td>
+                    <td className="py-2.5 px-2 text-right font-mono">
+                      {pairCumulPnl !== null ? (
+                        <span className={`font-semibold ${ pairCumulPnl >= 0 ? 'text-emerald-300' : 'text-rose-300' }`}>
+                          {formatCurrency(pairCumulPnl)}
+                        </span>
+                      ) : <span className="text-slate-600">—</span>}
+                    </td>
                   </tr>
 
                   {/* Expanded detail rows */}
@@ -1792,6 +1806,13 @@ function TradesList({
                         {trade.pnlDelta !== null ? (
                           <span className={`font-bold ${ trade.pnlDelta >= 0 ? 'text-emerald-400' : 'text-rose-400' }`}>
                             {trade.pnlDelta >= 0 ? '+' : ''}{formatCurrency(trade.pnlDelta)}
+                          </span>
+                        ) : <span className="text-slate-600">—</span>}
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono">
+                        {trade.cumulativePnl !== null ? (
+                          <span className={`font-semibold ${ trade.cumulativePnl >= 0 ? 'text-emerald-300' : 'text-rose-300' }`}>
+                            {formatCurrency(trade.cumulativePnl)}
                           </span>
                         ) : <span className="text-slate-600">—</span>}
                       </td>
