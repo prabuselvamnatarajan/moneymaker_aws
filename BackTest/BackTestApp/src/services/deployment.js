@@ -1,4 +1,6 @@
 import Deployment from "../models/deployment.js";
+import fs from "fs/promises";
+import path from "path";
 import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
 import Account from "../models/account.js";
@@ -636,4 +638,109 @@ export const syncAllDeploymentsToRedis = async () => {
       await client.disconnect();
     }
   }
+};
+
+export const getDeploymentCandles = async (userId, id, timeframe = "1m") => {
+  const deployment = await Deployment.findOne({ _id: id, user_id: userId });
+  if (!deployment) return null;
+
+  const symbol = deployment.symbol;
+  const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
+  
+  const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
+  const filePath = path.join(process.cwd(), "..", "exportedData", date, `${sanitizedSymbol}.json`);
+  
+  let data;
+  try {
+    const fileContent = await fs.readFile(filePath, "utf8");
+    data = JSON.parse(fileContent);
+  } catch (err) {
+    console.error(`[Candles Service] Error reading or parsing file ${filePath}:`, err.message);
+    return {
+      symbol,
+      date,
+      timeframe,
+      data: []
+    };
+  }
+
+  if (!Array.isArray(data)) {
+    return { symbol, date, timeframe, data: [] };
+  }
+
+  let intervalMs = 60 * 1000;
+  if (timeframe === "5m") {
+    intervalMs = 5 * 60 * 1000;
+  } else if (timeframe === "15m") {
+    intervalMs = 15 * 60 * 1000;
+  }
+
+  const buckets = {};
+
+  for (const tick of data) {
+    if (!tick.timestamp || !tick.fullFeed || !tick.fullFeed.marketFF || !tick.fullFeed.marketFF.ltpc) {
+      continue;
+    }
+    const ltp = tick.fullFeed.marketFF.ltpc.ltp;
+    if (ltp === undefined || ltp === null) {
+      continue;
+    }
+
+    const timestampMs = new Date(tick.timestamp).getTime();
+    if (isNaN(timestampMs)) {
+      continue;
+    }
+
+    const bucketTimeMs = Math.floor(timestampMs / intervalMs) * intervalMs;
+    const volume = tick.fullFeed.marketFF.ltpc.ltq ? parseFloat(tick.fullFeed.marketFF.ltpc.ltq) : 0;
+
+    if (!buckets[bucketTimeMs]) {
+      buckets[bucketTimeMs] = {
+        time: Math.floor(bucketTimeMs / 1000),
+        open: ltp,
+        high: ltp,
+        low: ltp,
+        close: ltp,
+        volume: volume,
+        ticksCount: 1,
+        firstTickTime: timestampMs,
+        lastTickTime: timestampMs
+      };
+    } else {
+      const b = buckets[bucketTimeMs];
+      if (timestampMs < b.firstTickTime) {
+        b.open = ltp;
+        b.firstTickTime = timestampMs;
+      }
+      if (timestampMs > b.lastTickTime) {
+        b.close = ltp;
+        b.lastTickTime = timestampMs;
+      }
+      if (ltp > b.high) b.high = ltp;
+      if (ltp < b.low) b.low = ltp;
+      b.volume += volume;
+      b.ticksCount += 1;
+    }
+  }
+
+  const candles = Object.keys(buckets)
+    .map(key => {
+      const b = buckets[key];
+      return {
+        time: b.time,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: Math.round(b.volume)
+      };
+    })
+    .sort((a, b) => a.time - b.time);
+
+  return {
+    symbol,
+    date,
+    timeframe,
+    data: candles
+  };
 };

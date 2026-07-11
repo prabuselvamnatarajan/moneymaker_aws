@@ -642,6 +642,26 @@ export const api = {
         };
       }>(res);
     },
+
+    async getCandles(id: string, timeframe: string = '1m') {
+      const res = await fetch(`${BASE_URL}/deployments/${id}/candles?timeframe=${encodeURIComponent(timeframe)}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{
+        symbol: string;
+        date: string;
+        timeframe: string;
+        data: Array<{
+          time: number;
+          open: number;
+          high: number;
+          low: number;
+          close: number;
+          volume?: number;
+        }>;
+      }>(res);
+    },
   },
 
   // Trades API

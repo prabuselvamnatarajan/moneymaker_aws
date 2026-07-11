@@ -9,6 +9,7 @@ import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDown
 import { DeploymentAnalysis, TimeSeriesDataPoint, IntradayTradeDataPoint, Deployment } from '../types';
 import { api } from '../api';
 import { useToast } from './Toast';
+import CandlestickSidebar from './CandlestickSidebar';
 
 const RefArea = ReferenceArea as any;
 
@@ -100,6 +101,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const { showError } = useToast();
   
   const [deploymentId, setDeploymentId] = useState<string>('');
+  const [isChartOpen, setIsChartOpen] = useState(false);
   
   const prevTimezoneRef = useRef<string>(timezone);
 
@@ -1161,7 +1163,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       {analysis && (
         <>
           {/* Deployment Info */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+          <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex flex-wrap gap-4 text-sm">
               <div>
                 <span className="text-slate-500">Deployment:</span>
@@ -1188,6 +1190,15 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                 </div>
               )}
             </div>
+            {analysis.strategy_mode === "BACKTEST" && (
+              <button
+                onClick={() => setIsChartOpen(true)}
+                className="px-4 py-2 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 border border-indigo-500/30 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer self-start sm:self-auto"
+              >
+                <TrendingUp className="w-4 h-4" />
+                View Candlestick Chart
+              </button>
+            )}
           </div>
 
           {/* Metrics Cards */}
@@ -1520,6 +1531,16 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
             Select a deployment from the dropdown and click "Analyze" to view performance metrics and P&L visualization
           </p>
         </div>
+      )}
+
+      {analysis && (
+        <CandlestickSidebar
+          deploymentId={deploymentId}
+          symbol={analysis.symbol}
+          date={analysis.time_range.start ? analysis.time_range.start.slice(0, 10) : ''}
+          isOpen={isChartOpen}
+          onClose={() => setIsChartOpen(false)}
+        />
       )}
     </div>
   );
