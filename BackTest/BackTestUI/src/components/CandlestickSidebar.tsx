@@ -9,7 +9,7 @@ import { ChevronRight, ZoomIn, ZoomOut, RotateCcw, AlertTriangle } from 'lucide-
 import { api } from '../api';
 
 interface CandlestickSidebarProps {
-  deploymentId: string;
+  deploymentId?: string;
   symbol: string;
   date: string;
   isOpen: boolean;
@@ -27,18 +27,29 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
   const [candlesCount, setCandlesCount] = useState(0);
 
   const loadCandleData = async () => {
-    if (!deploymentId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await api.deployments.getCandles(deploymentId, timeframe);
-      const chartData: CandlestickData<Time>[] = res.data.map(c => ({
-        time: c.time as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close
-      }));
+      let chartData: CandlestickData<Time>[] = [];
+      if (deploymentId) {
+        const res = await api.deployments.getCandles(deploymentId, timeframe);
+        chartData = res.data.map(c => ({
+          time: c.time as Time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close
+        }));
+      } else {
+        const res = await api.symbols.getCandles(symbol, date, timeframe);
+        chartData = res.data.data.map(c => ({
+          time: c.time as Time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close
+        }));
+      }
       setCandlesCount(chartData.length);
       
       if (candlestickSeriesRef.current) {
@@ -109,7 +120,7 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
       chartRef.current = null;
       candlestickSeriesRef.current = null;
     };
-  }, [isOpen, deploymentId]);
+  }, [isOpen, deploymentId, symbol, date]);
 
   useEffect(() => {
     if (isOpen) {

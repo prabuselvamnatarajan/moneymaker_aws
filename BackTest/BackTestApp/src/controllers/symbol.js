@@ -4,7 +4,8 @@ import {
   getSymbolById,
   updateSymbol,
   deleteSymbol,
-  bulkCreateSymbols
+  bulkCreateSymbols,
+  getSymbolCandles
 } from "../services/symbol.js";
 
 export const bulkCreateSymbolController = async (req, res, next) => {
@@ -87,6 +88,22 @@ export const deleteSymbolController = async (req, res, next) => {
     }
     res.status(200).json({
       message: "Symbol deleted successfully",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSymbolCandlesController = async (req, res, next) => {
+  try {
+    const symbol = req.params.symbol;
+    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    const timeframe = req.query.timeframe || "1m";
+
+    const result = await getSymbolCandles(symbol, date, timeframe);
+    res.status(200).json({
+      message: "Candles retrieved successfully",
       data: result
     });
   } catch (error) {

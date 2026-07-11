@@ -154,6 +154,19 @@ export default function Sidebar({
             </button>
 
             <button
+              id="nav-live-candlestick-btn"
+              onClick={() => handleNav('live-candlestick')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                activeScreen === 'live-candlestick' 
+                  ? 'bg-slate-900 text-white shadow-xs border-l-2 border-indigo-500 pl-2.5' 
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+              }`}
+            >
+              <LineChart className="w-4 h-4 text-pink-400 shrink-0" />
+              <span>Live Candlestick</span>
+            </button>
+
+            <button
               id="nav-transactions-btn"
               onClick={() => handleNav('transactions')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${

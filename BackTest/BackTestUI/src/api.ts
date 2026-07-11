@@ -465,6 +465,28 @@ export const api = {
       });
       return handleResponse<{ data: any }>(res);
     },
+
+    async getCandles(symbol: string, date: string, timeframe: string = '1m') {
+      const res = await fetch(`${BASE_URL}/symbols/${encodeURIComponent(symbol)}/candles?date=${encodeURIComponent(date)}&timeframe=${encodeURIComponent(timeframe)}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{
+        data: {
+          symbol: string;
+          date: string;
+          timeframe: string;
+          data: Array<{
+            time: number;
+            open: number;
+            high: number;
+            low: number;
+            close: number;
+            volume: number;
+          }>;
+        };
+      }>(res);
+    },
   },
 
   // Strategies API

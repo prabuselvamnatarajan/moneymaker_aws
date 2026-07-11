@@ -1,4 +1,6 @@
 import mongoose from "mongoose";
+import fs from "fs/promises";
+import path from "path";
 import UserSymbol from "../models/userSymbol.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { createClient } from "redis";
@@ -366,6 +368,117 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
   return {
     message: `Successfully processed bulk symbol addition. Added ${addedSymbols.length} new symbols.`,
     data: addedSymbols
+  };
+};
+
+export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
+  const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
+  let filePath = path.join(process.cwd(), "..", "exportedData", date, `${sanitizedSymbol}.json`);
+  
+  try {
+    await fs.access(filePath);
+  } catch (err) {
+    const fallbackPath = path.join("/shared", "exportedData", date, `${sanitizedSymbol}.json`);
+    try {
+      await fs.access(fallbackPath);
+      filePath = fallbackPath;
+    } catch (fallbackErr) {
+      // Keep original filePath to let standard error handling capture it
+    }
+  }
+  
+  let data;
+  try {
+    const fileContent = await fs.readFile(filePath, "utf8");
+    data = JSON.parse(fileContent);
+  } catch (err) {
+    console.error(`[Candles Service] Error reading or parsing file ${filePath}:`, err.message);
+    return {
+      symbol,
+      date,
+      timeframe,
+      data: []
+    };
+  }
+
+  if (!Array.isArray(data)) {
+    return { symbol, date, timeframe, data: [] };
+  }
+
+  let intervalMs = 60 * 1000;
+  if (timeframe === "5m") {
+    intervalMs = 5 * 60 * 1000;
+  } else if (timeframe === "15m") {
+    intervalMs = 15 * 60 * 1000;
+  }
+
+  const buckets = {};
+
+  for (const tick of data) {
+    if (!tick.timestamp || !tick.fullFeed || !tick.fullFeed.marketFF || !tick.fullFeed.marketFF.ltpc) {
+      continue;
+    }
+    const ltp = tick.fullFeed.marketFF.ltpc.ltp;
+    if (ltp === undefined || ltp === null) {
+      continue;
+    }
+
+    const timestampMs = new Date(tick.timestamp).getTime();
+    if (isNaN(timestampMs)) {
+      continue;
+    }
+
+    const bucketTimeMs = Math.floor(timestampMs / intervalMs) * intervalMs;
+    const volume = tick.fullFeed.marketFF.ltpc.ltq ? parseFloat(tick.fullFeed.marketFF.ltpc.ltq) : 0;
+
+    if (!buckets[bucketTimeMs]) {
+      buckets[bucketTimeMs] = {
+        time: Math.floor(bucketTimeMs / 1000),
+        open: ltp,
+        high: ltp,
+        low: ltp,
+        close: ltp,
+        volume: volume,
+        ticksCount: 1,
+        firstTickTime: timestampMs,
+        lastTickTime: timestampMs
+      };
+    } else {
+      const b = buckets[bucketTimeMs];
+      if (timestampMs < b.firstTickTime) {
+        b.open = ltp;
+        b.firstTickTime = timestampMs;
+      }
+      if (timestampMs > b.lastTickTime) {
+        b.close = ltp;
+        b.lastTickTime = timestampMs;
+      }
+      if (ltp > b.high) b.high = ltp;
+      if (ltp < b.low) b.low = ltp;
+      b.volume += volume;
+      b.ticksCount += 1;
+    }
+  }
+
+  const candles = Object.keys(buckets)
+    .map(key => {
+      const b = buckets[key];
+      return {
+        time: b.time,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        volume: Math.round(b.volume)
+      };
+    })
+    .sort((a, b) => a.time - b.time);
+
+  return {
+    symbol,
+    date,
+    timeframe,
+    data: candles
   };
 };
 
