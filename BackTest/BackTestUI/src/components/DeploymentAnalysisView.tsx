@@ -183,10 +183,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
         newStart = Math.max(0, newEnd - newRange);
       }
       
-      const start = Math.round(newStart);
-      const end = Math.round(newEnd);
-      if (!isNaN(start) && !isNaN(end) && isFinite(start) && isFinite(end) && start < end) {
-        setPnLZoomX([start, end]);
+      if (!isNaN(newStart) && !isNaN(newEnd) && isFinite(newStart) && isFinite(newEnd) && newStart < newEnd) {
+        setPnLZoomX([newStart, newEnd]);
       }
     } else {
       const current = intraZoomX || defaultDomain;
@@ -209,10 +207,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
         newStart = Math.max(0, newEnd - newRange);
       }
       
-      const start = newStart;
-      const end = newEnd;
-      if (!isNaN(start) && !isNaN(end) && isFinite(start) && isFinite(end) && start < end) {
-        setIntraZoomX([start, end]);
+      if (!isNaN(newStart) && !isNaN(newEnd) && isFinite(newStart) && isFinite(newEnd) && newStart < newEnd) {
+        setIntraZoomX([newStart, newEnd]);
       }
     }
   };
@@ -265,10 +261,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
         newStart = Math.max(0, newEnd - newRange);
       }
       
-      const start = Math.round(newStart);
-      const end = Math.round(newEnd);
-      if (!isNaN(start) && !isNaN(end) && isFinite(start) && isFinite(end) && start < end) {
-        setIntraZoomY([start, end]);
+      if (!isNaN(newStart) && !isNaN(newEnd) && isFinite(newStart) && isFinite(newEnd) && newStart < newEnd) {
+        setIntraZoomY([newStart, newEnd]);
       }
     }
   };
@@ -288,16 +282,42 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       const isYAxisZone = x < 65;
       const isXAxisZone = y > 330;
       
-      // User request: "scrolls up for zoom out and scrolls down for zoom in"
-      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      // Fine-grained delta-based zoom speed
+      const rawDelta = e.deltaY;
+      const normalizedDelta = Math.min(Math.max(rawDelta, -100), 100) / 100;
+      
+      // Scroll up (deltaY < 0): zoom out -> factor > 1
+      // Scroll down (deltaY > 0): zoom in -> factor < 1
+      const intensity = 0.04; // 4% zoom per tick
+      const factor = 1 - normalizedDelta * intensity;
+      
+      // Calculate mouse value positions
+      const gridLeft = 65;
+      const gridRight = rect.width - 20;
+      const gridTop = 20;
+      const gridBottom = rect.height - 60;
+      const gridWidth = gridRight - gridLeft;
+      const gridHeight = gridBottom - gridTop;
+      
+      const pctX = Math.min(Math.max((x - gridLeft) / gridWidth, 0), 1);
+      const pctY = Math.min(Math.max((gridBottom - y) / gridHeight, 0), 1);
+      
+      const currentX = pnlZoomX || [0, Math.max(1, processedChartData.length - 1)];
+      const pnlValues = processedChartData.map(d => d.pnl);
+      const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+      const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
+      const currentY = pnlZoomY || [minVal, maxVal];
+      
+      const mouseValX = currentX[0] + pctX * (currentX[1] - currentX[0]);
+      const mouseValY = currentY[0] + pctY * (currentY[1] - currentY[0]);
       
       if (isYAxisZone) {
-        zoomYAxis(true, factor);
+        zoomYAxis(true, factor, mouseValY);
       } else if (isXAxisZone) {
-        zoomXAxis(true, factor);
+        zoomXAxis(true, factor, mouseValX);
       } else {
-        zoomXAxis(true, factor);
-        zoomYAxis(true, factor);
+        zoomXAxis(true, factor, mouseValX);
+        zoomYAxis(true, factor, mouseValY);
       }
     };
 
@@ -320,16 +340,34 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       const isYAxisZone = x < 65;
       const isXAxisZone = y > 330;
       
-      // User request: "scrolls up for zoom out and scrolls down for zoom in"
-      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      const rawDelta = e.deltaY;
+      const normalizedDelta = Math.min(Math.max(rawDelta, -100), 100) / 100;
+      const intensity = 0.04;
+      const factor = 1 - normalizedDelta * intensity;
+      
+      const gridLeft = 65;
+      const gridRight = rect.width - 20;
+      const gridTop = 20;
+      const gridBottom = rect.height - 60;
+      const gridWidth = gridRight - gridLeft;
+      const gridHeight = gridBottom - gridTop;
+      
+      const pctX = Math.min(Math.max((x - gridLeft) / gridWidth, 0), 1);
+      const pctY = Math.min(Math.max((gridBottom - y) / gridHeight, 0), 1);
+      
+      const currentX = intraZoomX || defaultDomain;
+      const currentY = intraZoomY || [0, 59];
+      
+      const mouseValX = currentX[0] + pctX * (currentX[1] - currentX[0]);
+      const mouseValY = currentY[0] + pctY * (currentY[1] - currentY[0]);
       
       if (isYAxisZone) {
-        zoomYAxis(false, factor);
+        zoomYAxis(false, factor, mouseValY);
       } else if (isXAxisZone) {
-        zoomXAxis(false, factor);
+        zoomXAxis(false, factor, mouseValX);
       } else {
-        zoomXAxis(false, factor);
-        zoomYAxis(false, factor);
+        zoomXAxis(false, factor, mouseValX);
+        zoomYAxis(false, factor, mouseValY);
       }
     };
 
@@ -379,17 +417,20 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const handlePnLMouseMove = (e: any) => {
     if (!pnlDragState || !pnlDragState.isDragging || !e || isNaN(e.chartX) || isNaN(e.chartY)) return;
     
+    const rect = pnlContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
     const dx = e.chartX - pnlDragState.startX;
     const dy = e.chartY - pnlDragState.startY;
     
-    const chartWidth = 500;
-    const chartHeight = 350;
+    const gridWidth = rect.width - 85;
+    const gridHeight = rect.height - 80;
     
     const xRange = pnlDragState.startDomainX[1] - pnlDragState.startDomainX[0];
     const yRange = pnlDragState.startDomainY[1] - pnlDragState.startDomainY[0];
     
-    const shiftX = -dx * (xRange / chartWidth);
-    const shiftY = dy * (yRange / chartHeight);
+    const shiftX = -dx * (xRange / gridWidth);
+    const shiftY = dy * (yRange / gridHeight);
     
     const dataLen = processedChartData.length;
     let newStartX = pnlDragState.startDomainX[0] + shiftX;
@@ -404,10 +445,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       newEndX = dataLen - 1;
     }
     
-    const startX = Math.round(newStartX);
-    const endX = Math.round(newEndX);
-    if (!isNaN(startX) && !isNaN(endX) && isFinite(startX) && isFinite(endX) && startX < endX) {
-      setPnLZoomX([startX, endX]);
+    if (!isNaN(newStartX) && !isNaN(newEndX) && isFinite(newStartX) && isFinite(newEndX) && newStartX < newEndX) {
+      setPnLZoomX([newStartX, newEndX]);
     }
     
     const newStartY = pnlDragState.startDomainY[0] + shiftY;
@@ -441,17 +480,20 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const handleIntraMouseMove = (e: any) => {
     if (!intraDragState || !intraDragState.isDragging || !e || isNaN(e.chartX) || isNaN(e.chartY)) return;
     
+    const rect = intraContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
     const dx = e.chartX - intraDragState.startX;
     const dy = e.chartY - intraDragState.startY;
     
-    const chartWidth = 500;
-    const chartHeight = 350;
+    const gridWidth = rect.width - 85;
+    const gridHeight = rect.height - 80;
     
     const xRange = intraDragState.startDomainX[1] - intraDragState.startDomainX[0];
     const yRange = intraDragState.startDomainY[1] - intraDragState.startDomainY[0];
     
-    const shiftX = -dx * (xRange / chartWidth);
-    const shiftY = dy * (yRange / chartHeight);
+    const shiftX = -dx * (xRange / gridWidth);
+    const shiftY = dy * (yRange / gridHeight);
     
     let newStartX = intraDragState.startDomainX[0] + shiftX;
     let newEndX = intraDragState.startDomainX[1] + shiftX;
@@ -477,16 +519,11 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       newEndY = 59;
     }
     
-    const startX = newStartX;
-    const endX = newEndX;
-    const startY = Math.round(newStartY);
-    const endY = Math.round(newEndY);
-    
-    if (!isNaN(startX) && !isNaN(endX) && isFinite(startX) && isFinite(endX) && startX < endX) {
-      setIntraZoomX([startX, endX]);
+    if (!isNaN(newStartX) && !isNaN(newEndX) && isFinite(newStartX) && isFinite(newEndX) && newStartX < newEndX) {
+      setIntraZoomX([newStartX, newEndX]);
     }
-    if (!isNaN(startY) && !isNaN(endY) && isFinite(startY) && isFinite(endY) && startY < endY) {
-      setIntraZoomY([startY, endY]);
+    if (!isNaN(newStartY) && !isNaN(newEndY) && isFinite(newStartY) && isFinite(newEndY) && newStartY < newEndY) {
+      setIntraZoomY([newStartY, newEndY]);
     }
   };
 
@@ -499,12 +536,16 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
     startDist: number;
     startDomainX: [number, number];
     startDomainY: [number, number];
+    centerX: number;
+    centerY: number;
   } | null>(null);
 
   const [intraTouchState, setIntraTouchState] = useState<{
     startDist: number;
     startDomainX: [number, number];
     startDomainY: [number, number];
+    centerX: number;
+    centerY: number;
   } | null>(null);
 
   const handlePnLTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -519,11 +560,33 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
       const currentY = pnlZoomY || [minVal, maxVal];
       
-      setPnLTouchState({
-        startDist: dist,
-        startDomainX: [currentX[0], currentX[1]],
-        startDomainY: [Number(currentY[0]), Number(currentY[1])],
-      });
+      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      
+      const rect = pnlContainerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const x = centerX - rect.left;
+        const y = centerY - rect.top;
+        const gridLeft = 65;
+        const gridRight = rect.width - 20;
+        const gridTop = 20;
+        const gridBottom = rect.height - 60;
+        const gridWidth = gridRight - gridLeft;
+        const gridHeight = gridBottom - gridTop;
+        const pctX = Math.min(Math.max((x - gridLeft) / gridWidth, 0), 1);
+        const pctY = Math.min(Math.max((gridBottom - y) / gridHeight, 0), 1);
+        
+        const mouseValX = currentX[0] + pctX * (currentX[1] - currentX[0]);
+        const mouseValY = currentY[0] + pctY * (currentY[1] - currentY[0]);
+
+        setPnLTouchState({
+          startDist: dist,
+          startDomainX: [currentX[0], currentX[1]],
+          startDomainY: [Number(currentY[0]), Number(currentY[1])],
+          centerX: mouseValX,
+          centerY: mouseValY,
+        });
+      }
     }
   };
 
@@ -535,8 +598,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       );
       if (pnlTouchState.startDist > 0 && dist > 0) {
         const factor = pnlTouchState.startDist / dist;
-        zoomXAxis(true, factor);
-        zoomYAxis(true, factor);
+        zoomXAxis(true, factor, pnlTouchState.centerX);
+        zoomYAxis(true, factor, pnlTouchState.centerY);
       }
     }
   };
@@ -554,11 +617,33 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       const currentX = intraZoomX || defaultDomain;
       const currentY = intraZoomY || [0, 59];
       
-      setIntraTouchState({
-        startDist: dist,
-        startDomainX: [currentX[0], currentX[1]],
-        startDomainY: [currentY[0], currentY[1]],
-      });
+      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      
+      const rect = intraContainerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const x = centerX - rect.left;
+        const y = centerY - rect.top;
+        const gridLeft = 65;
+        const gridRight = rect.width - 20;
+        const gridTop = 20;
+        const gridBottom = rect.height - 60;
+        const gridWidth = gridRight - gridLeft;
+        const gridHeight = gridBottom - gridTop;
+        const pctX = Math.min(Math.max((x - gridLeft) / gridWidth, 0), 1);
+        const pctY = Math.min(Math.max((gridBottom - y) / gridHeight, 0), 1);
+        
+        const mouseValX = currentX[0] + pctX * (currentX[1] - currentX[0]);
+        const mouseValY = currentY[0] + pctY * (currentY[1] - currentY[0]);
+
+        setIntraTouchState({
+          startDist: dist,
+          startDomainX: [currentX[0], currentX[1]],
+          startDomainY: [currentY[0], currentY[1]],
+          centerX: mouseValX,
+          centerY: mouseValY,
+        });
+      }
     }
   };
 
@@ -570,8 +655,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       );
       if (intraTouchState.startDist > 0 && dist > 0) {
         const factor = intraTouchState.startDist / dist;
-        zoomXAxis(false, factor);
-        zoomYAxis(false, factor);
+        zoomXAxis(false, factor, intraTouchState.centerX);
+        zoomYAxis(false, factor, intraTouchState.centerY);
       }
     }
   };
@@ -1134,7 +1219,9 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
               onTouchMove={handlePnLTouchMove}
               onTouchEnd={handlePnLTouchEnd}
               onMouseLeave={handlePnLMouseUp}
-              className="h-[400px] select-none"
+              onDoubleClick={handlePnLResetZoom}
+              className="h-[400px] select-none cursor-crosshair"
+              title="Scroll to zoom (both or single axis), Drag to pan, Double-click to reset"
             >
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -1151,7 +1238,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       domain={pnlXDomain}
                       allowDataOverflow={true}
                       tickFormatter={(idx) => {
-                        const point = processedChartData[idx];
+                        const point = processedChartData[Math.round(idx)];
                         return point ? formatTimestamp(point.timestamp) : '';
                       }}
                       stroke="#94a3b8"
@@ -1172,7 +1259,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                         color: '#f1f5f9',
                       }}
                       labelFormatter={(idx) => {
-                        const point = processedChartData[idx];
+                        const point = processedChartData[Math.round(idx)];
                         return point ? formatTimestamp(point.timestamp) : '';
                       }}
                       formatter={(value: number) => [formatCurrency(value), 'Cumulative P&L']}
@@ -1223,7 +1310,9 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
               onTouchMove={handleIntraTouchMove}
               onTouchEnd={handleIntraTouchEnd}
               onMouseLeave={handleIntraMouseUp}
-              className="h-[400px] select-none"
+              onDoubleClick={handleIntraResetZoom}
+              className="h-[400px] select-none cursor-crosshair"
+              title="Scroll to zoom (both or single axis), Drag to pan, Double-click to reset"
             >
               {intradayData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
