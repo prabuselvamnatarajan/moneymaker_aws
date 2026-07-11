@@ -17,8 +17,8 @@ function isWithinTradingWindow(ts, strategy_details = {}) {
   const startStr = window.start || '11:30';
   const endStr   = window.end   || '14:00';
 
-  // Convert epoch seconds → IST Date
-  const epochMs = Number(ts) * 1000;     // ts is in seconds from Upstox feed
+  // Convert epoch milliseconds → IST Date (Upstox ts is already in ms)
+  const epochMs = Number(ts);
   const istMs   = epochMs + IST_OFFSET_MS;
   const istDate = new Date(istMs);
 
