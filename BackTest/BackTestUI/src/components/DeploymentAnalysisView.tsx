@@ -18,6 +18,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
   const { showError } = useToast();
   
   const [deploymentId, setDeploymentId] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [startTime, setStartTime] = useState<string>('');
   const [endTime, setEndTime] = useState<string>('');
   const [analysis, setAnalysis] = useState<DeploymentAnalysis | null>(null);
@@ -57,6 +59,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
     try {
       const result = await api.deployments.getAnalysis(
         idToFetch,
+        startDate || undefined,
+        endDate || undefined,
         startTime || undefined,
         endTime || undefined
       );
@@ -125,8 +129,10 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
         break;
     }
     
-    setStartTime(start.toISOString().split('T')[0]);
-    setEndTime(now.toISOString().split('T')[0]);
+    setStartDate(start.toISOString().split('T')[0]);
+    setEndDate(now.toISOString().split('T')[0]);
+    setStartTime('');
+    setEndTime('');
   };
 
   const formatTimestamp = (timestamp: string) => {
@@ -160,7 +166,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
 
       {/* Input Section */}
       <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {/* Deployment ID Dropdown */}
           <div className="lg:col-span-1">
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
@@ -183,7 +189,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
             </div>
           </div>
 
-          {/* Start Time */}
+          {/* Start Date */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
               <Calendar className="w-3 h-3" />
@@ -191,13 +197,28 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
             </label>
             <input
               type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Start Time */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+              <Clock className="w-3 h-3" />
+              Start Time
+            </label>
+            <input
+              type="time"
+              step="1"
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
               className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
 
-          {/* End Time */}
+          {/* End Date */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
               <Calendar className="w-3 h-3" />
@@ -205,6 +226,21 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
             </label>
             <input
               type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* End Time */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+              <Clock className="w-3 h-3" />
+              End Time
+            </label>
+            <input
+              type="time"
+              step="1"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
               className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"

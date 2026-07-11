@@ -353,7 +353,25 @@ export const getDeploymentMetrics = async (userId, id) => {
   };
 };
 
-export const getDeploymentAnalysis = async (userId, id, startTime, endTime) => {
+const parseDateTime = (dateStr, timeStr, defaultTime) => {
+  if (!dateStr) return null;
+  if (dateStr.includes('T')) {
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const time = timeStr || defaultTime;
+  let fullStr = `${dateStr}T${time}`;
+  if (time.split(':').length === 2) {
+    fullStr += ':00';
+  }
+  if (!fullStr.endsWith('Z') && !/\+\d{2}:?\d{2}$/.test(fullStr) && !/-\d{2}:?\d{2}$/.test(fullStr)) {
+    fullStr += '.000Z';
+  }
+  const d = new Date(fullStr);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+export const getDeploymentAnalysis = async (userId, id, startDate, endDate, startTime, endTime) => {
   const deployment = await Deployment.findOne({ _id: id, user_id: userId });
   if (!deployment) return null;
 
@@ -361,10 +379,13 @@ export const getDeploymentAnalysis = async (userId, id, startTime, endTime) => {
   
   // Build time filter
   const timeFilter = { deployment_id: deployment._id };
-  if (startTime || endTime) {
+  const start = parseDateTime(startDate, startTime, '00:00');
+  const end = parseDateTime(endDate, endTime, '23:59:59');
+
+  if (start || end) {
     timeFilter.created_at = {};
-    if (startTime) timeFilter.created_at.$gte = new Date(startTime);
-    if (endTime) timeFilter.created_at.$lte = new Date(endTime);
+    if (start) timeFilter.created_at.$gte = start;
+    if (end) timeFilter.created_at.$lte = end;
   }
 
   const trades = await Trade.find(timeFilter).sort({ created_at: 1 });
@@ -499,8 +520,8 @@ export const getDeploymentAnalysis = async (userId, id, startTime, endTime) => {
     symbol: deployment.symbol,
     strategy_mode: deployment.strategy_mode,
     time_range: {
-      start: startTime || null,
-      end: endTime || null,
+      start: start ? start.toISOString() : null,
+      end: end ? end.toISOString() : null,
     },
     metrics: {
       total_trades: totalTrades,
@@ -517,7 +538,7 @@ export const getDeploymentAnalysis = async (userId, id, startTime, endTime) => {
     time_series: timeSeriesData,
     intraday_trades: intradayTrades,
   };
-};
+};;
 
 export const syncAllDeploymentsToRedis = async () => {
   const redisUrl = process.env.REDIS_URL;

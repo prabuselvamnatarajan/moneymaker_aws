@@ -584,8 +584,10 @@ export const api = {
       return handleResponse<{ data: any }>(res);
     },
 
-    async getAnalysis(id: string, startTime?: string, endTime?: string) {
+    async getAnalysis(id: string, startDate?: string, endDate?: string, startTime?: string, endTime?: string) {
       const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
       if (startTime) params.append('start_time', startTime);
       if (endTime) params.append('end_time', endTime);
       const queryString = params.toString();
@@ -595,31 +597,43 @@ export const api = {
         headers: getHeaders(),
       });
       return handleResponse<{
-        deployment_id: string;
-        deployment_name: string;
-        symbol: string;
-        strategy_mode: string;
-        time_range: {
-          start: string | null;
-          end: string | null;
+        data: {
+          deployment_id: string;
+          deployment_name: string;
+          symbol: string;
+          strategy_mode: string;
+          time_range: {
+            start: string | null;
+            end: string | null;
+          };
+          metrics: {
+            total_trades: number;
+            total_pnl: number;
+            gross_profit: number;
+            gross_loss: number;
+            profitability_factor: number | string;
+            wins: number;
+            losses: number;
+            win_rate: string;
+            max_drawdown: number;
+            max_drawup: number;
+          };
+          time_series: Array<{
+            timestamp: string;
+            pnl: number;
+            trade_id: string;
+          }>;
+          intraday_trades: Array<{
+            timestamp: string;
+            time_of_day: string;
+            hour: number;
+            minute: number;
+            second: number;
+            pnl: number;
+            trade_id: string;
+            type_of_order: string;
+          }>;
         };
-        metrics: {
-          total_trades: number;
-          total_pnl: number;
-          gross_profit: number;
-          gross_loss: number;
-          profitability_factor: number | string;
-          wins: number;
-          losses: number;
-          win_rate: string;
-          max_drawdown: number;
-          max_drawup: number;
-        };
-        time_series: Array<{
-          timestamp: string;
-          pnl: number;
-          trade_id: string;
-        }>;
       }>(res);
     },
   },

@@ -165,8 +165,25 @@ export const getDeploymentMetricsController = async (req, res, next) => {
 export const getDeploymentAnalysisController = async (req, res, next) => {
   try {
     const userId = req.auth.userId;
-    const { start_time, end_time } = req.query;
-    const result = await getDeploymentAnalysis(userId, req.params.id, start_time, end_time);
+    const { start_date, end_date, start_time, end_time } = req.query;
+
+    let startDate = start_date;
+    let endDate = end_date;
+    let startTime = start_time;
+    let endTime = end_time;
+
+    // Backward compatibility:
+    // If start_time contains a date (like '2026-07-09') and start_date is not provided
+    if (start_time && start_time.includes('-') && !start_date) {
+      startDate = start_time;
+      startTime = undefined;
+    }
+    if (end_time && end_time.includes('-') && !end_date) {
+      endDate = end_time;
+      endTime = undefined;
+    }
+
+    const result = await getDeploymentAnalysis(userId, req.params.id, startDate, endDate, startTime, endTime);
     if (!result) {
       return res.status(404).json({ message: "Deployment not found" });
     }
