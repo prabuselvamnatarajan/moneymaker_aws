@@ -66,22 +66,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const [startTime, setStartTime] = useState<string>('');
   const [endTime, setEndTime] = useState<string>('');
 
-  useEffect(() => {
-    const prevTz = prevTimezoneRef.current;
-    if (prevTz !== timezone) {
-      if (startDate) {
-        const converted = convertDateTimeZone(startDate, startTime, '00:00:00', prevTz, timezone);
-        setStartDate(converted.date);
-        setStartTime(converted.time);
-      }
-      if (endDate) {
-        const converted = convertDateTimeZone(endDate, endTime, '23:59:59', prevTz, timezone);
-        setEndDate(converted.date);
-        setEndTime(converted.time);
-      }
-      prevTimezoneRef.current = timezone;
-    }
-  }, [timezone, startDate, startTime, endDate, endTime]);
+
 
   const startHour = startTime.split(':')[0] || '00';
   const startMin = startTime.split(':')[1] || '00';
@@ -148,6 +133,88 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
     fetchDeployments();
   }, []);
 
+  useEffect(() => {
+    const prevTz = prevTimezoneRef.current;
+    if (prevTz !== timezone) {
+      if (startDate) {
+        const converted = convertDateTimeZone(startDate, startTime, '00:00:00', prevTz, timezone);
+        setStartDate(converted.date);
+        setStartTime(converted.time);
+      }
+      if (endDate) {
+        const converted = convertDateTimeZone(endDate, endTime, '23:59:59', prevTz, timezone);
+        setEndDate(converted.date);
+        setEndTime(converted.time);
+      }
+      prevTimezoneRef.current = timezone;
+    }
+  }, [timezone, startDate, startTime, endDate, endTime]);
+
+  useEffect(() => {
+    if (!analysis) {
+      setIntradayData([]);
+      setDefaultDomain([0, 24]);
+      return;
+    }
+
+    const rawIntraday = analysis.intraday_trades || [];
+    const processedIntraday = rawIntraday.map((trade: any) => {
+      const d = new Date(trade.timestamp);
+      let h = trade.hour;
+      let m = trade.minute;
+      let s = trade.second;
+
+      if (timezone === 'UTC') {
+        h = d.getUTCHours();
+        m = d.getUTCMinutes();
+        s = d.getUTCSeconds();
+      } else {
+        h = d.getHours();
+        m = d.getMinutes();
+        s = d.getSeconds();
+      }
+
+      const timeOfDay = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      return {
+        ...trade,
+        hour: h,
+        minute: m,
+        second: s,
+        time_of_day: timeOfDay,
+      };
+    });
+
+    setIntradayData(processedIntraday);
+
+    // Calculate the default zoom domain based on trade density
+    if (processedIntraday.length > 0) {
+      const hourBuckets = new Map<number, number>();
+      for (let i = 0; i < 24; i++) {
+        hourBuckets.set(i, 0);
+      }
+      
+      processedIntraday.forEach((trade: any) => {
+        const count = hourBuckets.get(trade.hour) || 0;
+        hourBuckets.set(trade.hour, count + 1);
+      });
+      
+      let maxHour = 0;
+      let maxCount = 0;
+      hourBuckets.forEach((count, hour) => {
+        if (count > maxCount) {
+          maxCount = count;
+          maxHour = hour;
+        }
+      });
+      
+      const startHour = Math.max(0, maxHour - 3);
+      const endHour = Math.min(24, maxHour + 3);
+      setDefaultDomain([startHour, endHour]);
+    } else {
+      setDefaultDomain([0, 24]);
+    }
+  }, [analysis, timezone]);
+
   const fetchAnalysis = async () => {
     const idToFetch = deploymentId.trim();
     if (!idToFetch) {
@@ -193,65 +260,6 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       );
       setAnalysis(result.data);
       setChartData(result.data.time_series || []);
-      
-      // Process intraday trades based on timezone and find data-heavy region
-      const rawIntraday = result.data.intraday_trades || [];
-      const processedIntraday = rawIntraday.map((trade: any) => {
-        const d = new Date(trade.timestamp);
-        let h = trade.hour;
-        let m = trade.minute;
-        let s = trade.second;
-
-        if (timezone === 'UTC') {
-          h = d.getUTCHours();
-          m = d.getUTCMinutes();
-          s = d.getUTCSeconds();
-        } else {
-          h = d.getHours();
-          m = d.getMinutes();
-          s = d.getSeconds();
-        }
-
-        const timeOfDay = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-        return {
-          ...trade,
-          hour: h,
-          minute: m,
-          second: s,
-          time_of_day: timeOfDay,
-        };
-      });
-      setIntradayData(processedIntraday);
-      
-      // Calculate the default zoom domain based on trade density
-      if (processedIntraday.length > 0) {
-        const hourBuckets = new Map<number, number>();
-        for (let i = 0; i < 24; i++) {
-          hourBuckets.set(i, 0);
-        }
-        
-        processedIntraday.forEach((trade: any) => {
-          const count = hourBuckets.get(trade.hour) || 0;
-          hourBuckets.set(trade.hour, count + 1);
-        });
-        
-        // Find the hour with most trades
-        let maxHour = 0;
-        let maxCount = 0;
-        hourBuckets.forEach((count, hour) => {
-          if (count > maxCount) {
-            maxCount = count;
-            maxHour = hour;
-          }
-        });
-        
-        // Set default domain to center around the busiest hour (±3 hours)
-        const startHour = Math.max(0, maxHour - 3);
-        const endHour = Math.min(24, maxHour + 3);
-        setDefaultDomain([startHour, endHour]);
-      } else {
-        setDefaultDomain([0, 24]);
-      }
     } catch (err: any) {
       showError(`Failed to fetch analysis: ${err.message}`);
       setAnalysis(null);
