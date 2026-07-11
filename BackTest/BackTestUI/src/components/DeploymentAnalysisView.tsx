@@ -4,11 +4,13 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ScatterChart, Scatter, ZAxis } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ScatterChart, Scatter, ZAxis, ReferenceArea } from 'recharts';
 import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Search, Clock } from 'lucide-react';
 import { DeploymentAnalysis, TimeSeriesDataPoint, IntradayTradeDataPoint, Deployment } from '../types';
 import { api } from '../api';
 import { useToast } from './Toast';
+
+const RefArea = ReferenceArea as any;
 
 interface DeploymentAnalysisViewProps {
   selectedDeploymentId: string | null;
@@ -113,6 +115,240 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const [intradayData, setIntradayData] = useState<IntradayTradeDataPoint[]>([]);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [defaultDomain, setDefaultDomain] = useState<[number, number]>([0, 24]);
+
+  // Zooming states and handlers
+  const [pnlZoomMode, setPnLZoomMode] = useState<'x' | 'y' | 'both'>('x');
+  const [pnlZoomX, setPnLZoomX] = useState<[number, number] | null>(null);
+  const [pnlZoomY, setPnLZoomY] = useState<[number, number] | null>(null);
+  const [pnlRefAreaLeft, setPnLRefAreaLeft] = useState<number | undefined>(undefined);
+  const [pnlRefAreaRight, setPnLRefAreaRight] = useState<number | undefined>(undefined);
+  const [pnlRefAreaTop, setPnLRefAreaTop] = useState<number | undefined>(undefined);
+  const [pnlRefAreaBottom, setPnLRefAreaBottom] = useState<number | undefined>(undefined);
+
+  const [intraZoomMode, setIntraZoomMode] = useState<'x' | 'y' | 'both'>('x');
+  const [intraZoomX, setIntraZoomX] = useState<[number, number] | null>(null);
+  const [intraZoomY, setIntraZoomY] = useState<[number, number] | null>(null);
+  const [intraRefAreaLeft, setIntraRefAreaLeft] = useState<number | undefined>(undefined);
+  const [intraRefAreaRight, setIntraRefAreaRight] = useState<number | undefined>(undefined);
+  const [intraRefAreaTop, setIntraRefAreaTop] = useState<number | undefined>(undefined);
+  const [intraRefAreaBottom, setIntraRefAreaBottom] = useState<number | undefined>(undefined);
+
+  const isPnLZoomed = pnlZoomX !== null || pnlZoomY !== null;
+  const isIntraZoomed = intraZoomX !== null || intraZoomY !== null;
+
+  const handlePnLResetZoom = () => {
+    setPnLZoomX(null);
+    setPnLZoomY(null);
+    setPnLRefAreaLeft(undefined);
+    setPnLRefAreaRight(undefined);
+    setPnLRefAreaTop(undefined);
+    setPnLRefAreaBottom(undefined);
+  };
+
+  const handleIntraResetZoom = () => {
+    setIntraZoomX(null);
+    setIntraZoomY(null);
+    setIntraRefAreaLeft(undefined);
+    setIntraRefAreaRight(undefined);
+    setIntraRefAreaTop(undefined);
+    setIntraRefAreaBottom(undefined);
+  };
+
+  const processedChartData = chartData.map((d, index) => ({
+    ...d,
+    index,
+  }));
+
+  const pnlXDomain = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
+  const pnlYDomain = pnlZoomY || ['auto', 'auto'];
+
+  const scatterXDomain = intraZoomX || defaultDomain;
+  const scatterYDomain = intraZoomY || [0, 59];
+
+  const handlePnLMouseDown = (e: any) => {
+    if (!e) return;
+    const xVal = e.activeLabel !== undefined ? Number(e.activeLabel) : undefined;
+    const yVal = e.activePayload && e.activePayload[0]?.value !== undefined 
+      ? Number(e.activePayload[0].value) 
+      : undefined;
+    setPnLRefAreaLeft(xVal);
+    setPnLRefAreaBottom(yVal);
+  };
+
+  const handlePnLMouseMove = (e: any) => {
+    if (pnlRefAreaLeft === undefined) return;
+    if (!e) return;
+    const xVal = e.activeLabel !== undefined ? Number(e.activeLabel) : undefined;
+    const yVal = e.activePayload && e.activePayload[0]?.value !== undefined 
+      ? Number(e.activePayload[0].value) 
+      : undefined;
+    setPnLRefAreaRight(xVal);
+    setPnLRefAreaTop(yVal);
+  };
+
+  const handlePnLMouseUp = () => {
+    if (pnlRefAreaLeft === undefined || pnlRefAreaRight === undefined) {
+      setPnLRefAreaLeft(undefined);
+      setPnLRefAreaRight(undefined);
+      setPnLRefAreaTop(undefined);
+      setPnLRefAreaBottom(undefined);
+      return;
+    }
+
+    let left = pnlRefAreaLeft;
+    let right = pnlRefAreaRight;
+    if (left > right) {
+      [left, right] = [right, left];
+    }
+
+    let bottom = pnlRefAreaBottom;
+    let top = pnlRefAreaTop;
+    if (bottom !== undefined && top !== undefined && bottom > top) {
+      [bottom, top] = [top, bottom];
+    }
+
+    if (pnlZoomMode === 'x' || pnlZoomMode === 'both') {
+      if (left !== right) {
+        setPnLZoomX([left, right]);
+      }
+    }
+    if (pnlZoomMode === 'y' || pnlZoomMode === 'both') {
+      if (bottom !== undefined && top !== undefined && bottom !== top) {
+        setPnLZoomY([bottom, top]);
+      }
+    }
+
+    setPnLRefAreaLeft(undefined);
+    setPnLRefAreaRight(undefined);
+    setPnLRefAreaTop(undefined);
+    setPnLRefAreaBottom(undefined);
+  };
+
+  const handleIntraMouseDown = (e: any) => {
+    if (!e || !e.activePayload || e.activePayload.length === 0) return;
+    const hourVal = Number(e.activePayload[0].payload.hour);
+    const minuteVal = Number(e.activePayload[0].payload.minute);
+    setIntraRefAreaLeft(hourVal);
+    setIntraRefAreaBottom(minuteVal);
+  };
+
+  const handleIntraMouseMove = (e: any) => {
+    if (intraRefAreaLeft === undefined) return;
+    if (!e || !e.activePayload || e.activePayload.length === 0) return;
+    const hourVal = Number(e.activePayload[0].payload.hour);
+    const minuteVal = Number(e.activePayload[0].payload.minute);
+    setIntraRefAreaRight(hourVal);
+    setIntraRefAreaTop(minuteVal);
+  };
+
+  const handleIntraMouseUp = () => {
+    if (intraRefAreaLeft === undefined || intraRefAreaRight === undefined) {
+      setIntraRefAreaLeft(undefined);
+      setIntraRefAreaRight(undefined);
+      setIntraRefAreaTop(undefined);
+      setIntraRefAreaBottom(undefined);
+      return;
+    }
+
+    let left = intraRefAreaLeft;
+    let right = intraRefAreaRight;
+    if (left > right) {
+      [left, right] = [right, left];
+    }
+
+    let bottom = intraRefAreaBottom;
+    let top = intraRefAreaTop;
+    if (bottom !== undefined && top !== undefined && bottom > top) {
+      [bottom, top] = [top, bottom];
+    }
+
+    if (intraZoomMode === 'x' || intraZoomMode === 'both') {
+      if (left !== right) {
+        setIntraZoomX([left, right]);
+      }
+    }
+    if (intraZoomMode === 'y' || intraZoomMode === 'both') {
+      if (bottom !== undefined && top !== undefined && bottom !== top) {
+        setIntraZoomY([bottom, top]);
+      }
+    }
+
+    setIntraRefAreaLeft(undefined);
+    setIntraRefAreaRight(undefined);
+    setIntraRefAreaTop(undefined);
+    setIntraRefAreaBottom(undefined);
+  };
+
+  const zoomInPnLX = () => {
+    const currentDomain = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
+    const range = currentDomain[1] - currentDomain[0];
+    if (range <= 2) return;
+    const offset = Math.max(1, Math.round(range * 0.1));
+    setPnLZoomX([currentDomain[0] + offset, currentDomain[1] - offset]);
+  };
+
+  const zoomOutPnLX = () => {
+    const currentDomain = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
+    const range = currentDomain[1] - currentDomain[0];
+    const offset = Math.max(1, Math.round(range * 0.1));
+    const newStart = Math.max(0, currentDomain[0] - offset);
+    const newEnd = Math.min(Math.max(0, processedChartData.length - 1), currentDomain[1] + offset);
+    setPnLZoomX([newStart, newEnd]);
+  };
+
+  const zoomInPnLY = () => {
+    const pnlValues = processedChartData.map(d => d.pnl);
+    const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+    const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
+    const currentDomain = pnlZoomY || [minVal, maxVal];
+    const range = Number(currentDomain[1]) - Number(currentDomain[0]);
+    const offset = range * 0.1;
+    setPnLZoomY([Number(currentDomain[0]) + offset, Number(currentDomain[1]) - offset]);
+  };
+
+  const zoomOutPnLY = () => {
+    const pnlValues = processedChartData.map(d => d.pnl);
+    const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+    const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
+    const currentDomain = pnlZoomY || [minVal, maxVal];
+    const range = Number(currentDomain[1]) - Number(currentDomain[0]);
+    const offset = range * 0.1;
+    setPnLZoomY([Number(currentDomain[0]) - offset, Number(currentDomain[1]) + offset]);
+  };
+
+  const zoomInIntraX = () => {
+    const currentDomain = intraZoomX || defaultDomain;
+    const range = currentDomain[1] - currentDomain[0];
+    if (range <= 1) return;
+    const offset = range * 0.1;
+    setIntraZoomX([currentDomain[0] + offset, currentDomain[1] - offset]);
+  };
+
+  const zoomOutIntraX = () => {
+    const currentDomain = intraZoomX || defaultDomain;
+    const range = currentDomain[1] - currentDomain[0];
+    const offset = range * 0.1;
+    const newStart = Math.max(0, currentDomain[0] - offset);
+    const newEnd = Math.min(24, currentDomain[1] + offset);
+    setIntraZoomX([newStart, newEnd]);
+  };
+
+  const zoomInIntraY = () => {
+    const currentDomain = intraZoomY || [0, 59];
+    const range = currentDomain[1] - currentDomain[0];
+    if (range <= 5) return;
+    const offset = Math.max(1, Math.round(range * 0.1));
+    setIntraZoomY([currentDomain[0] + offset, currentDomain[1] - offset]);
+  };
+
+  const zoomOutIntraY = () => {
+    const currentDomain = intraZoomY || [0, 59];
+    const range = currentDomain[1] - currentDomain[0];
+    const offset = Math.max(1, Math.round(range * 0.1));
+    const newStart = Math.max(0, currentDomain[0] - offset);
+    const newEnd = Math.min(59, currentDomain[1] + offset);
+    setIntraZoomY([newStart, newEnd]);
+  };
 
   useEffect(() => {
     if (selectedDeploymentId) {
@@ -260,6 +496,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       );
       setAnalysis(result.data);
       setChartData(result.data.time_series || []);
+      handlePnLResetZoom();
+      handleIntraResetZoom();
     } catch (err: any) {
       showError(`Failed to fetch analysis: ${err.message}`);
       setAnalysis(null);
@@ -646,19 +884,98 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
 
           {/* P&L Chart */}
           <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
-            <h3 className="text-lg font-bold text-slate-100 mb-4">Profit & Loss Over Time</h3>
-            <div className="h-[400px]">
+            <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
+              <h3 className="text-lg font-bold text-slate-100 mb-0 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-indigo-400" />
+                Profit & Loss Over Time
+              </h3>
+              <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-lg border border-slate-800 text-xs">
+                <div className="flex items-center gap-1 border-r border-slate-800 pr-2">
+                  <span className="text-slate-500 font-mono select-none">Mode:</span>
+                  {(['x', 'y', 'both'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setPnLZoomMode(mode)}
+                      className={`px-2 py-0.5 rounded transition-all cursor-pointer font-medium font-sans uppercase text-[10px] ${
+                        pnlZoomMode === mode ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {mode === 'both' ? 'X & Y' : `${mode}-axis`}
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="flex items-center gap-1 border-r border-slate-800 pr-2">
+                  <span className="text-slate-500 font-mono select-none mr-1">X-Zoom:</span>
+                  <button
+                    onClick={zoomInPnLX}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
+                    title="Zoom In X"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={zoomOutPnLX}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
+                    title="Zoom Out X"
+                  >
+                    -
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-500 font-mono select-none mr-1">Y-Zoom:</span>
+                  <button
+                    onClick={zoomInPnLY}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
+                    title="Zoom In Y"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={zoomOutPnLY}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
+                    title="Zoom Out Y"
+                  >
+                    -
+                  </button>
+                </div>
+
+                {isPnLZoomed && (
+                  <button
+                    onClick={handlePnLResetZoom}
+                    className="ml-2 px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded text-[10px] uppercase transition-all cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="h-[400px] select-none">
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
+                  <LineChart 
+                    data={processedChartData}
+                    onMouseDown={handlePnLMouseDown}
+                    onMouseMove={handlePnLMouseMove}
+                    onMouseUp={handlePnLMouseUp}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis 
-                      dataKey="timestamp" 
-                      tickFormatter={formatTimestamp}
+                      type="number"
+                      dataKey="index" 
+                      domain={pnlXDomain}
+                      allowDataOverflow={true}
+                      tickFormatter={(idx) => {
+                        const point = processedChartData[idx];
+                        return point ? formatTimestamp(point.timestamp) : '';
+                      }}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
                     />
                     <YAxis 
+                      domain={pnlYDomain}
+                      allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
                       tickFormatter={(value) => `₹${value}`}
@@ -670,7 +987,10 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                         borderRadius: '8px',
                         color: '#f1f5f9',
                       }}
-                      labelFormatter={(label) => formatTimestamp(label)}
+                      labelFormatter={(idx) => {
+                        const point = processedChartData[idx];
+                        return point ? formatTimestamp(point.timestamp) : '';
+                      }}
                       formatter={(value: number) => [formatCurrency(value), 'Cumulative P&L']}
                     />
                     <Legend />
@@ -684,6 +1004,16 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       dot={false}
                       activeDot={{ r: 6, fill: '#6366f1' }}
                     />
+                    {pnlRefAreaLeft !== undefined && pnlRefAreaRight !== undefined ? (
+                      <RefArea
+                        x1={pnlRefAreaLeft}
+                        x2={pnlRefAreaRight}
+                        y1={pnlZoomMode === 'y' || pnlZoomMode === 'both' ? pnlRefAreaBottom : undefined}
+                        y2={pnlZoomMode === 'y' || pnlZoomMode === 'both' ? pnlRefAreaTop : undefined}
+                        fill="#6366f1"
+                        fillOpacity={0.15}
+                      />
+                    ) : null}
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -696,25 +1026,91 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
 
           {/* Intraday Trade Distribution Chart */}
           <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
-            <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-cyan-400" />
-              Intraday Trade Distribution ({timezone === 'UTC' ? 'UTC' : 'Local'})
-            </h3>
+            <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
+              <h3 className="text-lg font-bold text-slate-100 mb-0 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-cyan-400" />
+                Intraday Trade Distribution ({timezone === 'UTC' ? 'UTC' : 'Local'})
+              </h3>
+              <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-lg border border-slate-800 text-xs">
+                <div className="flex items-center gap-1 border-r border-slate-800 pr-2">
+                  <span className="text-slate-500 font-mono select-none">Mode:</span>
+                  {(['x', 'y', 'both'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setIntraZoomMode(mode)}
+                      className={`px-2.5 py-0.5 rounded transition-all cursor-pointer font-medium font-sans uppercase text-[10px] ${
+                        intraZoomMode === mode ? 'bg-cyan-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {mode === 'both' ? 'X & Y' : `${mode}-axis`}
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="flex items-center gap-1 border-r border-slate-800 pr-2">
+                  <span className="text-slate-500 font-mono select-none mr-1">X-Zoom:</span>
+                  <button
+                    onClick={zoomInIntraX}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
+                    title="Zoom In X"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={zoomOutIntraX}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
+                    title="Zoom Out X"
+                  >
+                    -
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-500 font-mono select-none mr-1">Y-Zoom:</span>
+                  <button
+                    onClick={zoomInIntraY}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
+                    title="Zoom In Y"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={zoomOutIntraY}
+                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
+                    title="Zoom Out Y"
+                  >
+                    -
+                  </button>
+                </div>
+
+                {isIntraZoomed && (
+                  <button
+                    onClick={handleIntraResetZoom}
+                    className="ml-2 px-2.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded text-[10px] uppercase transition-all cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
             <p className="text-slate-400 text-xs mb-4">
               Shows individual trades spread across the day (00:00 - 23:59). Zoom and pan to explore. Chart auto-zooms to the most active trading hours on load.
             </p>
-            <div className="h-[400px]">
+            <div className="h-[400px] select-none">
               {intradayData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart
                     margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+                    onMouseDown={handleIntraMouseDown}
+                    onMouseMove={handleIntraMouseMove}
+                    onMouseUp={handleIntraMouseUp}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis
                       type="number"
                       dataKey="hour"
                       name="Hour"
-                      domain={defaultDomain}
+                      domain={scatterXDomain}
                       allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
@@ -725,7 +1121,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       type="number"
                       dataKey="minute"
                       name="Minute"
-                      domain={[0, 59]}
+                      domain={scatterYDomain}
+                      allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
                       tickFormatter={(value) => String(value).padStart(2, '0')}
@@ -761,6 +1158,16 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       fill="#06b6d4"
                       shape="circle"
                     />
+                    {intraRefAreaLeft !== undefined && intraRefAreaRight !== undefined ? (
+                      <RefArea
+                        x1={intraRefAreaLeft}
+                        x2={intraRefAreaRight}
+                        y1={intraZoomMode === 'y' || intraZoomMode === 'both' ? intraRefAreaBottom : undefined}
+                        y2={intraZoomMode === 'y' || intraZoomMode === 'both' ? intraRefAreaTop : undefined}
+                        fill="#22d3ee"
+                        fillOpacity={0.15}
+                      />
+                    ) : null}
                   </ScatterChart>
                 </ResponsiveContainer>
               ) : (
