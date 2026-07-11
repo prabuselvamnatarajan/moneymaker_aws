@@ -56,6 +56,46 @@ const convertDateTimeZone = (dateStr: string, timeStr: string, defaultTime: stri
   return { date: formattedDate, time: formattedTime };
 };
 
+const getNiceTicks = (min: number, max: number, targetTicks: number = 6): number[] => {
+  if (isNaN(min) || isNaN(max) || !isFinite(min) || !isFinite(max) || min >= max) {
+    return [];
+  }
+  
+  const range = max - min;
+  const rawStep = range / (targetTicks - 1);
+  if (rawStep <= 0) return [min];
+  
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const residual = rawStep / magnitude;
+  
+  let cleanStep: number;
+  if (residual < 1.5) {
+    cleanStep = 1 * magnitude;
+  } else if (residual < 3.5) {
+    cleanStep = 2 * magnitude;
+  } else if (residual < 7.5) {
+    cleanStep = 5 * magnitude;
+  } else {
+    cleanStep = 10 * magnitude;
+  }
+  
+  const startTick = Math.ceil(min / cleanStep) * cleanStep;
+  const ticks: number[] = [];
+  let t = startTick;
+  const eps = cleanStep * 0.0001;
+  
+  while (t <= max + eps) {
+    ticks.push(Number(t.toFixed(10)));
+    t += cleanStep;
+  }
+  
+  if (ticks.length < 2) {
+    return [min, max];
+  }
+  
+  return ticks;
+};
+
 export default function DeploymentAnalysisView({ selectedDeploymentId, timezone = 'UTC' }: DeploymentAnalysisViewProps) {
   const { showError } = useToast();
   
@@ -148,11 +188,42 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
     index,
   }));
 
-  const pnlXDomain = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
-  const pnlYDomain = pnlZoomY || ['auto', 'auto'];
+  // Nice ticks and domains for P&L Chart
+  const pnlXMin = pnlZoomX ? pnlZoomX[0] : 0;
+  const pnlXMax = pnlZoomX ? pnlZoomX[1] : Math.max(1, processedChartData.length - 1);
+  const pnlXTicks = getNiceTicks(pnlXMin, pnlXMax, 6);
+  const pnlXDomainCalculated: [number, number] = pnlXTicks.length >= 2
+    ? [pnlXTicks[0], pnlXTicks[pnlXTicks.length - 1]]
+    : [pnlXMin, pnlXMax];
 
+  const pnlValues = processedChartData.map(d => d.pnl);
+  const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+  const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
+  
+  const currentYMin = pnlZoomY ? pnlZoomY[0] : minVal;
+  const currentYMax = pnlZoomY ? pnlZoomY[1] : maxVal;
+  const safeYMin = currentYMin === currentYMax ? currentYMin - 100 : currentYMin;
+  const safeYMax = currentYMin === currentYMax ? currentYMax + 100 : currentYMax;
+  
+  const pnlYTicks = getNiceTicks(safeYMin, safeYMax, 6);
+  const pnlYDomainCalculated: [number, number] = pnlYTicks.length >= 2 
+    ? [pnlYTicks[0], pnlYTicks[pnlYTicks.length - 1]]
+    : [safeYMin, safeYMax];
+
+  // Nice ticks and domains for Scatter Chart
   const scatterXDomain = intraZoomX || defaultDomain;
   const scatterYDomain = intraZoomY || [0, 59];
+
+  const scatterXTicks = getNiceTicks(scatterXDomain[0], scatterXDomain[1], 6);
+  const scatterYTicks = getNiceTicks(scatterYDomain[0], scatterYDomain[1], 6);
+
+  const scatterXDomainCalculated: [number, number] = scatterXTicks.length >= 2
+    ? [scatterXTicks[0], scatterXTicks[scatterXTicks.length - 1]]
+    : [scatterXDomain[0], scatterXDomain[1]];
+
+  const scatterYDomainCalculated: [number, number] = scatterYTicks.length >= 2
+    ? [scatterYTicks[0], scatterYTicks[scatterYTicks.length - 1]]
+    : [scatterYDomain[0], scatterYDomain[1]];
 
   // Helper to zoom X-axis around a target center index/hour
   const zoomXAxis = (
@@ -1241,7 +1312,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                     <XAxis 
                       type="number"
                       dataKey="index" 
-                      domain={pnlXDomain}
+                      domain={pnlXDomainCalculated}
+                      ticks={pnlXTicks}
                       allowDataOverflow={true}
                       tickFormatter={(idx) => {
                         const point = processedChartData[Math.round(idx)];
@@ -1251,7 +1323,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       tick={{ fontSize: 12 }}
                     />
                     <YAxis 
-                      domain={pnlYDomain}
+                      domain={pnlYDomainCalculated}
+                      ticks={pnlYTicks}
                       allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
@@ -1336,7 +1409,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       type="number"
                       dataKey="hour"
                       name="Hour"
-                      domain={scatterXDomain}
+                      domain={scatterXDomainCalculated}
+                      ticks={scatterXTicks}
                       allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
@@ -1352,7 +1426,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       type="number"
                       dataKey="minute"
                       name="Minute"
-                      domain={scatterYDomain}
+                      domain={scatterYDomainCalculated}
+                      ticks={scatterYTicks}
                       allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
