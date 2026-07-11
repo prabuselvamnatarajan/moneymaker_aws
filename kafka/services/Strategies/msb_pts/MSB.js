@@ -114,7 +114,9 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol);
-            if (requestBody && requestBody.quantity > 0) {
+            if (!strategy_details.within_trading_window) {
+                logger.info(`msb_pts [${symbol}]: SELL signal detected but order blocked – outside trading window.`);
+            } else if (requestBody && requestBody.quantity > 0) {
                 await triggerOrder(requestBody);
             } else {
                 logger.warn(`msb_pts: Skipping SELL order due to zero/negative quantity: ${requestBody?.quantity}`);
@@ -141,7 +143,9 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
 
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);
-            if (requestBody && requestBody.quantity > 0) {
+            if (!strategy_details.within_trading_window) {
+                logger.info(`msb_pts [${symbol}]: BUY signal detected but order blocked – outside trading window.`);
+            } else if (requestBody && requestBody.quantity > 0) {
                 await triggerOrder(requestBody);
                 await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
             } else {

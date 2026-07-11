@@ -76,20 +76,19 @@ async function createConsumer() {
             logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
             data.ltp = ltp;
 
-            // ── Trading Window Guard ────────────────────────────────────────
-            // Only run trade decisions when the feed timestamp is within the
-            // configured trading window (default: 11:30 – 14:00 IST).
-            // Outside the window we skip MSB logic so no orders are placed,
-            // but the existing Redis state is left intact for continuity.
-            if (!isWithinTradingWindow(data.ts, strategy_details)) {
+            // ── Trading Window Check ────────────────────────────────────────
+            // Stamp within_trading_window onto strategy_details so MSB.js can
+            // gate order placement internally while the strategy state machine
+            // always continues to run (high/low tracking, trend state, etc.).
+            strategy_details.within_trading_window = isWithinTradingWindow(data.ts, strategy_details);
+            if (!strategy_details.within_trading_window) {
                 logger.info(
                     `msb_pts [${symbol}]: Feed ts=${data.ts} is outside trading window ` +
-                    `(${strategy_details.trading_window?.start || '11:30'} – ${strategy_details.trading_window?.end || '14:00'} IST). Skipping trade decision.`
+                    `(${strategy_details.trading_window?.start || '11:30'} – ${strategy_details.trading_window?.end || '14:00'} IST). Strategy runs but orders are blocked.`
                 );
-                return;
             }
 
-            // call the actual strategy function here
+            // call the actual strategy function here (always runs regardless of window)
             let newState = await MSB(lastState, data, symbol, strategy_details);
 
             await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState, strategy_details.deployment_id);
