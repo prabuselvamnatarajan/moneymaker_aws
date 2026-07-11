@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ScatterChart, Scatter, ZAxis } from 'recharts';
 import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Search, Clock } from 'lucide-react';
 import { DeploymentAnalysis, TimeSeriesDataPoint, IntradayTradeDataPoint, Deployment } from '../types';
@@ -19,14 +19,69 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, 
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 const SECOND_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 
+const convertDateTimeZone = (dateStr: string, timeStr: string, defaultTime: string, fromTz: string, toTz: string) => {
+  if (!dateStr) return { date: '', time: '' };
+  
+  const t = timeStr || defaultTime;
+  let d: Date;
+  if (fromTz === 'UTC') {
+    d = new Date(`${dateStr}T${t}Z`);
+  } else {
+    d = new Date(`${dateStr}T${t}`);
+  }
+  
+  if (isNaN(d.getTime())) return { date: dateStr, time: timeStr };
+  
+  let year: number, month: number, date: number, hour: number, minute: number, second: number;
+  if (toTz === 'UTC') {
+    year = d.getUTCFullYear();
+    month = d.getUTCMonth() + 1;
+    date = d.getUTCDate();
+    hour = d.getUTCHours();
+    minute = d.getUTCMinutes();
+    second = d.getUTCSeconds();
+  } else {
+    year = d.getFullYear();
+    month = d.getMonth() + 1;
+    date = d.getDate();
+    hour = d.getHours();
+    minute = d.getMinutes();
+    second = d.getSeconds();
+  }
+  
+  const formattedDate = `${year}-${String(month).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+  const formattedTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+  return { date: formattedDate, time: formattedTime };
+};
+
 export default function DeploymentAnalysisView({ selectedDeploymentId, timezone = 'UTC' }: DeploymentAnalysisViewProps) {
   const { showError } = useToast();
   
   const [deploymentId, setDeploymentId] = useState<string>('');
+  
+  const prevTimezoneRef = useRef<string>(timezone);
+
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [startTime, setStartTime] = useState<string>('');
   const [endTime, setEndTime] = useState<string>('');
+
+  useEffect(() => {
+    const prevTz = prevTimezoneRef.current;
+    if (prevTz !== timezone) {
+      if (startDate) {
+        const converted = convertDateTimeZone(startDate, startTime, '00:00:00', prevTz, timezone);
+        setStartDate(converted.date);
+        setStartTime(converted.time);
+      }
+      if (endDate) {
+        const converted = convertDateTimeZone(endDate, endTime, '23:59:59', prevTz, timezone);
+        setEndDate(converted.date);
+        setEndTime(converted.time);
+      }
+      prevTimezoneRef.current = timezone;
+    }
+  }, [timezone, startDate, startTime, endDate, endTime]);
 
   const startHour = startTime.split(':')[0] || '00';
   const startMin = startTime.split(':')[1] || '00';
@@ -139,18 +194,43 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       setAnalysis(result.data);
       setChartData(result.data.time_series || []);
       
-      // Process intraday trades and find data-heavy region
-      const intradayTrades = result.data.intraday_trades || [];
-      setIntradayData(intradayTrades);
+      // Process intraday trades based on timezone and find data-heavy region
+      const rawIntraday = result.data.intraday_trades || [];
+      const processedIntraday = rawIntraday.map((trade: any) => {
+        const d = new Date(trade.timestamp);
+        let h = trade.hour;
+        let m = trade.minute;
+        let s = trade.second;
+
+        if (timezone === 'UTC') {
+          h = d.getUTCHours();
+          m = d.getUTCMinutes();
+          s = d.getUTCSeconds();
+        } else {
+          h = d.getHours();
+          m = d.getMinutes();
+          s = d.getSeconds();
+        }
+
+        const timeOfDay = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        return {
+          ...trade,
+          hour: h,
+          minute: m,
+          second: s,
+          time_of_day: timeOfDay,
+        };
+      });
+      setIntradayData(processedIntraday);
       
       // Calculate the default zoom domain based on trade density
-      if (intradayTrades.length > 0) {
+      if (processedIntraday.length > 0) {
         const hourBuckets = new Map<number, number>();
         for (let i = 0; i < 24; i++) {
           hourBuckets.set(i, 0);
         }
         
-        intradayTrades.forEach(trade => {
+        processedIntraday.forEach((trade: any) => {
           const count = hourBuckets.get(trade.hour) || 0;
           hourBuckets.set(trade.hour, count + 1);
         });
@@ -610,7 +690,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
           <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
             <h3 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
               <Clock className="w-5 h-5 text-cyan-400" />
-              Intraday Trade Distribution (UTC)
+              Intraday Trade Distribution ({timezone === 'UTC' ? 'UTC' : 'Local'})
             </h3>
             <p className="text-slate-400 text-xs mb-4">
               Shows individual trades spread across the day (00:00 - 23:59). Zoom and pan to explore. Chart auto-zooms to the most active trading hours on load.
