@@ -477,7 +477,13 @@ export const api = {
       return handleResponse<{ items: any[] }>(res);
     },
 
-    async create(strategyData: { strategy_name: string; strategy_description: string }) {
+    async create(strategyData: { 
+      strategy_name: string; 
+      strategy_description: string;
+      advance_trade_decision?: boolean;
+      target_pts?: number;
+      sl_pts?: number;
+    }) {
       const res = await fetch(`${BASE_URL}/strategies`, {
         method: 'POST',
         headers: getHeaders(),

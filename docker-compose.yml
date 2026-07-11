@@ -643,6 +643,54 @@ services:
     networks:
       - app-net
 
+  msb-pts-strategy:
+    image: msb-pts-strategy:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
+      - redis
+    environment:
+      SERVICE_NAME: msb-pts-strategy-service
+      SERVICE_MODE: live
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+      TARGET_TOPIC: msb_pts_live_data
+      TARGET_GROUP_ID: msb_pts_strategy_group
+      SHARED_DIR: /shared
+      PLACEORDER_API: http://placeorder
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
+    networks:
+      - app-net
+
+  msb-pts-strategy-backtest:
+    image: msb-pts-strategy:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
+      - redis
+    environment:
+      SERVICE_NAME: msb-pts-strategy-service
+      SERVICE_MODE: backtest
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+      TARGET_TOPIC: msb_pts_backtest_data
+      TARGET_GROUP_ID: backtest_msb_pts_strategy_group
+      SHARED_DIR: /shared
+      PLACEORDER_API: http://placeorder
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
+    networks:
+      - app-net
+
 volumes:
   mongo1-data:
     driver: local

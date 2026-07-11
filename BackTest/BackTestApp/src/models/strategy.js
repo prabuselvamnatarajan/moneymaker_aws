@@ -19,6 +19,18 @@ const strategySchema = new mongoose.Schema({
   strategy_description: {
     type: String,
   },
+  target_pts: {
+    type: Number,
+    default: 500,
+  },
+  sl_pts: {
+    type: Number,
+    default: 500,
+  },
+  advance_trade_decision: {
+    type: Boolean,
+    default: false,
+  },
   is_active: {
     type: Boolean,
     default: true,

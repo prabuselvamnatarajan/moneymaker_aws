@@ -447,11 +447,20 @@ export default function App() {
     }
   };
 
-  const handleCreateStrategyDefinition = async (name: string, description: string) => {
+  const handleCreateStrategyDefinition = async (
+    name: string,
+    description: string,
+    advanceTradeDecision?: boolean,
+    targetPts?: number,
+    slPts?: number
+  ) => {
     try {
       await api.strategies.create({
         strategy_name: name,
         strategy_description: description,
+        advance_trade_decision: advanceTradeDecision,
+        target_pts: targetPts,
+        sl_pts: slPts,
       });
       await loadData();
     } catch (err: any) {

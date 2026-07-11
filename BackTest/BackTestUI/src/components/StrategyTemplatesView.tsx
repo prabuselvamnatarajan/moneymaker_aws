@@ -3,7 +3,13 @@ import { Cpu, Plus, Loader2, CheckCircle2, ShieldAlert, BookOpen } from 'lucide-
 
 interface StrategyTemplatesViewProps {
   strategyDefinitions: any[];
-  onCreateStrategy: (name: string, description: string) => Promise<void>;
+  onCreateStrategy: (
+    name: string,
+    description: string,
+    advanceTradeDecision?: boolean,
+    targetPts?: number,
+    slPts?: number
+  ) => Promise<void>;
 }
 
 export default function StrategyTemplatesView({
@@ -13,6 +19,9 @@ export default function StrategyTemplatesView({
   const visibleDefinitions = strategyDefinitions.filter(s => s.strategy_name.toLowerCase() !== 'manual');
   const [newStrategyName, setNewStrategyName] = useState('');
   const [newStrategyDescription, setNewStrategyDescription] = useState('');
+  const [advanceTradeDecision, setAdvanceTradeDecision] = useState(false);
+  const [targetPts, setTargetPts] = useState<number>(500);
+  const [slPts, setSlPts] = useState<number>(500);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -25,9 +34,18 @@ export default function StrategyTemplatesView({
       setSubmitting(true);
       setError(null);
       setSuccessMsg(null);
-      await onCreateStrategy(newStrategyName.trim(), newStrategyDescription.trim());
+      await onCreateStrategy(
+        newStrategyName.trim(),
+        newStrategyDescription.trim(),
+        advanceTradeDecision,
+        advanceTradeDecision ? targetPts : 500,
+        advanceTradeDecision ? slPts : 500
+      );
       setNewStrategyName('');
       setNewStrategyDescription('');
+      setAdvanceTradeDecision(false);
+      setTargetPts(500);
+      setSlPts(500);
       setSuccessMsg('Strategy Template created successfully!');
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
@@ -148,6 +166,48 @@ export default function StrategyTemplatesView({
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-650 focus:outline-hidden focus:border-indigo-500 transition-colors resize-none"
                 />
               </div>
+ 
+              {/* Checkbox for Advance Trade Decision */}
+              <div className="flex items-center gap-2 py-1">
+                <input
+                  id="chk-advance-trade-decision"
+                  type="checkbox"
+                  checked={advanceTradeDecision}
+                  onChange={(e) => setAdvanceTradeDecision(e.target.checked)}
+                  className="w-4 h-4 rounded-sm bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="chk-advance-trade-decision" className="text-[11px] text-slate-350 select-none cursor-pointer font-bold font-sans">
+                  Enable Advanced Trade Decisions (Target & Stop Loss Points)
+                </label>
+              </div>
+
+              {advanceTradeDecision && (
+                <div className="grid grid-cols-2 gap-4 border border-indigo-950 bg-indigo-950/20 p-3 rounded-xl animate-in slide-in-from-top-1 duration-200">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Target Points (pts)</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={targetPts}
+                      onChange={(e) => setTargetPts(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Stop Loss Points (pts)</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={slPts}
+                      onChange={(e) => setSlPts(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
+                    />
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"

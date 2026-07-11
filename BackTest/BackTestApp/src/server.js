@@ -5,6 +5,18 @@ const PORT = process.env.PORT || 4000;
 
 connectDB().then(async () => {
   try {
+    const Strategy = (await import("./models/strategy.js")).default;
+    const result = await Strategy.updateMany(
+      { $or: [ { target_pts: { $exists: false } }, { sl_pts: { $exists: false } } ] },
+      { $set: { target_pts: 500, sl_pts: 500 } }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`✅ Migrated ${result.modifiedCount} existing strategies to default target_pts/sl_pts = 500`);
+    }
+  } catch (err) {
+    console.error("⚠️ Failed to migrate existing strategies:", err.message);
+  }
+  try {
     const { syncAllDeploymentsToRedis } = await import("./services/deployment.js");
     await syncAllDeploymentsToRedis();
     console.log("✅ Initial deployment sync to Redis completed");

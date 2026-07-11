@@ -59,6 +59,12 @@ docker build -t msb-strategy:latest ./kafka/services/Strategies/MSB
 clean_shared ./kafka/services/Strategies/MSB
 rm -f ./kafka/services/Strategies/MSB/account_utils.js
 
+copy_shared ./kafka/services/Strategies/msb_pts
+cp ./MicroServices/Shared/Accounts/account_utils.js ./kafka/services/Strategies/msb_pts/account_utils.js
+docker build -t msb-pts-strategy:latest ./kafka/services/Strategies/msb_pts
+clean_shared ./kafka/services/Strategies/msb_pts
+rm -f ./kafka/services/Strategies/msb_pts/account_utils.js
+
 # Deploy the stack
 if ! docker info | grep -q "Swarm: active"; then
   docker swarm init

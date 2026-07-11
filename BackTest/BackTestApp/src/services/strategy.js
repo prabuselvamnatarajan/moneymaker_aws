@@ -2,11 +2,17 @@ import Strategy from "../models/strategy.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 
-const USER_UPDATABLE_FIELDS = ["strategy_name", "strategy_description", "is_active"];
+const USER_UPDATABLE_FIELDS = ["strategy_name", "strategy_description", "is_active", "target_pts", "sl_pts", "advance_trade_decision"];
 const ADMIN_UPDATABLE_FIELDS = [...USER_UPDATABLE_FIELDS];
 
 export const createStrategy = async (userId, strategyData) => {
-  const strategy = new Strategy({ ...strategyData, user_id: userId });
+  const data = { ...strategyData };
+  if (!data.advance_trade_decision) {
+    data.target_pts = 500;
+    data.sl_pts = 500;
+    data.advance_trade_decision = false;
+  }
+  const strategy = new Strategy({ ...data, user_id: userId });
   return await strategy.save();
 };
 
@@ -55,6 +61,11 @@ export const updateStrategy = async (userId, id, updateData, isAdmin = false) =>
 
   if (Object.keys(sanitizedUpdate).length === 0) {
     throw new Error("No valid fields provided for update");
+  }
+
+  if (sanitizedUpdate.hasOwnProperty("advance_trade_decision") && !sanitizedUpdate.advance_trade_decision) {
+    sanitizedUpdate.target_pts = 500;
+    sanitizedUpdate.sl_pts = 500;
   }
 
   return await Strategy.findOneAndUpdate(query, sanitizedUpdate, {
