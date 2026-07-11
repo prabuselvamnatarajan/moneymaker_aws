@@ -117,21 +117,16 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const [defaultDomain, setDefaultDomain] = useState<[number, number]>([0, 24]);
 
   // Zooming states and handlers
-  const [pnlZoomMode, setPnLZoomMode] = useState<'x' | 'y' | 'both'>('x');
+  const pnlContainerRef = useRef<HTMLDivElement>(null);
+  const intraContainerRef = useRef<HTMLDivElement>(null);
+
+  const [pnlZoomMode, setPnLZoomMode] = useState<'x' | 'y' | 'both'>('both');
   const [pnlZoomX, setPnLZoomX] = useState<[number, number] | null>(null);
   const [pnlZoomY, setPnLZoomY] = useState<[number, number] | null>(null);
-  const [pnlRefAreaLeft, setPnLRefAreaLeft] = useState<number | undefined>(undefined);
-  const [pnlRefAreaRight, setPnLRefAreaRight] = useState<number | undefined>(undefined);
-  const [pnlRefAreaTop, setPnLRefAreaTop] = useState<number | undefined>(undefined);
-  const [pnlRefAreaBottom, setPnLRefAreaBottom] = useState<number | undefined>(undefined);
 
-  const [intraZoomMode, setIntraZoomMode] = useState<'x' | 'y' | 'both'>('x');
+  const [intraZoomMode, setIntraZoomMode] = useState<'x' | 'y' | 'both'>('both');
   const [intraZoomX, setIntraZoomX] = useState<[number, number] | null>(null);
   const [intraZoomY, setIntraZoomY] = useState<[number, number] | null>(null);
-  const [intraRefAreaLeft, setIntraRefAreaLeft] = useState<number | undefined>(undefined);
-  const [intraRefAreaRight, setIntraRefAreaRight] = useState<number | undefined>(undefined);
-  const [intraRefAreaTop, setIntraRefAreaTop] = useState<number | undefined>(undefined);
-  const [intraRefAreaBottom, setIntraRefAreaBottom] = useState<number | undefined>(undefined);
 
   const isPnLZoomed = pnlZoomX !== null || pnlZoomY !== null;
   const isIntraZoomed = intraZoomX !== null || intraZoomY !== null;
@@ -139,19 +134,15 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const handlePnLResetZoom = () => {
     setPnLZoomX(null);
     setPnLZoomY(null);
-    setPnLRefAreaLeft(undefined);
-    setPnLRefAreaRight(undefined);
-    setPnLRefAreaTop(undefined);
-    setPnLRefAreaBottom(undefined);
+    setPnLDragState(null);
+    setPnLTouchState(null);
   };
 
   const handleIntraResetZoom = () => {
     setIntraZoomX(null);
     setIntraZoomY(null);
-    setIntraRefAreaLeft(undefined);
-    setIntraRefAreaRight(undefined);
-    setIntraRefAreaTop(undefined);
-    setIntraRefAreaBottom(undefined);
+    setIntraDragState(null);
+    setIntraTouchState(null);
   };
 
   const processedChartData = chartData.map((d, index) => ({
@@ -165,189 +156,454 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const scatterXDomain = intraZoomX || defaultDomain;
   const scatterYDomain = intraZoomY || [0, 59];
 
+  // Helper to zoom X-axis around a target center index/hour
+  const zoomXAxis = (
+    isPnL: boolean,
+    factor: number,
+    centerIndexOrHour?: number
+  ) => {
+    if (isPnL) {
+      const dataLen = processedChartData.length;
+      if (dataLen === 0) return;
+      const current = pnlZoomX || [0, dataLen - 1];
+      const range = current[1] - current[0];
+      const center = centerIndexOrHour !== undefined ? centerIndexOrHour : (current[0] + current[1]) / 2;
+      const newRange = Math.max(2, range * factor);
+      
+      const leftRatio = (center - current[0]) / (range || 1);
+      let newStart = center - newRange * leftRatio;
+      let newEnd = newStart + newRange;
+      
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = Math.min(dataLen - 1, newRange);
+      }
+      if (newEnd > dataLen - 1) {
+        newEnd = dataLen - 1;
+        newStart = Math.max(0, newEnd - newRange);
+      }
+      
+      setPnLZoomX([Math.round(newStart), Math.round(newEnd)]);
+    } else {
+      const current = intraZoomX || defaultDomain;
+      const range = current[1] - current[0];
+      const center = centerIndexOrHour !== undefined ? centerIndexOrHour : (current[0] + current[1]) / 2;
+      const newRange = Math.max(1, range * factor);
+      
+      const leftRatio = (center - current[0]) / (range || 1);
+      let newStart = center - newRange * leftRatio;
+      let newEnd = newStart + newRange;
+      
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = Math.min(24, newRange);
+      }
+      if (newEnd > 24) {
+        newEnd = 24;
+        newStart = Math.max(0, newEnd - newRange);
+      }
+      
+      setIntraZoomX([newStart, newEnd]);
+    }
+  };
+
+  // Helper to zoom Y-axis around a target center value
+  const zoomYAxis = (
+    isPnL: boolean,
+    factor: number,
+    centerVal?: number
+  ) => {
+    if (isPnL) {
+      const pnlValues = processedChartData.map(d => d.pnl);
+      const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+      const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
+      const current = pnlZoomY || [minVal, maxVal];
+      const range = Number(current[1]) - Number(current[0]);
+      const center = centerVal !== undefined ? centerVal : (Number(current[0]) + Number(current[1])) / 2;
+      const newRange = range * factor;
+      
+      const bottomRatio = (center - Number(current[0])) / (range || 1);
+      let newStart = center - newRange * bottomRatio;
+      let newEnd = newStart + newRange;
+      
+      setPnLZoomY([newStart, newEnd]);
+    } else {
+      const current = intraZoomY || [0, 59];
+      const range = current[1] - current[0];
+      const center = centerVal !== undefined ? centerVal : (current[0] + current[1]) / 2;
+      const newRange = Math.max(5, range * factor);
+      
+      const bottomRatio = (center - current[0]) / (range || 1);
+      let newStart = center - newRange * bottomRatio;
+      let newEnd = newStart + newRange;
+      
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = Math.min(59, newRange);
+      }
+      if (newEnd > 59) {
+        newEnd = 59;
+        newStart = Math.max(0, newEnd - newRange);
+      }
+      
+      setIntraZoomY([Math.round(newStart), Math.round(newEnd)]);
+    }
+  };
+
+  // Scroll wheel zooming
+  useEffect(() => {
+    const pnlEl = pnlContainerRef.current;
+    if (!pnlEl) return;
+    
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = pnlEl.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      // XAxis is at the bottom, YAxis is on the left
+      const isYAxisZone = x < 65;
+      const isXAxisZone = y > 360;
+      const factor = e.deltaY < 0 ? 0.9 : 1.1;
+      
+      if (isYAxisZone) {
+        zoomYAxis(true, factor);
+      } else if (isXAxisZone) {
+        zoomXAxis(true, factor);
+      } else {
+        zoomXAxis(true, factor);
+        zoomYAxis(true, factor);
+      }
+    };
+
+    pnlEl.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      pnlEl.removeEventListener('wheel', handleWheel);
+    };
+  }, [processedChartData, pnlZoomX, pnlZoomY]);
+
+  useEffect(() => {
+    const intraEl = intraContainerRef.current;
+    if (!intraEl) return;
+    
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = intraEl.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const isYAxisZone = x < 65;
+      const isXAxisZone = y > 360;
+      const factor = e.deltaY < 0 ? 0.9 : 1.1;
+      
+      if (isYAxisZone) {
+        zoomYAxis(false, factor);
+      } else if (isXAxisZone) {
+        zoomXAxis(false, factor);
+      } else {
+        zoomXAxis(false, factor);
+        zoomYAxis(false, factor);
+      }
+    };
+
+    intraEl.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      intraEl.removeEventListener('wheel', handleWheel);
+    };
+  }, [intradayData, intraZoomX, intraZoomY, defaultDomain]);
+
+  // Drag Panning and Drag-on-Axis Zoom States & Handlers
+  const [pnlDragState, setPnLDragState] = useState<{
+    isDragging: boolean;
+    startX: number;
+    startY: number;
+    startDomainX: [number, number];
+    startDomainY: [number, number];
+    zone: 'main' | 'xaxis' | 'yaxis';
+  } | null>(null);
+
+  const [intraDragState, setIntraDragState] = useState<{
+    isDragging: boolean;
+    startX: number;
+    startY: number;
+    startDomainX: [number, number];
+    startDomainY: [number, number];
+    zone: 'main' | 'xaxis' | 'yaxis';
+  } | null>(null);
+
   const handlePnLMouseDown = (e: any) => {
     if (!e) return;
-    const xVal = e.activeLabel !== undefined ? Number(e.activeLabel) : undefined;
-    const yVal = e.activePayload && e.activePayload[0]?.value !== undefined 
-      ? Number(e.activePayload[0].value) 
-      : undefined;
-    setPnLRefAreaLeft(xVal);
-    setPnLRefAreaBottom(yVal);
+    const chartX = e.chartX;
+    const chartY = e.chartY;
+    
+    let zone: 'main' | 'xaxis' | 'yaxis' = 'main';
+    if (chartX < 65) {
+      zone = 'yaxis';
+    } else if (chartY > 360) {
+      zone = 'xaxis';
+    }
+    
+    const currentX = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
+    const pnlValues = processedChartData.map(d => d.pnl);
+    const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+    const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
+    const currentY = pnlZoomY || [minVal, maxVal];
+    
+    setPnLDragState({
+      isDragging: true,
+      startX: chartX,
+      startY: chartY,
+      startDomainX: [currentX[0], currentX[1]],
+      startDomainY: [Number(currentY[0]), Number(currentY[1])],
+      zone,
+    });
   };
 
   const handlePnLMouseMove = (e: any) => {
-    if (pnlRefAreaLeft === undefined) return;
-    if (!e) return;
-    const xVal = e.activeLabel !== undefined ? Number(e.activeLabel) : undefined;
-    const yVal = e.activePayload && e.activePayload[0]?.value !== undefined 
-      ? Number(e.activePayload[0].value) 
-      : undefined;
-    setPnLRefAreaRight(xVal);
-    setPnLRefAreaTop(yVal);
+    if (!pnlDragState || !pnlDragState.isDragging || !e) return;
+    
+    const dx = e.chartX - pnlDragState.startX;
+    const dy = e.chartY - pnlDragState.startY;
+    
+    if (pnlDragState.zone === 'main') {
+      const chartWidth = 500;
+      const chartHeight = 350;
+      
+      const xRange = pnlDragState.startDomainX[1] - pnlDragState.startDomainX[0];
+      const yRange = pnlDragState.startDomainY[1] - pnlDragState.startDomainY[0];
+      
+      const shiftX = -dx * (xRange / chartWidth);
+      const shiftY = dy * (yRange / chartHeight);
+      
+      const dataLen = processedChartData.length;
+      let newStartX = pnlDragState.startDomainX[0] + shiftX;
+      let newEndX = pnlDragState.startDomainX[1] + shiftX;
+      
+      if (newStartX < 0) {
+        newEndX -= newStartX;
+        newStartX = 0;
+      }
+      if (newEndX > dataLen - 1) {
+        newStartX -= (newEndX - (dataLen - 1));
+        newEndX = dataLen - 1;
+      }
+      
+      setPnLZoomX([Math.round(newStartX), Math.round(newEndX)]);
+      setPnLZoomY([pnlDragState.startDomainY[0] + shiftY, pnlDragState.startDomainY[1] + shiftY]);
+      
+    } else if (pnlDragState.zone === 'xaxis') {
+      const zoomFactor = Math.exp(-dx * 0.01);
+      zoomXAxis(true, zoomFactor, pnlDragState.startDomainX[0]);
+      
+    } else if (pnlDragState.zone === 'yaxis') {
+      const zoomFactor = Math.exp(dy * 0.01);
+      zoomYAxis(true, zoomFactor, pnlDragState.startDomainY[0]);
+    }
   };
 
   const handlePnLMouseUp = () => {
-    if (pnlRefAreaLeft === undefined || pnlRefAreaRight === undefined) {
-      setPnLRefAreaLeft(undefined);
-      setPnLRefAreaRight(undefined);
-      setPnLRefAreaTop(undefined);
-      setPnLRefAreaBottom(undefined);
-      return;
-    }
-
-    let left = pnlRefAreaLeft;
-    let right = pnlRefAreaRight;
-    if (left > right) {
-      [left, right] = [right, left];
-    }
-
-    let bottom = pnlRefAreaBottom;
-    let top = pnlRefAreaTop;
-    if (bottom !== undefined && top !== undefined && bottom > top) {
-      [bottom, top] = [top, bottom];
-    }
-
-    if (pnlZoomMode === 'x' || pnlZoomMode === 'both') {
-      if (left !== right) {
-        setPnLZoomX([left, right]);
-      }
-    }
-    if (pnlZoomMode === 'y' || pnlZoomMode === 'both') {
-      if (bottom !== undefined && top !== undefined && bottom !== top) {
-        setPnLZoomY([bottom, top]);
-      }
-    }
-
-    setPnLRefAreaLeft(undefined);
-    setPnLRefAreaRight(undefined);
-    setPnLRefAreaTop(undefined);
-    setPnLRefAreaBottom(undefined);
+    setPnLDragState(null);
   };
 
   const handleIntraMouseDown = (e: any) => {
-    if (!e || !e.activePayload || e.activePayload.length === 0) return;
-    const hourVal = Number(e.activePayload[0].payload.hour);
-    const minuteVal = Number(e.activePayload[0].payload.minute);
-    setIntraRefAreaLeft(hourVal);
-    setIntraRefAreaBottom(minuteVal);
+    if (!e) return;
+    const chartX = e.chartX;
+    const chartY = e.chartY;
+    
+    let zone: 'main' | 'xaxis' | 'yaxis' = 'main';
+    if (chartX < 65) {
+      zone = 'yaxis';
+    } else if (chartY > 360) {
+      zone = 'xaxis';
+    }
+    
+    const currentX = intraZoomX || defaultDomain;
+    const currentY = intraZoomY || [0, 59];
+    
+    setIntraDragState({
+      isDragging: true,
+      startX: chartX,
+      startY: chartY,
+      startDomainX: [currentX[0], currentX[1]],
+      startDomainY: [currentY[0], currentY[1]],
+      zone,
+    });
   };
 
   const handleIntraMouseMove = (e: any) => {
-    if (intraRefAreaLeft === undefined) return;
-    if (!e || !e.activePayload || e.activePayload.length === 0) return;
-    const hourVal = Number(e.activePayload[0].payload.hour);
-    const minuteVal = Number(e.activePayload[0].payload.minute);
-    setIntraRefAreaRight(hourVal);
-    setIntraRefAreaTop(minuteVal);
+    if (!intraDragState || !intraDragState.isDragging || !e) return;
+    
+    const dx = e.chartX - intraDragState.startX;
+    const dy = e.chartY - intraDragState.startY;
+    
+    if (intraDragState.zone === 'main') {
+      const chartWidth = 500;
+      const chartHeight = 350;
+      
+      const xRange = intraDragState.startDomainX[1] - intraDragState.startDomainX[0];
+      const yRange = intraDragState.startDomainY[1] - intraDragState.startDomainY[0];
+      
+      const shiftX = -dx * (xRange / chartWidth);
+      const shiftY = dy * (yRange / chartHeight);
+      
+      let newStartX = intraDragState.startDomainX[0] + shiftX;
+      let newEndX = intraDragState.startDomainX[1] + shiftX;
+      
+      if (newStartX < 0) {
+        newEndX -= newStartX;
+        newStartX = 0;
+      }
+      if (newEndX > 24) {
+        newStartX -= (newEndX - 24);
+        newEndX = 24;
+      }
+      
+      setIntraZoomX([newStartX, newEndX]);
+      
+      let newStartY = intraDragState.startDomainY[0] + shiftY;
+      let newEndY = intraDragState.startDomainY[1] + shiftY;
+      
+      if (newStartY < 0) {
+        newEndY -= newStartY;
+        newStartY = 0;
+      }
+      if (newEndY > 59) {
+        newStartY -= (newEndY - 59);
+        newEndY = 59;
+      }
+      
+      setIntraZoomY([Math.round(newStartY), Math.round(newEndY)]);
+      
+    } else if (intraDragState.zone === 'xaxis') {
+      const zoomFactor = Math.exp(-dx * 0.01);
+      zoomXAxis(false, zoomFactor, intraDragState.startDomainX[0]);
+      
+    } else if (intraDragState.zone === 'yaxis') {
+      const zoomFactor = Math.exp(dy * 0.01);
+      zoomYAxis(false, zoomFactor, intraDragState.startDomainY[0]);
+    }
   };
 
   const handleIntraMouseUp = () => {
-    if (intraRefAreaLeft === undefined || intraRefAreaRight === undefined) {
-      setIntraRefAreaLeft(undefined);
-      setIntraRefAreaRight(undefined);
-      setIntraRefAreaTop(undefined);
-      setIntraRefAreaBottom(undefined);
-      return;
-    }
+    setIntraDragState(null);
+  };
 
-    let left = intraRefAreaLeft;
-    let right = intraRefAreaRight;
-    if (left > right) {
-      [left, right] = [right, left];
-    }
+  // Touch zoom state and handlers (two finger zoom)
+  const [pnlTouchState, setPnLTouchState] = useState<{
+    startDist: number;
+    startDomainX: [number, number];
+    startDomainY: [number, number];
+  } | null>(null);
 
-    let bottom = intraRefAreaBottom;
-    let top = intraRefAreaTop;
-    if (bottom !== undefined && top !== undefined && bottom > top) {
-      [bottom, top] = [top, bottom];
-    }
+  const [intraTouchState, setIntraTouchState] = useState<{
+    startDist: number;
+    startDomainX: [number, number];
+    startDomainY: [number, number];
+  } | null>(null);
 
-    if (intraZoomMode === 'x' || intraZoomMode === 'both') {
-      if (left !== right) {
-        setIntraZoomX([left, right]);
+  const handlePnLTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const currentX = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
+      const pnlValues = processedChartData.map(d => d.pnl);
+      const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
+      const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
+      const currentY = pnlZoomY || [minVal, maxVal];
+      
+      setPnLTouchState({
+        startDist: dist,
+        startDomainX: [currentX[0], currentX[1]],
+        startDomainY: [Number(currentY[0]), Number(currentY[1])],
+      });
+    }
+  };
+
+  const handlePnLTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (pnlTouchState && e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (pnlTouchState.startDist > 0 && dist > 0) {
+        const factor = pnlTouchState.startDist / dist;
+        zoomXAxis(true, factor);
+        zoomYAxis(true, factor);
       }
     }
-    if (intraZoomMode === 'y' || intraZoomMode === 'both') {
-      if (bottom !== undefined && top !== undefined && bottom !== top) {
-        setIntraZoomY([bottom, top]);
+  };
+
+  const handlePnLTouchEnd = () => {
+    setPnLTouchState(null);
+  };
+
+  const handleIntraTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const currentX = intraZoomX || defaultDomain;
+      const currentY = intraZoomY || [0, 59];
+      
+      setIntraTouchState({
+        startDist: dist,
+        startDomainX: [currentX[0], currentX[1]],
+        startDomainY: [currentY[0], currentY[1]],
+      });
+    }
+  };
+
+  const handleIntraTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (intraTouchState && e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (intraTouchState.startDist > 0 && dist > 0) {
+        const factor = intraTouchState.startDist / dist;
+        zoomXAxis(false, factor);
+        zoomYAxis(false, factor);
       }
     }
+  };
 
-    setIntraRefAreaLeft(undefined);
-    setIntraRefAreaRight(undefined);
-    setIntraRefAreaTop(undefined);
-    setIntraRefAreaBottom(undefined);
+  const handleIntraTouchEnd = () => {
+    setIntraTouchState(null);
   };
 
   const zoomInPnLX = () => {
-    const currentDomain = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
-    const range = currentDomain[1] - currentDomain[0];
-    if (range <= 2) return;
-    const offset = Math.max(1, Math.round(range * 0.1));
-    setPnLZoomX([currentDomain[0] + offset, currentDomain[1] - offset]);
+    zoomXAxis(true, 0.9);
   };
 
   const zoomOutPnLX = () => {
-    const currentDomain = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
-    const range = currentDomain[1] - currentDomain[0];
-    const offset = Math.max(1, Math.round(range * 0.1));
-    const newStart = Math.max(0, currentDomain[0] - offset);
-    const newEnd = Math.min(Math.max(0, processedChartData.length - 1), currentDomain[1] + offset);
-    setPnLZoomX([newStart, newEnd]);
+    zoomXAxis(true, 1.1);
   };
 
   const zoomInPnLY = () => {
-    const pnlValues = processedChartData.map(d => d.pnl);
-    const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
-    const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
-    const currentDomain = pnlZoomY || [minVal, maxVal];
-    const range = Number(currentDomain[1]) - Number(currentDomain[0]);
-    const offset = range * 0.1;
-    setPnLZoomY([Number(currentDomain[0]) + offset, Number(currentDomain[1]) - offset]);
+    zoomYAxis(true, 0.9);
   };
 
   const zoomOutPnLY = () => {
-    const pnlValues = processedChartData.map(d => d.pnl);
-    const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
-    const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
-    const currentDomain = pnlZoomY || [minVal, maxVal];
-    const range = Number(currentDomain[1]) - Number(currentDomain[0]);
-    const offset = range * 0.1;
-    setPnLZoomY([Number(currentDomain[0]) - offset, Number(currentDomain[1]) + offset]);
+    zoomYAxis(true, 1.1);
   };
 
   const zoomInIntraX = () => {
-    const currentDomain = intraZoomX || defaultDomain;
-    const range = currentDomain[1] - currentDomain[0];
-    if (range <= 1) return;
-    const offset = range * 0.1;
-    setIntraZoomX([currentDomain[0] + offset, currentDomain[1] - offset]);
+    zoomXAxis(false, 0.9);
   };
 
   const zoomOutIntraX = () => {
-    const currentDomain = intraZoomX || defaultDomain;
-    const range = currentDomain[1] - currentDomain[0];
-    const offset = range * 0.1;
-    const newStart = Math.max(0, currentDomain[0] - offset);
-    const newEnd = Math.min(24, currentDomain[1] + offset);
-    setIntraZoomX([newStart, newEnd]);
+    zoomXAxis(false, 1.1);
   };
 
   const zoomInIntraY = () => {
-    const currentDomain = intraZoomY || [0, 59];
-    const range = currentDomain[1] - currentDomain[0];
-    if (range <= 5) return;
-    const offset = Math.max(1, Math.round(range * 0.1));
-    setIntraZoomY([currentDomain[0] + offset, currentDomain[1] - offset]);
+    zoomYAxis(false, 0.9);
   };
 
   const zoomOutIntraY = () => {
-    const currentDomain = intraZoomY || [0, 59];
-    const range = currentDomain[1] - currentDomain[0];
-    const offset = Math.max(1, Math.round(range * 0.1));
-    const newStart = Math.max(0, currentDomain[0] - offset);
-    const newEnd = Math.min(59, currentDomain[1] + offset);
-    setIntraZoomY([newStart, newEnd]);
+    zoomYAxis(false, 1.1);
   };
 
   useEffect(() => {
@@ -951,7 +1207,14 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                 )}
               </div>
             </div>
-            <div className="h-[400px] select-none">
+            <div 
+              ref={pnlContainerRef}
+              onTouchStart={handlePnLTouchStart}
+              onTouchMove={handlePnLTouchMove}
+              onTouchEnd={handlePnLTouchEnd}
+              onMouseLeave={handlePnLMouseUp}
+              className="h-[400px] select-none"
+            >
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart 
@@ -1004,16 +1267,6 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       dot={false}
                       activeDot={{ r: 6, fill: '#6366f1' }}
                     />
-                    {pnlRefAreaLeft !== undefined && pnlRefAreaRight !== undefined ? (
-                      <RefArea
-                        x1={pnlRefAreaLeft}
-                        x2={pnlRefAreaRight}
-                        y1={pnlZoomMode === 'y' || pnlZoomMode === 'both' ? pnlRefAreaBottom : undefined}
-                        y2={pnlZoomMode === 'y' || pnlZoomMode === 'both' ? pnlRefAreaTop : undefined}
-                        fill="#6366f1"
-                        fillOpacity={0.15}
-                      />
-                    ) : null}
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -1096,7 +1349,14 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
             <p className="text-slate-400 text-xs mb-4">
               Shows individual trades spread across the day (00:00 - 23:59). Zoom and pan to explore. Chart auto-zooms to the most active trading hours on load.
             </p>
-            <div className="h-[400px] select-none">
+            <div 
+              ref={intraContainerRef}
+              onTouchStart={handleIntraTouchStart}
+              onTouchMove={handleIntraTouchMove}
+              onTouchEnd={handleIntraTouchEnd}
+              onMouseLeave={handleIntraMouseUp}
+              className="h-[400px] select-none"
+            >
               {intradayData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart
@@ -1158,16 +1418,6 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       fill="#06b6d4"
                       shape="circle"
                     />
-                    {intraRefAreaLeft !== undefined && intraRefAreaRight !== undefined ? (
-                      <RefArea
-                        x1={intraRefAreaLeft}
-                        x2={intraRefAreaRight}
-                        y1={intraZoomMode === 'y' || intraZoomMode === 'both' ? intraRefAreaBottom : undefined}
-                        y2={intraZoomMode === 'y' || intraZoomMode === 'both' ? intraRefAreaTop : undefined}
-                        fill="#22d3ee"
-                        fillOpacity={0.15}
-                      />
-                    ) : null}
                   </ScatterChart>
                 </ResponsiveContainer>
               ) : (
