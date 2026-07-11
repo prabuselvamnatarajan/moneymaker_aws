@@ -12,6 +12,7 @@ import { useToast } from './Toast';
 
 interface DeploymentAnalysisViewProps {
   selectedDeploymentId: string | null;
+  timezone?: string;
 }
 
 const TIME_OPTIONS = [
@@ -52,7 +53,7 @@ const TIME_OPTIONS = [
   { value: '23:59:59', label: '23:59:59 (End of Day)' }
 ];
 
-export default function DeploymentAnalysisView({ selectedDeploymentId }: DeploymentAnalysisViewProps) {
+export default function DeploymentAnalysisView({ selectedDeploymentId, timezone = 'UTC' }: DeploymentAnalysisViewProps) {
   const { showError } = useToast();
   
   const [deploymentId, setDeploymentId] = useState<string>('');
@@ -95,12 +96,39 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
 
     setIsLoading(true);
     try {
+      let finalStart: string | undefined = undefined;
+      let finalEnd: string | undefined = undefined;
+
+      if (startDate) {
+        const startT = startTime || '00:00:00';
+        if (timezone === 'UTC') {
+          finalStart = `${startDate}T${startT}Z`;
+        } else {
+          const localDate = new Date(`${startDate}T${startT}`);
+          if (!isNaN(localDate.getTime())) {
+            finalStart = localDate.toISOString();
+          }
+        }
+      }
+
+      if (endDate) {
+        const endT = endTime || '23:59:59';
+        if (timezone === 'UTC') {
+          finalEnd = `${endDate}T${endT}Z`;
+        } else {
+          const localDate = new Date(`${endDate}T${endT}`);
+          if (!isNaN(localDate.getTime())) {
+            finalEnd = localDate.toISOString();
+          }
+        }
+      }
+
       const result = await api.deployments.getAnalysis(
         idToFetch,
-        startDate || undefined,
-        endDate || undefined,
-        startTime || undefined,
-        endTime || undefined
+        finalStart,
+        finalEnd,
+        undefined,
+        undefined
       );
       setAnalysis(result.data);
       setChartData(result.data.time_series || []);
@@ -174,13 +202,18 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
   };
 
   const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleDateString('en-US', { 
+        timeZone: timezone === 'UTC' ? 'UTC' : undefined,
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      return timestamp;
+    }
   };
 
   const formatCurrency = (value: number) => {

@@ -662,7 +662,7 @@ export default function App() {
         );
       case 'deployment-analysis':
         return (
-          <DeploymentAnalysisView selectedDeploymentId={selectedEntityId} />
+          <DeploymentAnalysisView selectedDeploymentId={selectedEntityId} timezone={timezone} />
         );
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;
