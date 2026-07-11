@@ -62,13 +62,19 @@ export default function SymbolDetailsView({
     setChartError(null);
     try {
       const res = await api.symbols.getCandles(symbol.ticker, chartDate, chartTimeframe);
-      const chartData: CandlestickData<Time>[] = res.data.data.map(c => ({
-        time: c.time as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close
-      }));
+      const chartData: CandlestickData<Time>[] = res.data.data.map(c => {
+        const rawTime = c.time;
+        const adjustedTime = timezone === 'UTC'
+          ? (rawTime + (new Date(rawTime * 1000).getTimezoneOffset() * 60))
+          : rawTime;
+        return {
+          time: adjustedTime as Time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close
+        };
+      });
       setCandlesCount(chartData.length);
       
       if (chartData.length > 0) {
@@ -145,7 +151,7 @@ export default function SymbolDetailsView({
       candlestickSeriesRef.current = null;
       lastBarRef.current = null;
     };
-  }, [symbol?.ticker, chartDate]);
+  }, [symbol?.ticker, chartDate, timezone]);
 
   useEffect(() => {
     loadCandleData();
@@ -164,7 +170,10 @@ export default function SymbolDetailsView({
     if (chartTimeframe === '5m') intervalSec = 5 * 60;
     else if (chartTimeframe === '15m') intervalSec = 15 * 60;
 
-    const currentBucketTime = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
+    const rawBucketTime = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
+    const currentBucketTime = timezone === 'UTC'
+      ? (rawBucketTime + (new Date(rawBucketTime * 1000).getTimezoneOffset() * 60))
+      : rawBucketTime;
 
     let updatedBar: CandlestickData<Time>;
     if (currentBucketTime <= lastBarTimeNum) {
@@ -187,7 +196,7 @@ export default function SymbolDetailsView({
     }
 
     candlestickSeriesRef.current.update(updatedBar);
-  }, [symbol?.lastPrice, chartTimeframe]);
+  }, [symbol?.lastPrice, chartTimeframe, timezone]);
 
   const handleZoomIn = () => {
     if (chartRef.current) {

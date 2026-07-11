@@ -676,7 +676,7 @@ export default function App() {
         );
       case 'live-candlestick':
         return (
-          <LiveCandlestickView symbols={symbols} />
+          <LiveCandlestickView symbols={symbols} timezone={timezone} />
         );
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;

@@ -14,11 +14,12 @@ import { api } from '../api';
 
 interface LiveCandlestickViewProps {
   symbols: SymbolData[];
+  timezone: string;
 }
 
 const AVAILABLE_DATES = ['2026-06-24', '2026-06-18', '2026-06-17'];
 
-export default function LiveCandlestickView({ symbols }: LiveCandlestickViewProps) {
+export default function LiveCandlestickView({ symbols, timezone }: LiveCandlestickViewProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -40,13 +41,19 @@ export default function LiveCandlestickView({ symbols }: LiveCandlestickViewProp
     setError(null);
     try {
       const res = await api.symbols.getCandles(selectedSymbol, selectedDate, timeframe);
-      const chartData: CandlestickData<Time>[] = res.data.data.map(c => ({
-        time: c.time as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close
-      }));
+      const chartData: CandlestickData<Time>[] = res.data.data.map(c => {
+        const rawTime = c.time;
+        const adjustedTime = timezone === 'UTC'
+          ? (rawTime + (new Date(rawTime * 1000).getTimezoneOffset() * 60))
+          : rawTime;
+        return {
+          time: adjustedTime as Time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close
+        };
+      });
       setCandlesCount(chartData.length);
       
       if (chartData.length > 0) {
@@ -124,7 +131,7 @@ export default function LiveCandlestickView({ symbols }: LiveCandlestickViewProp
       candlestickSeriesRef.current = null;
       lastBarRef.current = null;
     };
-  }, [selectedSymbol, selectedDate]);
+  }, [selectedSymbol, selectedDate, timezone]);
 
   // Handle timeframe changes
   useEffect(() => {
@@ -145,7 +152,10 @@ export default function LiveCandlestickView({ symbols }: LiveCandlestickViewProp
     if (timeframe === '5m') intervalSec = 5 * 60;
     else if (timeframe === '15m') intervalSec = 15 * 60;
 
-    const currentBucketTime = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
+    const rawBucketTime = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
+    const currentBucketTime = timezone === 'UTC'
+      ? (rawBucketTime + (new Date(rawBucketTime * 1000).getTimezoneOffset() * 60))
+      : rawBucketTime;
 
     // If it falls in the current bucket, update last candle, otherwise start a new one
     let updatedBar: CandlestickData<Time>;
@@ -169,7 +179,7 @@ export default function LiveCandlestickView({ symbols }: LiveCandlestickViewProp
     }
 
     candlestickSeriesRef.current.update(updatedBar);
-  }, [matchedSymbolObj?.lastPrice, timeframe]);
+  }, [matchedSymbolObj?.lastPrice, timeframe, timezone]);
 
   const handleZoomIn = () => {
     if (chartRef.current) {
