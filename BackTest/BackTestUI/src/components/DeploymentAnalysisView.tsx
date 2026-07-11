@@ -120,11 +120,9 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const pnlContainerRef = useRef<HTMLDivElement>(null);
   const intraContainerRef = useRef<HTMLDivElement>(null);
 
-  const [pnlZoomMode, setPnLZoomMode] = useState<'x' | 'y' | 'both'>('both');
   const [pnlZoomX, setPnLZoomX] = useState<[number, number] | null>(null);
   const [pnlZoomY, setPnLZoomY] = useState<[number, number] | null>(null);
 
-  const [intraZoomMode, setIntraZoomMode] = useState<'x' | 'y' | 'both'>('both');
   const [intraZoomX, setIntraZoomX] = useState<[number, number] | null>(null);
   const [intraZoomY, setIntraZoomY] = useState<[number, number] | null>(null);
 
@@ -164,10 +162,12 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   ) => {
     if (isPnL) {
       const dataLen = processedChartData.length;
-      if (dataLen === 0) return;
+      if (dataLen <= 1) return;
       const current = pnlZoomX || [0, dataLen - 1];
       const range = current[1] - current[0];
-      const center = centerIndexOrHour !== undefined ? centerIndexOrHour : (current[0] + current[1]) / 2;
+      const center = centerIndexOrHour !== undefined && !isNaN(centerIndexOrHour) 
+        ? centerIndexOrHour 
+        : (current[0] + current[1]) / 2;
       const newRange = Math.max(2, range * factor);
       
       const leftRatio = (center - current[0]) / (range || 1);
@@ -183,11 +183,17 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
         newStart = Math.max(0, newEnd - newRange);
       }
       
-      setPnLZoomX([Math.round(newStart), Math.round(newEnd)]);
+      const start = Math.round(newStart);
+      const end = Math.round(newEnd);
+      if (!isNaN(start) && !isNaN(end) && isFinite(start) && isFinite(end) && start < end) {
+        setPnLZoomX([start, end]);
+      }
     } else {
       const current = intraZoomX || defaultDomain;
       const range = current[1] - current[0];
-      const center = centerIndexOrHour !== undefined ? centerIndexOrHour : (current[0] + current[1]) / 2;
+      const center = centerIndexOrHour !== undefined && !isNaN(centerIndexOrHour) 
+        ? centerIndexOrHour 
+        : (current[0] + current[1]) / 2;
       const newRange = Math.max(1, range * factor);
       
       const leftRatio = (center - current[0]) / (range || 1);
@@ -203,7 +209,11 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
         newStart = Math.max(0, newEnd - newRange);
       }
       
-      setIntraZoomX([newStart, newEnd]);
+      const start = newStart;
+      const end = newEnd;
+      if (!isNaN(start) && !isNaN(end) && isFinite(start) && isFinite(end) && start < end) {
+        setIntraZoomX([start, end]);
+      }
     }
   };
 
@@ -218,19 +228,28 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
       const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
       const current = pnlZoomY || [minVal, maxVal];
-      const range = Number(current[1]) - Number(current[0]);
-      const center = centerVal !== undefined ? centerVal : (Number(current[0]) + Number(current[1])) / 2;
+      let range = Number(current[1]) - Number(current[0]);
+      if (isNaN(range) || !isFinite(range) || range <= 0) {
+        range = 100;
+      }
+      const center = centerVal !== undefined && !isNaN(centerVal) 
+        ? centerVal 
+        : (Number(current[0]) + Number(current[1])) / 2;
       const newRange = range * factor;
       
       const bottomRatio = (center - Number(current[0])) / (range || 1);
       let newStart = center - newRange * bottomRatio;
       let newEnd = newStart + newRange;
       
-      setPnLZoomY([newStart, newEnd]);
+      if (!isNaN(newStart) && !isNaN(newEnd) && isFinite(newStart) && isFinite(newEnd) && newStart < newEnd) {
+        setPnLZoomY([newStart, newEnd]);
+      }
     } else {
       const current = intraZoomY || [0, 59];
       const range = current[1] - current[0];
-      const center = centerVal !== undefined ? centerVal : (current[0] + current[1]) / 2;
+      const center = centerVal !== undefined && !isNaN(centerVal) 
+        ? centerVal 
+        : (current[0] + current[1]) / 2;
       const newRange = Math.max(5, range * factor);
       
       const bottomRatio = (center - current[0]) / (range || 1);
@@ -246,7 +265,11 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
         newStart = Math.max(0, newEnd - newRange);
       }
       
-      setIntraZoomY([Math.round(newStart), Math.round(newEnd)]);
+      const start = Math.round(newStart);
+      const end = Math.round(newEnd);
+      if (!isNaN(start) && !isNaN(end) && isFinite(start) && isFinite(end) && start < end) {
+        setIntraZoomY([start, end]);
+      }
     }
   };
 
@@ -261,10 +284,12 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       
-      // XAxis is at the bottom, YAxis is on the left
+      // XAxis is at the bottom (y > 330), YAxis is on the left (x < 65)
       const isYAxisZone = x < 65;
-      const isXAxisZone = y > 360;
-      const factor = e.deltaY < 0 ? 0.9 : 1.1;
+      const isXAxisZone = y > 330;
+      
+      // User request: "scrolls up for zoom out and scrolls down for zoom in"
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
       
       if (isYAxisZone) {
         zoomYAxis(true, factor);
@@ -293,8 +318,10 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       const y = e.clientY - rect.top;
       
       const isYAxisZone = x < 65;
-      const isXAxisZone = y > 360;
-      const factor = e.deltaY < 0 ? 0.9 : 1.1;
+      const isXAxisZone = y > 330;
+      
+      // User request: "scrolls up for zoom out and scrolls down for zoom in"
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
       
       if (isYAxisZone) {
         zoomYAxis(false, factor);
@@ -312,14 +339,13 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
     };
   }, [intradayData, intraZoomX, intraZoomY, defaultDomain]);
 
-  // Drag Panning and Drag-on-Axis Zoom States & Handlers
+  // Drag Panning States & Handlers
   const [pnlDragState, setPnLDragState] = useState<{
     isDragging: boolean;
     startX: number;
     startY: number;
     startDomainX: [number, number];
     startDomainY: [number, number];
-    zone: 'main' | 'xaxis' | 'yaxis';
   } | null>(null);
 
   const [intraDragState, setIntraDragState] = useState<{
@@ -328,20 +354,12 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
     startY: number;
     startDomainX: [number, number];
     startDomainY: [number, number];
-    zone: 'main' | 'xaxis' | 'yaxis';
   } | null>(null);
 
   const handlePnLMouseDown = (e: any) => {
-    if (!e) return;
+    if (!e || isNaN(e.chartX) || isNaN(e.chartY)) return;
     const chartX = e.chartX;
     const chartY = e.chartY;
-    
-    let zone: 'main' | 'xaxis' | 'yaxis' = 'main';
-    if (chartX < 65) {
-      zone = 'yaxis';
-    } else if (chartY > 360) {
-      zone = 'xaxis';
-    }
     
     const currentX = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
     const pnlValues = processedChartData.map(d => d.pnl);
@@ -355,49 +373,47 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       startY: chartY,
       startDomainX: [currentX[0], currentX[1]],
       startDomainY: [Number(currentY[0]), Number(currentY[1])],
-      zone,
     });
   };
 
   const handlePnLMouseMove = (e: any) => {
-    if (!pnlDragState || !pnlDragState.isDragging || !e) return;
+    if (!pnlDragState || !pnlDragState.isDragging || !e || isNaN(e.chartX) || isNaN(e.chartY)) return;
     
     const dx = e.chartX - pnlDragState.startX;
     const dy = e.chartY - pnlDragState.startY;
     
-    if (pnlDragState.zone === 'main') {
-      const chartWidth = 500;
-      const chartHeight = 350;
-      
-      const xRange = pnlDragState.startDomainX[1] - pnlDragState.startDomainX[0];
-      const yRange = pnlDragState.startDomainY[1] - pnlDragState.startDomainY[0];
-      
-      const shiftX = -dx * (xRange / chartWidth);
-      const shiftY = dy * (yRange / chartHeight);
-      
-      const dataLen = processedChartData.length;
-      let newStartX = pnlDragState.startDomainX[0] + shiftX;
-      let newEndX = pnlDragState.startDomainX[1] + shiftX;
-      
-      if (newStartX < 0) {
-        newEndX -= newStartX;
-        newStartX = 0;
-      }
-      if (newEndX > dataLen - 1) {
-        newStartX -= (newEndX - (dataLen - 1));
-        newEndX = dataLen - 1;
-      }
-      
-      setPnLZoomX([Math.round(newStartX), Math.round(newEndX)]);
-      setPnLZoomY([pnlDragState.startDomainY[0] + shiftY, pnlDragState.startDomainY[1] + shiftY]);
-      
-    } else if (pnlDragState.zone === 'xaxis') {
-      const zoomFactor = Math.exp(-dx * 0.01);
-      zoomXAxis(true, zoomFactor, pnlDragState.startDomainX[0]);
-      
-    } else if (pnlDragState.zone === 'yaxis') {
-      const zoomFactor = Math.exp(dy * 0.01);
-      zoomYAxis(true, zoomFactor, pnlDragState.startDomainY[0]);
+    const chartWidth = 500;
+    const chartHeight = 350;
+    
+    const xRange = pnlDragState.startDomainX[1] - pnlDragState.startDomainX[0];
+    const yRange = pnlDragState.startDomainY[1] - pnlDragState.startDomainY[0];
+    
+    const shiftX = -dx * (xRange / chartWidth);
+    const shiftY = dy * (yRange / chartHeight);
+    
+    const dataLen = processedChartData.length;
+    let newStartX = pnlDragState.startDomainX[0] + shiftX;
+    let newEndX = pnlDragState.startDomainX[1] + shiftX;
+    
+    if (newStartX < 0) {
+      newEndX -= newStartX;
+      newStartX = 0;
+    }
+    if (newEndX > dataLen - 1) {
+      newStartX -= (newEndX - (dataLen - 1));
+      newEndX = dataLen - 1;
+    }
+    
+    const startX = Math.round(newStartX);
+    const endX = Math.round(newEndX);
+    if (!isNaN(startX) && !isNaN(endX) && isFinite(startX) && isFinite(endX) && startX < endX) {
+      setPnLZoomX([startX, endX]);
+    }
+    
+    const newStartY = pnlDragState.startDomainY[0] + shiftY;
+    const newEndY = pnlDragState.startDomainY[1] + shiftY;
+    if (!isNaN(newStartY) && !isNaN(newEndY) && isFinite(newStartY) && isFinite(newEndY) && newStartY < newEndY) {
+      setPnLZoomY([newStartY, newEndY]);
     }
   };
 
@@ -406,16 +422,9 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   };
 
   const handleIntraMouseDown = (e: any) => {
-    if (!e) return;
+    if (!e || isNaN(e.chartX) || isNaN(e.chartY)) return;
     const chartX = e.chartX;
     const chartY = e.chartY;
-    
-    let zone: 'main' | 'xaxis' | 'yaxis' = 'main';
-    if (chartX < 65) {
-      zone = 'yaxis';
-    } else if (chartY > 360) {
-      zone = 'xaxis';
-    }
     
     const currentX = intraZoomX || defaultDomain;
     const currentY = intraZoomY || [0, 59];
@@ -426,61 +435,58 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       startY: chartY,
       startDomainX: [currentX[0], currentX[1]],
       startDomainY: [currentY[0], currentY[1]],
-      zone,
     });
   };
 
   const handleIntraMouseMove = (e: any) => {
-    if (!intraDragState || !intraDragState.isDragging || !e) return;
+    if (!intraDragState || !intraDragState.isDragging || !e || isNaN(e.chartX) || isNaN(e.chartY)) return;
     
     const dx = e.chartX - intraDragState.startX;
     const dy = e.chartY - intraDragState.startY;
     
-    if (intraDragState.zone === 'main') {
-      const chartWidth = 500;
-      const chartHeight = 350;
-      
-      const xRange = intraDragState.startDomainX[1] - intraDragState.startDomainX[0];
-      const yRange = intraDragState.startDomainY[1] - intraDragState.startDomainY[0];
-      
-      const shiftX = -dx * (xRange / chartWidth);
-      const shiftY = dy * (yRange / chartHeight);
-      
-      let newStartX = intraDragState.startDomainX[0] + shiftX;
-      let newEndX = intraDragState.startDomainX[1] + shiftX;
-      
-      if (newStartX < 0) {
-        newEndX -= newStartX;
-        newStartX = 0;
-      }
-      if (newEndX > 24) {
-        newStartX -= (newEndX - 24);
-        newEndX = 24;
-      }
-      
-      setIntraZoomX([newStartX, newEndX]);
-      
-      let newStartY = intraDragState.startDomainY[0] + shiftY;
-      let newEndY = intraDragState.startDomainY[1] + shiftY;
-      
-      if (newStartY < 0) {
-        newEndY -= newStartY;
-        newStartY = 0;
-      }
-      if (newEndY > 59) {
-        newStartY -= (newEndY - 59);
-        newEndY = 59;
-      }
-      
-      setIntraZoomY([Math.round(newStartY), Math.round(newEndY)]);
-      
-    } else if (intraDragState.zone === 'xaxis') {
-      const zoomFactor = Math.exp(-dx * 0.01);
-      zoomXAxis(false, zoomFactor, intraDragState.startDomainX[0]);
-      
-    } else if (intraDragState.zone === 'yaxis') {
-      const zoomFactor = Math.exp(dy * 0.01);
-      zoomYAxis(false, zoomFactor, intraDragState.startDomainY[0]);
+    const chartWidth = 500;
+    const chartHeight = 350;
+    
+    const xRange = intraDragState.startDomainX[1] - intraDragState.startDomainX[0];
+    const yRange = intraDragState.startDomainY[1] - intraDragState.startDomainY[0];
+    
+    const shiftX = -dx * (xRange / chartWidth);
+    const shiftY = dy * (yRange / chartHeight);
+    
+    let newStartX = intraDragState.startDomainX[0] + shiftX;
+    let newEndX = intraDragState.startDomainX[1] + shiftX;
+    
+    if (newStartX < 0) {
+      newEndX -= newStartX;
+      newStartX = 0;
+    }
+    if (newEndX > 24) {
+      newStartX -= (newEndX - 24);
+      newEndX = 24;
+    }
+    
+    let newStartY = intraDragState.startDomainY[0] + shiftY;
+    let newEndY = intraDragState.startDomainY[1] + shiftY;
+    
+    if (newStartY < 0) {
+      newEndY -= newStartY;
+      newStartY = 0;
+    }
+    if (newEndY > 59) {
+      newStartY -= (newEndY - 59);
+      newEndY = 59;
+    }
+    
+    const startX = newStartX;
+    const endX = newEndX;
+    const startY = Math.round(newStartY);
+    const endY = Math.round(newEndY);
+    
+    if (!isNaN(startX) && !isNaN(endX) && isFinite(startX) && isFinite(endX) && startX < endX) {
+      setIntraZoomX([startX, endX]);
+    }
+    if (!isNaN(startY) && !isNaN(endY) && isFinite(startY) && isFinite(endY) && startY < endY) {
+      setIntraZoomY([startY, endY]);
     }
   };
 
@@ -572,38 +578,6 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
 
   const handleIntraTouchEnd = () => {
     setIntraTouchState(null);
-  };
-
-  const zoomInPnLX = () => {
-    zoomXAxis(true, 0.9);
-  };
-
-  const zoomOutPnLX = () => {
-    zoomXAxis(true, 1.1);
-  };
-
-  const zoomInPnLY = () => {
-    zoomYAxis(true, 0.9);
-  };
-
-  const zoomOutPnLY = () => {
-    zoomYAxis(true, 1.1);
-  };
-
-  const zoomInIntraX = () => {
-    zoomXAxis(false, 0.9);
-  };
-
-  const zoomOutIntraX = () => {
-    zoomXAxis(false, 1.1);
-  };
-
-  const zoomInIntraY = () => {
-    zoomYAxis(false, 0.9);
-  };
-
-  const zoomOutIntraY = () => {
-    zoomYAxis(false, 1.1);
   };
 
   useEffect(() => {
@@ -1145,67 +1119,14 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                 <TrendingUp className="w-5 h-5 text-indigo-400" />
                 Profit & Loss Over Time
               </h3>
-              <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-lg border border-slate-800 text-xs">
-                <div className="flex items-center gap-1 border-r border-slate-800 pr-2">
-                  <span className="text-slate-500 font-mono select-none">Mode:</span>
-                  {(['x', 'y', 'both'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setPnLZoomMode(mode)}
-                      className={`px-2 py-0.5 rounded transition-all cursor-pointer font-medium font-sans uppercase text-[10px] ${
-                        pnlZoomMode === mode ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {mode === 'both' ? 'X & Y' : `${mode}-axis`}
-                    </button>
-                  ))}
-                </div>
-                
-                <div className="flex items-center gap-1 border-r border-slate-800 pr-2">
-                  <span className="text-slate-500 font-mono select-none mr-1">X-Zoom:</span>
-                  <button
-                    onClick={zoomInPnLX}
-                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
-                    title="Zoom In X"
-                  >
-                    +
-                  </button>
-                  <button
-                    onClick={zoomOutPnLX}
-                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
-                    title="Zoom Out X"
-                  >
-                    -
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <span className="text-slate-500 font-mono select-none mr-1">Y-Zoom:</span>
-                  <button
-                    onClick={zoomInPnLY}
-                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
-                    title="Zoom In Y"
-                  >
-                    +
-                  </button>
-                  <button
-                    onClick={zoomOutPnLY}
-                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
-                    title="Zoom Out Y"
-                  >
-                    -
-                  </button>
-                </div>
-
-                {isPnLZoomed && (
-                  <button
-                    onClick={handlePnLResetZoom}
-                    className="ml-2 px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded text-[10px] uppercase transition-all cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
+              {isPnLZoomed && (
+                <button
+                  onClick={handlePnLResetZoom}
+                  className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded text-xs uppercase transition-all cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
             </div>
             <div 
               ref={pnlContainerRef}
@@ -1284,67 +1205,14 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                 <Clock className="w-5 h-5 text-cyan-400" />
                 Intraday Trade Distribution ({timezone === 'UTC' ? 'UTC' : 'Local'})
               </h3>
-              <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-lg border border-slate-800 text-xs">
-                <div className="flex items-center gap-1 border-r border-slate-800 pr-2">
-                  <span className="text-slate-500 font-mono select-none">Mode:</span>
-                  {(['x', 'y', 'both'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setIntraZoomMode(mode)}
-                      className={`px-2.5 py-0.5 rounded transition-all cursor-pointer font-medium font-sans uppercase text-[10px] ${
-                        intraZoomMode === mode ? 'bg-cyan-600 text-white font-semibold' : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {mode === 'both' ? 'X & Y' : `${mode}-axis`}
-                    </button>
-                  ))}
-                </div>
-                
-                <div className="flex items-center gap-1 border-r border-slate-800 pr-2">
-                  <span className="text-slate-500 font-mono select-none mr-1">X-Zoom:</span>
-                  <button
-                    onClick={zoomInIntraX}
-                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
-                    title="Zoom In X"
-                  >
-                    +
-                  </button>
-                  <button
-                    onClick={zoomOutIntraX}
-                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
-                    title="Zoom Out X"
-                  >
-                    -
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <span className="text-slate-500 font-mono select-none mr-1">Y-Zoom:</span>
-                  <button
-                    onClick={zoomInIntraY}
-                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
-                    title="Zoom In Y"
-                  >
-                    +
-                  </button>
-                  <button
-                    onClick={zoomOutIntraY}
-                    className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer font-bold w-5 h-5 flex items-center justify-center"
-                    title="Zoom Out Y"
-                  >
-                    -
-                  </button>
-                </div>
-
-                {isIntraZoomed && (
-                  <button
-                    onClick={handleIntraResetZoom}
-                    className="ml-2 px-2.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded text-[10px] uppercase transition-all cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
+              {isIntraZoomed && (
+                <button
+                  onClick={handleIntraResetZoom}
+                  className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded text-xs uppercase transition-all cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
             </div>
             <p className="text-slate-400 text-xs mb-4">
               Shows individual trades spread across the day (00:00 - 23:59). Zoom and pan to explore. Chart auto-zooms to the most active trading hours on load.
