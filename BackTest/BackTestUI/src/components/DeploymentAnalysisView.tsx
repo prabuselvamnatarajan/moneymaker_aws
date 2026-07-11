@@ -14,6 +14,44 @@ interface DeploymentAnalysisViewProps {
   selectedDeploymentId: string | null;
 }
 
+const TIME_OPTIONS = [
+  { value: '', label: 'Select Time' },
+  { value: '00:00:00', label: '00:00:00 (Midnight)' },
+  { value: '01:00:00', label: '01:00:00' },
+  { value: '02:00:00', label: '02:00:00' },
+  { value: '03:00:00', label: '03:00:00' },
+  { value: '04:00:00', label: '04:00:00' },
+  { value: '05:00:00', label: '05:00:00' },
+  { value: '06:00:00', label: '06:00:00' },
+  { value: '07:00:00', label: '07:00:00' },
+  { value: '08:00:00', label: '08:00:00' },
+  { value: '09:00:00', label: '09:00:00' },
+  { value: '09:15:00', label: '09:15:00 (NSE Open)' },
+  { value: '09:30:00', label: '09:30:00' },
+  { value: '10:00:00', label: '10:00:00' },
+  { value: '10:30:00', label: '10:30:00' },
+  { value: '11:00:00', label: '11:00:00' },
+  { value: '11:30:00', label: '11:30:00' },
+  { value: '12:00:00', label: '12:00:00' },
+  { value: '12:30:00', label: '12:30:00' },
+  { value: '13:00:00', label: '13:00:00' },
+  { value: '13:30:00', label: '13:30:00' },
+  { value: '14:00:00', label: '14:00:00' },
+  { value: '14:30:00', label: '14:30:00' },
+  { value: '15:00:00', label: '15:00:00' },
+  { value: '15:30:00', label: '15:30:00 (NSE Close)' },
+  { value: '16:00:00', label: '16:00:00' },
+  { value: '17:00:00', label: '17:00:00' },
+  { value: '18:00:00', label: '18:00:00' },
+  { value: '19:00:00', label: '19:00:00' },
+  { value: '20:00:00', label: '20:00:00' },
+  { value: '21:00:00', label: '21:00:00' },
+  { value: '22:00:00', label: '22:00:00' },
+  { value: '23:00:00', label: '23:00:00' },
+  { value: '23:30:00', label: '23:30:00' },
+  { value: '23:59:59', label: '23:59:59 (End of Day)' }
+];
+
 export default function DeploymentAnalysisView({ selectedDeploymentId }: DeploymentAnalysisViewProps) {
   const { showError } = useToast();
   
@@ -209,13 +247,17 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
               <Clock className="w-3 h-3" />
               Start Time
             </label>
-            <input
-              type="time"
-              step="1"
+            <select
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
+              className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
+            >
+              {TIME_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* End Date */}
@@ -238,13 +280,17 @@ export default function DeploymentAnalysisView({ selectedDeploymentId }: Deploym
               <Clock className="w-3 h-3" />
               End Time
             </label>
-            <input
-              type="time"
-              step="1"
+            <select
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
+              className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-md text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
+            >
+              {TIME_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Analyze Button */}
