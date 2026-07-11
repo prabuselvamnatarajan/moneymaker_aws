@@ -394,10 +394,13 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
     startDomainY: [number, number];
   } | null>(null);
 
-  const handlePnLMouseDown = (e: any) => {
-    if (!e || isNaN(e.chartX) || isNaN(e.chartY)) return;
-    const chartX = e.chartX;
-    const chartY = e.chartY;
+  const handlePnLMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const rect = pnlContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const clientX = e.clientX;
+    const clientY = e.clientY;
     
     const currentX = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
     const pnlValues = processedChartData.map(d => d.pnl);
@@ -407,21 +410,21 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
     
     setPnLDragState({
       isDragging: true,
-      startX: chartX,
-      startY: chartY,
+      startX: clientX,
+      startY: clientY,
       startDomainX: [currentX[0], currentX[1]],
       startDomainY: [Number(currentY[0]), Number(currentY[1])],
     });
   };
 
-  const handlePnLMouseMove = (e: any) => {
-    if (!pnlDragState || !pnlDragState.isDragging || !e || isNaN(e.chartX) || isNaN(e.chartY)) return;
+  const handlePnLMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!pnlDragState || !pnlDragState.isDragging) return;
     
     const rect = pnlContainerRef.current?.getBoundingClientRect();
     if (!rect) return;
     
-    const dx = e.chartX - pnlDragState.startX;
-    const dy = e.chartY - pnlDragState.startY;
+    const dx = e.clientX - pnlDragState.startX;
+    const dy = e.clientY - pnlDragState.startY;
     
     const gridWidth = rect.width - 85;
     const gridHeight = rect.height - 80;
@@ -460,31 +463,34 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
     setPnLDragState(null);
   };
 
-  const handleIntraMouseDown = (e: any) => {
-    if (!e || isNaN(e.chartX) || isNaN(e.chartY)) return;
-    const chartX = e.chartX;
-    const chartY = e.chartY;
+  const handleIntraMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const rect = intraContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const clientX = e.clientX;
+    const clientY = e.clientY;
     
     const currentX = intraZoomX || defaultDomain;
     const currentY = intraZoomY || [0, 59];
     
     setIntraDragState({
       isDragging: true,
-      startX: chartX,
-      startY: chartY,
+      startX: clientX,
+      startY: clientY,
       startDomainX: [currentX[0], currentX[1]],
       startDomainY: [currentY[0], currentY[1]],
     });
   };
 
-  const handleIntraMouseMove = (e: any) => {
-    if (!intraDragState || !intraDragState.isDragging || !e || isNaN(e.chartX) || isNaN(e.chartY)) return;
+  const handleIntraMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!intraDragState || !intraDragState.isDragging) return;
     
     const rect = intraContainerRef.current?.getBoundingClientRect();
     if (!rect) return;
     
-    const dx = e.chartX - intraDragState.startX;
-    const dy = e.chartY - intraDragState.startY;
+    const dx = e.clientX - intraDragState.startX;
+    const dy = e.clientY - intraDragState.startY;
     
     const gridWidth = rect.width - 85;
     const gridHeight = rect.height - 80;
@@ -1215,21 +1221,21 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
             </div>
             <div 
               ref={pnlContainerRef}
+              onMouseDown={handlePnLMouseDown}
+              onMouseMove={handlePnLMouseMove}
+              onMouseUp={handlePnLMouseUp}
               onTouchStart={handlePnLTouchStart}
               onTouchMove={handlePnLTouchMove}
               onTouchEnd={handlePnLTouchEnd}
               onMouseLeave={handlePnLMouseUp}
               onDoubleClick={handlePnLResetZoom}
-              className="h-[400px] select-none cursor-crosshair"
+              className="h-[400px] select-none cursor-grab active:cursor-grabbing"
               title="Scroll to zoom (both or single axis), Drag to pan, Double-click to reset"
             >
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart 
                     data={processedChartData}
-                    onMouseDown={handlePnLMouseDown}
-                    onMouseMove={handlePnLMouseMove}
-                    onMouseUp={handlePnLMouseUp}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis 
@@ -1249,7 +1255,10 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => `₹${value}`}
+                      tickFormatter={(value) => {
+                        if (value % 1 === 0) return `₹${value}`;
+                        return `₹${Number(value.toFixed(2)).toString()}`;
+                      }}
                     />
                     <Tooltip
                       contentStyle={{
@@ -1306,21 +1315,21 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
             </p>
             <div 
               ref={intraContainerRef}
+              onMouseDown={handleIntraMouseDown}
+              onMouseMove={handleIntraMouseMove}
+              onMouseUp={handleIntraMouseUp}
               onTouchStart={handleIntraTouchStart}
               onTouchMove={handleIntraTouchMove}
               onTouchEnd={handleIntraTouchEnd}
               onMouseLeave={handleIntraMouseUp}
               onDoubleClick={handleIntraResetZoom}
-              className="h-[400px] select-none cursor-crosshair"
+              className="h-[400px] select-none cursor-grab active:cursor-grabbing"
               title="Scroll to zoom (both or single axis), Drag to pan, Double-click to reset"
             >
               {intradayData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart
                     margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-                    onMouseDown={handleIntraMouseDown}
-                    onMouseMove={handleIntraMouseMove}
-                    onMouseUp={handleIntraMouseUp}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis
@@ -1331,7 +1340,12 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => `${String(Math.floor(value)).padStart(2, '0')}:00`}
+                      tickFormatter={(value) => {
+                        const clamped = Math.min(24, Math.max(0, value));
+                        const hr = Math.floor(clamped);
+                        const mn = Math.round((clamped - hr) * 60);
+                        return `${String(hr).padStart(2, '0')}:${String(mn).padStart(2, '0')}`;
+                      }}
                       label={{ value: 'Time of Day (Hours)', position: 'insideBottom', offset: -10, fill: '#94a3b8', fontSize: 12 }}
                     />
                     <YAxis
@@ -1342,7 +1356,13 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                       allowDataOverflow={true}
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => String(value).padStart(2, '0')}
+                      tickFormatter={(value) => {
+                        const clamped = Math.min(59, Math.max(0, value));
+                        if (clamped % 1 === 0) return String(Math.floor(clamped)).padStart(2, '0');
+                        const minInt = Math.floor(clamped);
+                        const secs = Math.round((clamped - minInt) * 60);
+                        return `${String(minInt).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+                      }}
                       label={{ value: 'Minutes', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 12 }}
                     />
                     <ZAxis type="number" dataKey="pnl" range={[50, 200]} name="P&L" />
