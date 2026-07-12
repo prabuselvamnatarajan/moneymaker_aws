@@ -55,6 +55,28 @@ describe('tickParser', () => {
         assert.equal(isDataGap(10000, 5000, 3), true);
         assert.equal(isDataGap(6000, 5000, 3), false);
     });
+
+    it('parses root-level ltpc payloads', () => {
+        const tick = parseTick({
+            ltpc: { ltp: 1500, ltq: 25, ltt: Date.now() },
+            marketLevel: {
+                bidAskQuote: [{ bidP: 1499.5, askP: 1500.5, bidQ: 100, askQ: 100 }],
+            },
+        });
+        assert.equal(tick.ltp, 1500);
+        assert.equal(tick.feedType, 'market');
+        assert.equal(tick.confidence, 'high');
+    });
+
+    it('parses firstLevelWithGreeks payloads', () => {
+        const tick = parseTick({
+            firstLevelWithGreeks: {
+                ltpc: { ltp: 22050, ltq: 10, ltt: Date.now() },
+            },
+        });
+        assert.equal(tick.ltp, 22050);
+        assert.equal(tick.feedType, 'market');
+    });
 });
 
 describe('tickDelta', () => {
@@ -235,12 +257,20 @@ describe('bookImbalance', () => {
 });
 
 describe('backtest params', () => {
-    it('applies relaxed overrides when isTest is true', () => {
+    it('applies relaxed overrides only for BACKTEST mode', () => {
         const params = resolveParams({ isTest: true, strategy_mode: 'BACKTEST' });
         assert.equal(params.minAvgTradedValuePerMin, 0);
         assert.equal(params.gapThresholdSec, 300);
         assert.equal(params.useLtqProxy, true);
         assert.equal(params.useTickRateVolumeProxy, true);
+    });
+
+    it('keeps live defaults for PAPER mode', () => {
+        const params = resolveParams({ isTest: true, strategy_mode: 'PAPER' });
+        assert.equal(params.minAvgTradedValuePerMin, DEFAULT_PARAMS.minAvgTradedValuePerMin);
+        assert.equal(params.gapThresholdSec, DEFAULT_PARAMS.gapThresholdSec);
+        assert.equal(params.useLtqProxy, false);
+        assert.equal(params.useTickRateVolumeProxy, false);
     });
 
     it('uses unit delta proxy for index ticks with zero ltq', () => {

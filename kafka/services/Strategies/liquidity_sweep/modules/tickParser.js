@@ -1,9 +1,57 @@
 function extractFeed(dataObject) {
+    const marketFF = dataObject?.fullFeed?.marketFF || dataObject?.marketFF;
+    const indexFF = dataObject?.fullFeed?.indexFF || dataObject?.indexFF;
+    if (marketFF?.ltpc || indexFF?.ltpc) {
+        return marketFF || indexFF;
+    }
+    if (dataObject?.ltpc) {
+        return {
+            ltpc: dataObject.ltpc,
+            marketLevel: dataObject.marketLevel,
+            marketOHLC: dataObject.marketOHLC,
+            vtt: dataObject.vtt,
+            tbq: dataObject.tbq,
+            tsq: dataObject.tsq,
+            atp: dataObject.atp,
+        };
+    }
+    if (dataObject?.firstLevelWithGreeks?.ltpc) {
+        return dataObject.firstLevelWithGreeks;
+    }
     return dataObject?.fullFeed?.marketFF
         || dataObject?.fullFeed?.indexFF
         || dataObject?.marketFF
         || dataObject?.indexFF
         || null;
+}
+
+function resolveFeedContext(dataObject) {
+    const marketFF = dataObject?.fullFeed?.marketFF || dataObject?.marketFF;
+    const indexFF = dataObject?.fullFeed?.indexFF || dataObject?.indexFF;
+    if (marketFF?.ltpc) {
+        return { feed: marketFF, feedType: 'market' };
+    }
+    if (indexFF?.ltpc) {
+        return { feed: indexFF, feedType: 'index' };
+    }
+    if (dataObject?.ltpc) {
+        return {
+            feed: {
+                ltpc: dataObject.ltpc,
+                marketLevel: dataObject.marketLevel,
+                marketOHLC: dataObject.marketOHLC,
+                vtt: dataObject.vtt,
+                tbq: dataObject.tbq,
+                tsq: dataObject.tsq,
+                atp: dataObject.atp,
+            },
+            feedType: dataObject.firstLevelWithGreeks ? 'market' : 'market',
+        };
+    }
+    if (dataObject?.firstLevelWithGreeks?.ltpc) {
+        return { feed: dataObject.firstLevelWithGreeks, feedType: 'market' };
+    }
+    return null;
 }
 
 function getOhlcByInterval(feed, interval) {
@@ -21,13 +69,12 @@ function getOhlcByInterval(feed, interval) {
  * Normalize raw Kafka tick payload into a canonical tick DTO.
  */
 function parseTick(dataObject, previousLtp = null) {
-    const marketFF = dataObject?.fullFeed?.marketFF || dataObject?.marketFF;
-    const indexFF = dataObject?.fullFeed?.indexFF || dataObject?.indexFF;
-    const feed = marketFF || indexFF;
-
-    if (!feed?.ltpc) {
+    const resolved = resolveFeedContext(dataObject);
+    if (!resolved?.feed?.ltpc) {
         return null;
     }
+
+    const { feed, feedType } = resolved;
 
     const ltpc = feed.ltpc;
     const ltp = ltpc.ltp ?? null;
@@ -38,7 +85,6 @@ function parseTick(dataObject, previousLtp = null) {
     const quotes = feed.marketLevel?.bidAskQuote || [];
     const topQuote = quotes[0] || {};
 
-    const feedType = marketFF ? 'market' : 'index';
     const bestBid = topQuote.bidP ?? null;
     const bestAsk = topQuote.askP ?? null;
     const bidQ = Number(topQuote.bidQ) || 0;

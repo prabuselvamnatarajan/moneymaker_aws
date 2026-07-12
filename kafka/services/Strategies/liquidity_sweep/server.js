@@ -11,7 +11,7 @@ import { initLogger, logger } from '/app/utils/logUtils.js';
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
-const IS_BACKTEST = process.env.IS_BACKTEST || false;
+const IS_BACKTEST = process.env.IS_BACKTEST === 'true';
 
 const kafka = new Kafka({
     clientId: 'liquidity-sweep-app',
@@ -36,6 +36,13 @@ async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5
     throw new Error(`Failed to connect to ${name} after maximum retries.`);
 }
 
+function resolveIsBackTest(strategy_details = {}) {
+    if (IS_BACKTEST || strategy_details.strategy_mode === 'BACKTEST') {
+        return true;
+    }
+    return strategy_details.isTest === true;
+}
+
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
 
@@ -45,45 +52,68 @@ async function createConsumer() {
 
     await consumer.run({
         eachMessage: async ({ message }) => {
-            const symbol = message.key.toString();
-            const msg = JSON.parse(message.value.toString());
-            const { strategy_details = {} } = msg;
-
-            if (msg.done) {
-                logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
-                if (strategy_details.deployment_id) {
-                    await setBacktestCompleted(strategy_details.deployment_id);
-                }
+            const symbol = message.key?.toString();
+            if (!symbol) {
+                logger.warn('Received Kafka message without symbol key, skipping.');
                 return;
             }
 
-            msg.latency = {
-                ...msg.latency,
-                beforeStrategyExecution: calculateLatency(symbol, msg),
-            };
-
-            const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
-            if (isBackTest) {
-                strategy_details.isTest = true;
+            let msg;
+            try {
+                msg = JSON.parse(message.value.toString());
+            } catch (err) {
+                logger.error(`Failed to parse Kafka message for ${symbol}: ${err.message}`);
+                return;
             }
 
-            const lastState = await getLiquiditySweepStateForSymbol(
-                symbol,
-                isBackTest,
-                strategy_details.deployment_id
-            );
+            const { strategy_details = {} } = msg;
 
-            const newState = await LiquiditySweep(lastState, msg, symbol, strategy_details);
+            try {
+                if (msg.done) {
+                    logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
+                    if (strategy_details.deployment_id) {
+                        await setBacktestCompleted(strategy_details.deployment_id);
+                    }
+                    return;
+                }
 
-            await writeLiquiditySweepStateForSymbol(
-                symbol,
-                isBackTest,
-                newState,
-                strategy_details.deployment_id
-            );
+                const beforeLatency = calculateLatency(symbol, msg);
+                msg.latency = {
+                    ...msg.latency,
+                    ...(beforeLatency != null ? { beforeStrategyExecution: beforeLatency } : {}),
+                };
 
-            msg.latency.afterStrategyExecution = calculateLatency(symbol, msg);
-            logger.debug('Latency:', msg.latency);
+                const isBackTest = resolveIsBackTest(strategy_details);
+                if (isBackTest) {
+                    strategy_details.isTest = true;
+                }
+
+                const lastState = await getLiquiditySweepStateForSymbol(
+                    symbol,
+                    isBackTest,
+                    strategy_details.deployment_id
+                );
+
+                const newState = await LiquiditySweep(lastState, msg, symbol, strategy_details);
+
+                const wroteState = await writeLiquiditySweepStateForSymbol(
+                    symbol,
+                    isBackTest,
+                    newState,
+                    strategy_details.deployment_id
+                );
+                if (!wroteState) {
+                    logger.error(`Failed to persist liquidity_sweep state for ${symbol}`);
+                }
+
+                const afterLatency = calculateLatency(symbol, msg);
+                if (afterLatency != null) {
+                    msg.latency.afterStrategyExecution = afterLatency;
+                }
+                logger.debug('Latency:', msg.latency);
+            } catch (err) {
+                logger.error(`Unhandled error processing message for ${symbol}:`, err.message);
+            }
         },
     });
 }

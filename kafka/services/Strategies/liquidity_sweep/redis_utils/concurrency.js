@@ -18,8 +18,32 @@ async function getOpenPositionCount(accountId) {
         return parseInt(val || '0', 10) || 0;
     } catch (err) {
         console.error(`[concurrency] getOpenPositionCount error: ${err.message}`);
-        return 0;
+        return Number.MAX_SAFE_INTEGER;
     }
+}
+
+async function reserveOpenSlot(accountId, maxConcurrentTrades) {
+    if (!accountId) {
+        return false;
+    }
+    try {
+        await redisClientInstance.connect();
+        const client = redisClientInstance.getClient();
+        const key = openCountKey(accountId);
+        const newCount = await client.incr(key);
+        if (newCount > maxConcurrentTrades) {
+            await client.decr(key);
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.error(`[concurrency] reserveOpenSlot error: ${err.message}`);
+        return false;
+    }
+}
+
+async function releaseOpenSlot(accountId) {
+    await decrementOpenPositions(accountId);
 }
 
 async function incrementOpenPositions(accountId) {
@@ -80,6 +104,8 @@ async function setShortQuantityWithTagToRedis(tag, quantity, deploymentId) {
 
 export {
     getOpenPositionCount,
+    reserveOpenSlot,
+    releaseOpenSlot,
     incrementOpenPositions,
     decrementOpenPositions,
     getShortQuantityWithTagFromRedis,

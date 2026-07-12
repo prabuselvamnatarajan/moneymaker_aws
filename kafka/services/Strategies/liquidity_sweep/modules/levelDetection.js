@@ -40,6 +40,7 @@ function createInitialLevelState(tick, params) {
                 ts: tick.ohlcI1?.ts || Math.floor(tick.timestamp / 60000) * 60000,
                 high: tick.ltp,
                 low: tick.ltp,
+                close: tick.ltp,
                 volume: tick.ltq || 0,
             },
             lastBarTs: tick.ohlcI1?.ts || 0,
@@ -109,6 +110,7 @@ function updateMinuteBar(volumeProfile, tick) {
             ts: barTs,
             high: tick.ltp,
             low: tick.ltp,
+            close: tick.ltp,
             volume: tick.ltq || 0,
         };
         volumeProfile.lastBarTs = barTs;
@@ -117,6 +119,7 @@ function updateMinuteBar(volumeProfile, tick) {
 
     current.high = Math.max(current.high, tick.ltp);
     current.low = Math.min(current.low, tick.ltp);
+    current.close = tick.ltp;
     current.volume += tick.ltq || 0;
     return false;
 }
@@ -128,7 +131,8 @@ function computeSessionAtr(minuteBars, lookback = 14) {
     }
     let sum = 0;
     for (let i = 1; i < bars.length; i++) {
-        sum += Math.abs(bars[i].high - bars[i - 1].close || bars[i].high - bars[i - 1].high);
+        const prevClose = bars[i - 1].close ?? bars[i - 1].high;
+        sum += Math.abs(bars[i].close - prevClose);
     }
     return sum / (bars.length - 1);
 }

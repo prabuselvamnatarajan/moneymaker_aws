@@ -5,8 +5,8 @@ import {
     setBoughtQuantityWithTagToRedis,
 } from '../redis_utils/account_utils.js';
 import {
-    getOpenPositionCount,
-    incrementOpenPositions,
+    reserveOpenSlot,
+    releaseOpenSlot,
     decrementOpenPositions,
     getShortQuantityWithTagFromRedis,
     setShortQuantityWithTagToRedis,
@@ -18,18 +18,24 @@ import { logTradeEvent } from './signalLogger.js';
 async function triggerOrder(requestBody) {
     if (!requestBody || requestBody.quantity <= 0) {
         logger.warn('Order quantity is zero or negative, skipping order trigger.');
-        return;
+        return false;
     }
     const placeOrderApi = process.env.PLACEORDER_API;
-    if (placeOrderApi) {
-        try {
-            const res = await axios.post(placeOrderApi, requestBody);
-            logger.debug('Order API response:', res.data);
-        } catch (err) {
-            logger.error('Order API error:', err.message);
-        }
-    } else {
+    if (!placeOrderApi) {
         logger.error('PLACEORDER_API env variable not set');
+        return false;
+    }
+    try {
+        const res = await axios.post(placeOrderApi, requestBody);
+        if (res.status >= 200 && res.status < 300) {
+            logger.debug('Order API response:', res.data);
+            return true;
+        }
+        logger.error(`Order API non-success status: ${res.status}`);
+        return false;
+    } catch (err) {
+        logger.error('Order API error:', err.message);
+        return false;
     }
 }
 
@@ -114,12 +120,6 @@ async function computeRiskBasedQuantity(strategy_details, entry, riskDistance, p
 }
 
 async function tryExecuteEntry(signal, state, symbol, strategy_details, params, openedAt) {
-    const openCount = await getOpenPositionCount(strategy_details.account_id);
-    if (openCount >= params.maxConcurrentTrades) {
-        logTradeEvent(symbol, 'skipped_max_concurrent', { openCount, max: params.maxConcurrentTrades }, strategy_details);
-        return { position: null, reason: 'max_concurrent' };
-    }
-
     const levels = buildTradeLevels(signal, state, params);
     if (!levels.sufficientRR) {
         logTradeEvent(symbol, 'skipped_insufficient_rr', {
@@ -149,8 +149,18 @@ async function tryExecuteEntry(signal, state, symbol, strategy_details, params, 
         return { position: null, reason: 'zero_qty' };
     }
 
-    await triggerOrder(requestBody);
-    await incrementOpenPositions(strategy_details.account_id);
+    const slotReserved = await reserveOpenSlot(strategy_details.account_id, params.maxConcurrentTrades);
+    if (!slotReserved) {
+        logTradeEvent(symbol, 'skipped_max_concurrent', { max: params.maxConcurrentTrades }, strategy_details);
+        return { position: null, reason: 'max_concurrent' };
+    }
+
+    const orderPlaced = await triggerOrder(requestBody);
+    if (!orderPlaced) {
+        await releaseOpenSlot(strategy_details.account_id);
+        logTradeEvent(symbol, 'skipped_order_failed', { transactionType }, strategy_details);
+        return { position: null, reason: 'order_failed' };
+    }
 
     if (levels.isLong) {
         await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
@@ -203,17 +213,26 @@ async function closePosition(position, ltp, symbol, strategy_details, reason, qt
         closeQty
     );
 
-    if (requestBody?.quantity > 0) {
-        await triggerOrder(requestBody);
-        if (isLong) {
-            const remaining = Math.max(0, (await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - closeQty);
-            await setBoughtQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
-        } else {
-            const remaining = Math.max(0, (await getShortQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - closeQty);
-            await setShortQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
-        }
-        logTradeEvent(symbol, 'CLOSE', { reason, ltp, qty: requestBody.quantity }, strategy_details);
+    if (!requestBody?.quantity || requestBody.quantity <= 0) {
+        logger.warn(`[liquidity_sweep] Skipping close (${reason}): zero quantity`);
+        return false;
     }
+
+    const orderPlaced = await triggerOrder(requestBody);
+    if (!orderPlaced) {
+        logTradeEvent(symbol, 'close_failed', { reason, ltp, qty: requestBody.quantity }, strategy_details);
+        return false;
+    }
+
+    if (isLong) {
+        const remaining = Math.max(0, (await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - closeQty);
+        await setBoughtQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
+    } else {
+        const remaining = Math.max(0, (await getShortQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - closeQty);
+        await setShortQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
+    }
+    logTradeEvent(symbol, 'CLOSE', { reason, ltp, qty: requestBody.quantity }, strategy_details);
+    return true;
 }
 
 async function finalizeClose(state, tick, symbol, strategy_details, params) {
@@ -236,8 +255,11 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
             ? (ltp - position.entry) / position.riskDistance
             : (position.entry - ltp) / position.riskDistance;
         if (profitR < params.breakevenAtR) {
-            await closePosition(position, ltp, symbol, strategy_details, 'time_stop');
-            return finalizeClose(state, tick, symbol, strategy_details, params);
+            const closed = await closePosition(position, ltp, symbol, strategy_details, 'time_stop');
+            if (closed) {
+                return finalizeClose(state, tick, symbol, strategy_details, params);
+            }
+            return { ...state, position };
         }
     }
 
@@ -260,28 +282,45 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
 
     const stopHit = isLong ? ltp <= effectiveStop : ltp >= effectiveStop;
     if (stopHit) {
-        await closePosition(position, ltp, symbol, strategy_details, position.partialTaken ? 'trail_stop' : 'stop_loss');
-        return finalizeClose(state, tick, symbol, strategy_details, params);
+        const closed = await closePosition(
+            position,
+            ltp,
+            symbol,
+            strategy_details,
+            position.partialTaken ? 'trail_stop' : 'stop_loss'
+        );
+        if (closed) {
+            return finalizeClose(state, tick, symbol, strategy_details, params);
+        }
+        return { ...state, position };
     }
 
     if (!position.partialTaken) {
         const target1Hit = isLong ? ltp >= position.target1 : ltp <= position.target1;
         if (target1Hit) {
-            const partialQty = Math.floor(position.remainingQty * params.partialExitPct);
+            let partialQty = Math.floor(position.remainingQty * params.partialExitPct);
+            if (partialQty <= 0 && position.remainingQty > 1) {
+                partialQty = 1;
+            }
             if (partialQty > 0) {
-                await closePosition(position, ltp, symbol, strategy_details, 'partial_target1', partialQty);
-                position.remainingQty -= partialQty;
-                position.partialTaken = true;
-                position.trailStop = position.breakevenMoved ? position.entry : position.stop;
-                logTradeEvent(symbol, 'PARTIAL', { qty: partialQty, remaining: position.remainingQty }, strategy_details);
+                const closed = await closePosition(position, ltp, symbol, strategy_details, 'partial_target1', partialQty);
+                if (closed) {
+                    position.remainingQty -= partialQty;
+                    position.partialTaken = true;
+                    position.trailStop = position.breakevenMoved ? position.entry : position.stop;
+                    logTradeEvent(symbol, 'PARTIAL', { qty: partialQty, remaining: position.remainingQty }, strategy_details);
+                }
             }
         }
     }
 
     const targetHit = isLong ? ltp >= position.target : ltp <= position.target;
     if (targetHit && position.remainingQty > 0) {
-        await closePosition(position, ltp, symbol, strategy_details, 'target', position.remainingQty);
-        return finalizeClose(state, tick, symbol, strategy_details, params);
+        const closed = await closePosition(position, ltp, symbol, strategy_details, 'target', position.remainingQty);
+        if (closed) {
+            return finalizeClose(state, tick, symbol, strategy_details, params);
+        }
+        return { ...state, position };
     }
 
     return { ...state, position };

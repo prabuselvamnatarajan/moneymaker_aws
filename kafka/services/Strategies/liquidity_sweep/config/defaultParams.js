@@ -58,8 +58,7 @@ export const BACKTEST_PARAM_OVERRIDES = {
 };
 
 function isBacktestContext(strategy_details = {}) {
-    return strategy_details.isTest === true
-        || strategy_details.strategy_mode === 'BACKTEST'
+    return strategy_details.strategy_mode === 'BACKTEST'
         || process.env.IS_BACKTEST === 'true';
 }
 

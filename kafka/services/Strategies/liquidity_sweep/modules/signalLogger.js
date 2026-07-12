@@ -22,13 +22,22 @@ async function persistLog(payload, strategy_details) {
     }
     const base = getSweepLogApiBase();
     const url = `${base}/api/deployments/${deploymentId}/sweep-signals`;
-    try {
-        await axios.post(url, payload, {
-            timeout: 3000,
-            headers: getServiceHeaders(),
-        });
-    } catch (err) {
-        console.warn(`[liquidity_sweep] Failed to persist log: ${err.message}`);
+    const headers = getServiceHeaders();
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            await axios.post(url, payload, {
+                timeout: 3000,
+                headers,
+            });
+            return;
+        } catch (err) {
+            if (attempt === 2) {
+                console.warn(`[liquidity_sweep] Failed to persist log after retries: ${err.message}`);
+                return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+        }
     }
 }
 

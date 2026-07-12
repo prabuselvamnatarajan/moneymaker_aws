@@ -42,15 +42,24 @@ async function writeLiquiditySweepStateForSymbol(symbol, isTestMode = false, new
             await redisClientInstance.connect();
             redisJson = new RedisJson(redisClientInstance.getClient());
         }
-        try {
-            await redisJson.setJson(redisKey, newState);
-            logger.debug(`Wrote liquidity_sweep state for key ${redisKey}:`, newState);
-        } catch (error) {
-            logger.error(`Error writing strategy state for ${symbol} key ${redisKey}:`, error.message);
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                await redisJson.setJson(redisKey, newState);
+                logger.debug(`Wrote liquidity_sweep state for key ${redisKey}:`, newState);
+                return true;
+            } catch (error) {
+                if (attempt === 1) {
+                    logger.error(`Error writing strategy state for ${symbol} key ${redisKey}:`, error.message);
+                    return false;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
         }
     } catch (error) {
         logger.error(`Error writing liquidity_sweep state for ${symbol}:`, error.message);
+        return false;
     }
+    return false;
 }
 
 async function setBacktestCompleted(deploymentId) {
