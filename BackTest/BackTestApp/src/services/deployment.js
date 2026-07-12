@@ -592,6 +592,7 @@ export const syncAllDeploymentsToRedis = async () => {
         commission_rate: dep.account_id.commission_rate || 0,
         target_pts: dep.strategy_id.target_pts !== undefined ? dep.strategy_id.target_pts : 500,
         sl_pts: dep.strategy_id.sl_pts !== undefined ? dep.strategy_id.sl_pts : 500,
+        params: dep.strategy_id.params || {},
       });
 
       // Sync account balance to Redis

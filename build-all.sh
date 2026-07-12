@@ -65,6 +65,12 @@ docker build -t msb-pts-strategy:latest ./kafka/services/Strategies/msb_pts
 clean_shared ./kafka/services/Strategies/msb_pts
 rm -f ./kafka/services/Strategies/msb_pts/account_utils.js
 
+copy_shared ./kafka/services/Strategies/liquidity_sweep
+cp ./MicroServices/Shared/Accounts/account_utils.js ./kafka/services/Strategies/liquidity_sweep/account_utils.js
+docker build -t liquidity-sweep-strategy:latest ./kafka/services/Strategies/liquidity_sweep
+clean_shared ./kafka/services/Strategies/liquidity_sweep
+rm -f ./kafka/services/Strategies/liquidity_sweep/account_utils.js
+
 # Deploy the stack
 if ! docker info | grep -q "Swarm: active"; then
   docker swarm init

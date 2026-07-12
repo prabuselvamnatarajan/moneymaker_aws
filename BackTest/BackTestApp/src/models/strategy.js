@@ -31,6 +31,10 @@ const strategySchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  params: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
   is_active: {
     type: Boolean,
     default: true,
