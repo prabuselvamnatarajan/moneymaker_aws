@@ -5,7 +5,8 @@ import { classifyTickSide, enrichTick, computeRollingDelta, getDeltaWeight } fro
 import { detectSweep, passesBookImbalance } from '../modules/sweepDetection.js';
 import { processAbsorption } from '../modules/absorption.js';
 import { buildTradeLevels, updateTrailingStop } from '../modules/tradeLevels.js';
-import { DEFAULT_PARAMS } from '../config/defaultParams.js';
+import { DEFAULT_PARAMS, resolveParams } from '../config/defaultParams.js';
+import { getSessionOpenTs } from '../modules/sessionTime.js';
 
 function makeMarketTick({ ltp, ltq = 100, ltt = Date.now(), bidP, askP, prevLtp }) {
     return parseTick({
@@ -230,5 +231,33 @@ describe('bookImbalance', () => {
         const params = { bookImbalanceThreshold: 0.55 };
         assert.equal(passesBookImbalance(tick, 'up', params), true);
         assert.equal(passesBookImbalance(tick, 'down', params), false);
+    });
+});
+
+describe('backtest params', () => {
+    it('applies relaxed overrides when isTest is true', () => {
+        const params = resolveParams({ isTest: true, strategy_mode: 'BACKTEST' });
+        assert.equal(params.minAvgTradedValuePerMin, 0);
+        assert.equal(params.gapThresholdSec, 300);
+        assert.equal(params.useLtqProxy, true);
+        assert.equal(params.useTickRateVolumeProxy, true);
+    });
+
+    it('uses unit delta proxy for index ticks with zero ltq', () => {
+        const tick = parseTick({
+            fullFeed: { indexFF: { ltpc: { ltp: 22100, ltq: 0, ltt: Date.now() } } },
+        }, 22000);
+        const enriched = enrichTick(tick, 22000, { useLtqProxy: true });
+        assert.equal(enriched.signedQty, 1);
+    });
+});
+
+describe('sessionTime', () => {
+    it('maps 9:20 IST to five minutes after session open', () => {
+        // 2024-06-03 09:20 IST = 03:50 UTC
+        const ts = Date.UTC(2024, 5, 3, 3, 50, 0, 0);
+        const openTs = getSessionOpenTs(ts);
+        const minsSinceOpen = (ts - openTs) / (60 * 1000);
+        assert.equal(Math.round(minsSinceOpen), 5);
     });
 });

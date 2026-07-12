@@ -2,16 +2,7 @@
  * Phase A — key level detection (PDH/PDL, VWAP, opening range, HVN).
  */
 
-function getSessionDate(timestamp) {
-    const d = new Date(timestamp);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getSessionOpenTs(timestamp) {
-    const d = new Date(timestamp);
-    d.setHours(9, 15, 0, 0);
-    return d.getTime();
-}
+import { getSessionDate, getSessionOpenTs } from './sessionTime.js';
 
 function priceBucket(price, bucketSizePct) {
     if (!price || price <= 0) {

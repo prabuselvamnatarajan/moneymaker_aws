@@ -69,6 +69,7 @@ const resetBacktestDeployment = async (deployment) => {
             } else {
               await client.set(balanceKey, JSON.stringify(balanceData));
             }
+            await client.del(`liquidity_sweep:open:${accountIdStr}`);
             console.log(`[Reset] Synced account balance for ${accountIdStr} to Redis: ${account.initial_balance}`);
           } catch (err) {
             console.error(`[Reset] Error syncing account balance to Redis: ${err.message}`);

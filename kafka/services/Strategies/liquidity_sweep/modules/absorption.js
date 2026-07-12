@@ -20,14 +20,14 @@ function processAbsorption(state, tick, params, symbol, strategy_details = {}) {
     if (sweep.direction === 'up' && tick.ltp > prevExtreme + invalidationDist) {
         logSweepOutcome(symbol, sweep, 'invalidated_continuation', tick, strategy_details);
         return {
-            state: resetSweepState(state),
+            state: resetSweepState(state, tick.timestamp),
             signal: null,
         };
     }
     if (sweep.direction === 'down' && tick.ltp < prevExtreme - invalidationDist) {
         logSweepOutcome(symbol, sweep, 'invalidated_continuation', tick, strategy_details);
         return {
-            state: resetSweepState(state),
+            state: resetSweepState(state, tick.timestamp),
             signal: null,
         };
     }
@@ -40,7 +40,7 @@ function processAbsorption(state, tick, params, symbol, strategy_details = {}) {
     if (sweep.tickCount > params.rejectionMaxTicks || elapsedSec > params.rejectionMaxTimeSec) {
         logSweepOutcome(symbol, sweep, 'timeout', tick, strategy_details);
         return {
-            state: resetSweepState(state),
+            state: resetSweepState(state, tick.timestamp),
             signal: null,
         };
     }
@@ -77,10 +77,10 @@ function processAbsorption(state, tick, params, symbol, strategy_details = {}) {
     return { state: { ...state, sweep }, signal: null };
 }
 
-function resetSweepState(state) {
+function resetSweepState(state, nowTs = Date.now()) {
     return {
         ...state,
-        machineState: state.cooldownUntil && Date.now() < state.cooldownUntil ? 'COOLDOWN' : 'IDLE',
+        machineState: state.cooldownUntil && nowTs < state.cooldownUntil ? 'COOLDOWN' : 'IDLE',
         sweep: null,
         pendingSignal: null,
     };

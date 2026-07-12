@@ -1,5 +1,6 @@
 import { getActiveLevels } from './levelDetection.js';
 import { computeVolumeRate, computeBookImbalance } from './tickDelta.js';
+import { getSessionEndTs } from './sessionTime.js';
 
 /**
  * Phase E — pre-signal filters (time, liquidity, volatility).
@@ -9,10 +10,8 @@ function getMinutesSinceOpen(timestamp, sessionOpenTs) {
 }
 
 function getMinutesUntilSessionEnd(timestamp, params) {
-    const d = new Date(timestamp);
-    const end = new Date(timestamp);
-    end.setHours(params.sessionEndHour, params.sessionEndMinute, 0, 0);
-    return (end.getTime() - d.getTime()) / (60 * 1000);
+    const endTs = getSessionEndTs(timestamp, params.sessionEndHour, params.sessionEndMinute);
+    return (endTs - timestamp) / (60 * 1000);
 }
 
 function passesFilters(state, tick, params) {
@@ -22,12 +21,12 @@ function passesFilters(state, tick, params) {
     }
 
     const minsSinceOpen = getMinutesSinceOpen(tick.timestamp, sessionOpenTs);
-    if (minsSinceOpen < params.skipFirstMinutes) {
+    if (params.skipFirstMinutes > 0 && minsSinceOpen < params.skipFirstMinutes) {
         return { pass: false, reason: 'opening_window' };
     }
 
     const minsUntilEnd = getMinutesUntilSessionEnd(tick.timestamp, params);
-    if (minsUntilEnd < params.skipLastMinutes) {
+    if (params.skipLastMinutes > 0 && minsUntilEnd < params.skipLastMinutes) {
         return { pass: false, reason: 'closing_window' };
     }
 
@@ -35,7 +34,8 @@ function passesFilters(state, tick, params) {
     const { volumeRate } = computeVolumeRate(
         tickBuffer,
         params.volumeRateWindowSec,
-        tick.timestamp
+        tick.timestamp,
+        params
     );
     const avgTradedValuePerMin = volumeRate * tick.ltp * 60;
     if (params.minAvgTradedValuePerMin > 0 && avgTradedValuePerMin < params.minAvgTradedValuePerMin) {
@@ -45,7 +45,7 @@ function passesFilters(state, tick, params) {
     const atr = state.sessionAtr;
     if (atr != null && tick.ltp > 0) {
         const atrPct = atr / tick.ltp;
-        if (atrPct < params.atrLowPct) {
+        if (params.atrLowPct > 0 && atrPct < params.atrLowPct) {
             return { pass: false, reason: 'volatility_too_low' };
         }
         if (atrPct > params.atrHighPct) {

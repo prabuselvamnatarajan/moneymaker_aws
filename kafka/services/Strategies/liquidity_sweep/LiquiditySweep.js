@@ -34,7 +34,7 @@ function handleDataGap(state, tick, symbol, strategy_details) {
         logSweepOutcome(symbol, state.sweep, 'data_gap', tick, strategy_details);
     }
     return {
-        ...resetSweepState(state),
+        ...resetSweepState(state, tick.timestamp),
         tickBuffer: [],
         sweep: null,
         pendingSignal: null,
@@ -74,7 +74,7 @@ async function attemptEntry(state, tick, symbol, strategy_details, params) {
     const filterResult = passesFilters(state, tick, params);
     if (!filterResult.pass) {
         logger.info(`[liquidity_sweep] Signal filtered: ${filterResult.reason}`, { symbol });
-        return resetSweepState({ ...state, pendingSignal: null, machineState: 'IDLE' });
+        return resetSweepState({ ...state, pendingSignal: null, machineState: 'IDLE' }, tick.timestamp);
     }
 
     const { position, reason } = await tryExecuteEntry(
@@ -88,7 +88,7 @@ async function attemptEntry(state, tick, symbol, strategy_details, params) {
 
     if (!position) {
         logger.info(`[liquidity_sweep] Entry skipped: ${reason}`, { symbol });
-        return resetSweepState({ ...state, pendingSignal: null, machineState: 'IDLE' });
+        return resetSweepState({ ...state, pendingSignal: null, machineState: 'IDLE' }, tick.timestamp);
     }
 
     return {
@@ -128,7 +128,7 @@ async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
     state = updateLevels(state, tick, params);
     state.activeLevels = getActiveLevels(state.levels);
 
-    const enriched = enrichTick(tick, previousLtp);
+    const enriched = enrichTick(tick, previousLtp, params);
     state.tickBuffer = pushTickBuffer(state.tickBuffer, enriched, params.tickBufferSize);
     state.metrics = updateMetrics(state.metrics, state.tickBuffer, params);
 
@@ -154,7 +154,7 @@ async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
             const filterResult = passesFilters(state, tick, params);
             if (!filterResult.pass) {
                 logger.info(`[liquidity_sweep] Signal filtered: ${filterResult.reason}`, { symbol });
-                return resetSweepState({ ...state, pendingSignal: null });
+                return resetSweepState({ ...state, pendingSignal: null }, tick.timestamp);
             }
 
             if (params.entryOnNextTick) {

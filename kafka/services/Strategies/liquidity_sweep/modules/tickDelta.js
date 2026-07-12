@@ -35,12 +35,18 @@ function classifyTickSide(tick) {
     return { side: 'neutral', confidence: 'low' };
 }
 
-function enrichTick(tick, previousLtp) {
+function enrichTick(tick, previousLtp, params = {}) {
     const classified = classifyTickSide({ ...tick, previousLtp });
+    const rawQty = tick.ltq || 0;
+    const useProxy = params.useLtqProxy && rawQty <= 0;
+    const qty = rawQty > 0
+        ? rawQty
+        : (useProxy && classified.side !== 'neutral' ? 1 : 0);
+
     const signedQty = classified.side === 'buy'
-        ? tick.ltq
+        ? qty
         : classified.side === 'sell'
-            ? -tick.ltq
+            ? -qty
             : 0;
 
     return {
@@ -63,7 +69,7 @@ function computeRollingDelta(tickBuffer, windowTicks, params = {}) {
     return window.reduce((sum, t) => sum + weightedSignedQty(t, params), 0);
 }
 
-function computeVolumeRate(tickBuffer, windowSec, nowTs) {
+function computeVolumeRate(tickBuffer, windowSec, nowTs, params = {}) {
     const cutoff = nowTs - windowSec * 1000;
     const window = (tickBuffer || []).filter((t) => t.timestamp >= cutoff);
     if (window.length === 0) {
@@ -71,9 +77,12 @@ function computeVolumeRate(tickBuffer, windowSec, nowTs) {
     }
     const elapsedSec = Math.max((nowTs - window[0].timestamp) / 1000, 0.001);
     const totalVolume = window.reduce((sum, t) => sum + (t.ltq || 0), 0);
+    const effectiveVolume = (totalVolume > 0 || !params.useTickRateVolumeProxy)
+        ? totalVolume
+        : window.length;
     return {
         tickRate: window.length / elapsedSec,
-        volumeRate: totalVolume / elapsedSec,
+        volumeRate: effectiveVolume / elapsedSec,
         tickCount: window.length,
     };
 }
@@ -89,7 +98,7 @@ function updateMetrics(metrics, tickBuffer, params) {
         : 1;
 
     const lastTs = window.length > 0 ? window[window.length - 1].timestamp : Date.now();
-    const { volumeRate } = computeVolumeRate(window, params.volumeRateWindowSec, lastTs);
+    const { volumeRate } = computeVolumeRate(window, params.volumeRateWindowSec, lastTs, params);
     const avgVolumeRate = metrics?.avgVolumeRate
         ? metrics.avgVolumeRate * 0.95 + volumeRate * 0.05
         : volumeRate || 1;

@@ -35,7 +35,8 @@ function detectSweep(state, tick, params) {
     const { volumeRate } = computeVolumeRate(
         tickBuffer,
         params.volumeRateWindowSec,
-        tick.timestamp
+        tick.timestamp,
+        params
     );
 
     const avgVolumeRate = state.metrics?.avgVolumeRate || volumeRate || 1;

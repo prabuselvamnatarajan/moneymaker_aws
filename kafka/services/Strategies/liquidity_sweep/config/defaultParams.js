@@ -38,11 +38,37 @@ export const DEFAULT_PARAMS = {
     requireBookImbalance: false,
     trailOffsetR: 0.5,
     maxConcurrentTrades: 1,
+    useLtqProxy: false,
+    useTickRateVolumeProxy: false,
 };
+
+/** Relaxed defaults for backtest / index tick replay (sparse ltq, gaps between ticks). */
+export const BACKTEST_PARAM_OVERRIDES = {
+    minAvgTradedValuePerMin: 0,
+    gapThresholdSec: 300,
+    burstMultiplier: 1.2,
+    deltaThresholdMultiplier: 0.8,
+    skipFirstMinutes: 0,
+    skipLastMinutes: 0,
+    atrLowPct: 0,
+    rejectionMaxTicks: 30,
+    rejectionMaxTimeSec: 120,
+    useLtqProxy: true,
+    useTickRateVolumeProxy: true,
+};
+
+function isBacktestContext(strategy_details = {}) {
+    return strategy_details.isTest === true
+        || strategy_details.strategy_mode === 'BACKTEST'
+        || process.env.IS_BACKTEST === 'true';
+}
 
 export function resolveParams(strategy_details = {}) {
     const nested = strategy_details.params || {};
-    const merged = { ...DEFAULT_PARAMS, ...nested };
+    const base = isBacktestContext(strategy_details)
+        ? { ...DEFAULT_PARAMS, ...BACKTEST_PARAM_OVERRIDES }
+        : { ...DEFAULT_PARAMS };
+    const merged = { ...base, ...nested };
 
     const directKeys = [
         'burstMultiplier', 'deltaThresholdMultiplier', 'sweepTolerancePct',
@@ -57,6 +83,7 @@ export function resolveParams(strategy_details = {}) {
         'partialExitPct', 'atrLookbackBars', 'atrLowPct', 'atrHighPct',
         'entryOnNextTick', 'lowConfidenceDeltaWeight', 'bookImbalanceThreshold',
         'requireBookImbalance', 'trailOffsetR', 'maxConcurrentTrades',
+        'useLtqProxy', 'useTickRateVolumeProxy',
     ];
 
     for (const key of directKeys) {
