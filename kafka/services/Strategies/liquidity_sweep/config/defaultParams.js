@@ -32,6 +32,12 @@ export const DEFAULT_PARAMS = {
     atrLookbackBars: 14,
     atrLowPct: 0.001,
     atrHighPct: 0.05,
+    entryOnNextTick: true,
+    lowConfidenceDeltaWeight: 0.5,
+    bookImbalanceThreshold: 0.55,
+    requireBookImbalance: false,
+    trailOffsetR: 0.5,
+    maxConcurrentTrades: 1,
 };
 
 export function resolveParams(strategy_details = {}) {
@@ -49,6 +55,8 @@ export function resolveParams(strategy_details = {}) {
         'skipFirstMinutes', 'skipLastMinutes', 'sessionEndHour',
         'sessionEndMinute', 'timeStopMinutes', 'breakevenAtR',
         'partialExitPct', 'atrLookbackBars', 'atrLowPct', 'atrHighPct',
+        'entryOnNextTick', 'lowConfidenceDeltaWeight', 'bookImbalanceThreshold',
+        'requireBookImbalance', 'trailOffsetR', 'maxConcurrentTrades',
     ];
 
     for (const key of directKeys) {

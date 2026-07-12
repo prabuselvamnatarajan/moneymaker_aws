@@ -167,7 +167,7 @@ export const getAllDeployments = async (userId, queryParams) => {
 };
 
 export const getDeploymentById = async (userId, id) => {
-  return await Deployment.findOne({ _id: id, user_id: userId });
+  return await Deployment.findOne({ _id: id, user_id: userId }).populate("strategy_id");
 };
 
 export const updateDeployment = async (userId, id, updateData) => {

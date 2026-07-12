@@ -4,7 +4,7 @@ import { logSweepOutcome } from './signalLogger.js';
 /**
  * Phase C — absorption / rejection confirmation while SWEEP_ACTIVE.
  */
-function processAbsorption(state, tick, params, symbol) {
+function processAbsorption(state, tick, params, symbol, strategy_details = {}) {
     const sweep = state.sweep;
     if (!sweep) {
         return { state, signal: null };
@@ -13,19 +13,19 @@ function processAbsorption(state, tick, params, symbol) {
     sweep.tickCount = (sweep.tickCount || 0) + 1;
     const prevExtreme = sweep.sweepExtreme;
     const elapsedSec = (tick.timestamp - sweep.sweepStartTime) / 1000;
-    const delta = computeRollingDelta(state.tickBuffer, params.deltaWindowTicks);
+    const delta = computeRollingDelta(state.tickBuffer, params.deltaWindowTicks, params);
     const invalidationDist = prevExtreme * params.invalidationMargin;
 
     // Invalidation — genuine breakout (check before updating extreme)
     if (sweep.direction === 'up' && tick.ltp > prevExtreme + invalidationDist) {
-        logSweepOutcome(symbol, sweep, 'invalidated_continuation', tick);
+        logSweepOutcome(symbol, sweep, 'invalidated_continuation', tick, strategy_details);
         return {
             state: resetSweepState(state),
             signal: null,
         };
     }
     if (sweep.direction === 'down' && tick.ltp < prevExtreme - invalidationDist) {
-        logSweepOutcome(symbol, sweep, 'invalidated_continuation', tick);
+        logSweepOutcome(symbol, sweep, 'invalidated_continuation', tick, strategy_details);
         return {
             state: resetSweepState(state),
             signal: null,
@@ -38,7 +38,7 @@ function processAbsorption(state, tick, params, symbol) {
 
     // Timeout
     if (sweep.tickCount > params.rejectionMaxTicks || elapsedSec > params.rejectionMaxTimeSec) {
-        logSweepOutcome(symbol, sweep, 'timeout', tick);
+        logSweepOutcome(symbol, sweep, 'timeout', tick, strategy_details);
         return {
             state: resetSweepState(state),
             signal: null,
@@ -55,7 +55,7 @@ function processAbsorption(state, tick, params, symbol) {
         : delta > 0;
 
     if (reentered && deltaFlipped) {
-        logSweepOutcome(symbol, sweep, 'rejection_confirmed', tick);
+        logSweepOutcome(symbol, sweep, 'rejection_confirmed', tick, strategy_details);
         const signal = {
             direction: sweep.direction === 'up' ? 'short' : 'long',
             entryPrice: tick.ltp,
@@ -64,7 +64,12 @@ function processAbsorption(state, tick, params, symbol) {
             levelType: sweep.levelType,
         };
         return {
-            state: { ...state, machineState: 'SIGNAL_TRIGGERED', pendingSignal: signal },
+            state: {
+                ...state,
+                machineState: 'PENDING_ENTRY',
+                pendingSignal: signal,
+                sweep: null,
+            },
             signal,
         };
     }

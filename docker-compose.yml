@@ -701,6 +701,8 @@ services:
       - kafka-broker-2
       - kafka-broker-3
       - redis
+      - get-ohlc
+      - backtest-app
     environment:
       SERVICE_NAME: liquidity-sweep-strategy-service
       SERVICE_MODE: live
@@ -711,6 +713,9 @@ services:
       TARGET_GROUP_ID: liquidity_sweep_strategy_group
       SHARED_DIR: /shared
       PLACEORDER_API: http://placeorder
+      GET_OHLC_API: http://get-ohlc
+      SWEEP_LOG_API: http://backtest-app
+      BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
@@ -726,6 +731,8 @@ services:
       - kafka-broker-2
       - kafka-broker-3
       - redis
+      - get-ohlc
+      - backtest-app
     environment:
       SERVICE_NAME: liquidity-sweep-strategy-service
       SERVICE_MODE: backtest
@@ -737,6 +744,9 @@ services:
       TARGET_GROUP_ID: backtest_liquidity_sweep_strategy_group
       SHARED_DIR: /shared
       PLACEORDER_API: http://placeorder
+      GET_OHLC_API: http://get-ohlc
+      SWEEP_LOG_API: http://backtest-app
+      BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro

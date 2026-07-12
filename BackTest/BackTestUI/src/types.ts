@@ -194,6 +194,30 @@ export interface IntradayTradeDataPoint {
   type_of_order: string;
 }
 
+export interface SweepSignalLog {
+  _id: string;
+  deployment_id: string;
+  symbol?: string;
+  eventType?: string;
+  outcome: string;
+  level?: number;
+  levelType?: string;
+  direction?: string;
+  sweepExtreme?: number;
+  ltp?: number;
+  tickCount?: number;
+  timestamp?: number;
+  created_at?: string;
+}
+
+export interface SweepSignalStats {
+  total: number;
+  confirmed: number;
+  confirmationRate: number;
+  byOutcome: Array<{ outcome: string; count: number }>;
+  byLevelType: Array<{ levelType: string; count: number }>;
+}
+
 export interface Deployment {
   _id: string;
   deployment_name: string;

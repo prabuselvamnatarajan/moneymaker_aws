@@ -256,6 +256,11 @@ export const clearAndSeedDB = async () => {
           cooldownMinutes: 5,
           openingRangeMinutes: 15,
           hvnWindowMinutes: 45,
+          entryOnNextTick: true,
+          lowConfidenceDeltaWeight: 0.5,
+          bookImbalanceThreshold: 0.55,
+          trailOffsetR: 0.5,
+          maxConcurrentTrades: 1,
         }
       }
     ];

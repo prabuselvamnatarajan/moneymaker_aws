@@ -10,6 +10,7 @@ import { DeploymentAnalysis, TimeSeriesDataPoint, IntradayTradeDataPoint, Deploy
 import { api } from '../api';
 import { useToast } from './Toast';
 import CandlestickSidebar from './CandlestickSidebar';
+import SweepSignalLogView from './SweepSignalLogView';
 
 interface DeploymentAnalysisViewProps {
   selectedDeploymentId: string | null;
@@ -160,6 +161,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const [rawTrades, setRawTrades] = useState<any[]>([]);
   const [tradesLoading, setTradesLoading] = useState(false);
   const [expandedPairs, setExpandedPairs] = useState<Set<string>>(new Set());
+  const [analysisPanel, setAnalysisPanel] = useState<'performance' | 'sweepSignals'>('performance');
+  const [isLiquiditySweep, setIsLiquiditySweep] = useState(false);
 
   // --- lightweight-charts integration ---
   const pnlChartContainerRef = useRef<HTMLDivElement>(null);
@@ -364,6 +367,17 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       setDeploymentId(selectedDeploymentId);
     }
   }, [selectedDeploymentId]);
+
+  useEffect(() => {
+    if (!deploymentId) {
+      setIsLiquiditySweep(false);
+      return;
+    }
+    api.deployments.get(deploymentId).then((res) => {
+      const strategyName = res.data?.strategy_id?.strategy_name || '';
+      setIsLiquiditySweep(strategyName === 'liquidity_sweep');
+    }).catch(() => setIsLiquiditySweep(false));
+  }, [deploymentId]);
 
   // Fetch user's deployments on mount
   useEffect(() => {
@@ -811,6 +825,33 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
             )}
           </div>
 
+          {isLiquiditySweep && (
+            <div className="flex gap-2 border-b border-slate-800 pb-2">
+              <button
+                type="button"
+                onClick={() => setAnalysisPanel('performance')}
+                className={`px-3 py-1.5 rounded text-xs font-medium ${analysisPanel === 'performance' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+              >
+                Performance
+              </button>
+              <button
+                type="button"
+                onClick={() => setAnalysisPanel('sweepSignals')}
+                className={`px-3 py-1.5 rounded text-xs font-medium ${analysisPanel === 'sweepSignals' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+              >
+                Sweep Signals
+              </button>
+            </div>
+          )}
+
+          {isLiquiditySweep && analysisPanel === 'sweepSignals' && deploymentId && (
+            <div className="bg-slate-900/50 border border-slate-800 rounded-lg">
+              <SweepSignalLogView deploymentId={deploymentId} />
+            </div>
+          )}
+
+          {(!isLiquiditySweep || analysisPanel === 'performance') && (
+          <>
           {/* Metrics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Total Trades */}
@@ -965,6 +1006,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
             setExpandedPairs={setExpandedPairs}
             formatCurrency={formatCurrency}
           />
+          </>
+          )}
         </>
       )}
 

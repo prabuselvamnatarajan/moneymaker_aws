@@ -695,6 +695,25 @@ export const api = {
         }>;
       }>(res);
     },
+
+    async getSweepSignals(id: string, params?: { outcome?: string; page?: number; limit?: number }) {
+      const search = new URLSearchParams();
+      if (params?.outcome) search.append('outcome', params.outcome);
+      if (params?.page) search.append('page', String(params.page));
+      if (params?.limit) search.append('limit', String(params.limit));
+      const qs = search.toString();
+      const url = `${BASE_URL}/deployments/${id}/sweep-signals${qs ? `?${qs}` : ''}`;
+      const res = await fetch(url, { method: 'GET', headers: getHeaders() });
+      return handleResponse<{ items: import('./types').SweepSignalLog[]; pagination: { total: number } }>(res);
+    },
+
+    async getSweepSignalStats(id: string) {
+      const res = await fetch(`${BASE_URL}/deployments/${id}/sweep-signals/stats`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ data: import('./types').SweepSignalStats }>(res);
+    },
   },
 
   // Trades API

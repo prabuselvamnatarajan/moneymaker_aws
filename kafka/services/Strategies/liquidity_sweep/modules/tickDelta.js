@@ -2,6 +2,18 @@
  * Tick aggressor classification and rolling delta / volume rate metrics.
  */
 
+function getDeltaWeight(tick, params = {}) {
+    const weight = tick.sideConfidence === 'low'
+        ? (params.lowConfidenceDeltaWeight ?? 0.5)
+        : 1.0;
+    return weight;
+}
+
+function weightedSignedQty(tick, params = {}) {
+    const base = tick.signedQty || 0;
+    return base * getDeltaWeight(tick, params);
+}
+
 function classifyTickSide(tick) {
     const { ltp, bestBid, bestAsk, previousLtp, confidence } = tick;
 
@@ -46,9 +58,9 @@ function pushTickBuffer(tickBuffer, enrichedTick, maxSize) {
     return buffer.slice(-maxSize);
 }
 
-function computeRollingDelta(tickBuffer, windowTicks) {
+function computeRollingDelta(tickBuffer, windowTicks, params = {}) {
     const window = (tickBuffer || []).slice(-windowTicks);
-    return window.reduce((sum, t) => sum + (t.signedQty || 0), 0);
+    return window.reduce((sum, t) => sum + weightedSignedQty(t, params), 0);
 }
 
 function computeVolumeRate(tickBuffer, windowSec, nowTs) {
@@ -70,7 +82,7 @@ function updateMetrics(metrics, tickBuffer, params) {
     const window = tickBuffer || [];
     const deltas = [];
     for (let i = params.deltaWindowTicks; i <= window.length; i++) {
-        deltas.push(Math.abs(computeRollingDelta(window.slice(0, i), params.deltaWindowTicks)));
+        deltas.push(Math.abs(computeRollingDelta(window.slice(0, i), params.deltaWindowTicks, params)));
     }
     const avgAbsDelta = deltas.length > 0
         ? deltas.reduce((a, b) => a + b, 0) / deltas.length
@@ -89,6 +101,15 @@ function updateMetrics(metrics, tickBuffer, params) {
     };
 }
 
+function computeBookImbalance(tick) {
+    const tbq = tick.tbq;
+    const tsq = tick.tsq;
+    if (tbq == null || tsq == null || tbq + tsq <= 0) {
+        return null;
+    }
+    return tbq / (tbq + tsq);
+}
+
 export {
     classifyTickSide,
     enrichTick,
@@ -96,4 +117,7 @@ export {
     computeRollingDelta,
     computeVolumeRate,
     updateMetrics,
+    computeBookImbalance,
+    getDeltaWeight,
+    weightedSignedQty,
 };

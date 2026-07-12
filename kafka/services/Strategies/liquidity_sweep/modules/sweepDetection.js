@@ -1,9 +1,20 @@
-import { computeRollingDelta, computeVolumeRate } from './tickDelta.js';
+import { computeRollingDelta, computeVolumeRate, computeBookImbalance } from './tickDelta.js';
 
 function levelTolerance(level, params) {
     const pctTol = level * params.sweepTolerancePct;
     const tickTol = params.tickSize * params.sweepToleranceTicks;
     return Math.max(pctTol, tickTol);
+}
+
+function passesBookImbalance(tick, direction, params) {
+    const imbalance = computeBookImbalance(tick);
+    if (imbalance == null) {
+        return true;
+    }
+    if (direction === 'up') {
+        return imbalance >= params.bookImbalanceThreshold;
+    }
+    return imbalance <= (1 - params.bookImbalanceThreshold);
 }
 
 /**
@@ -20,7 +31,7 @@ function detectSweep(state, tick, params) {
 
     const activeLevels = state.activeLevels || [];
     const tickBuffer = state.tickBuffer || [];
-    const delta = computeRollingDelta(tickBuffer, params.deltaWindowTicks);
+    const delta = computeRollingDelta(tickBuffer, params.deltaWindowTicks, params);
     const { volumeRate } = computeVolumeRate(
         tickBuffer,
         params.volumeRateWindowSec,
@@ -39,8 +50,10 @@ function detectSweep(state, tick, params) {
         }
         const tolerance = levelTolerance(level, params);
 
-        // Upside sweep
         if (tick.ltp > level + tolerance && delta > deltaThreshold && volumeBurst) {
+            if (params.requireBookImbalance && !passesBookImbalance(tick, 'up', params)) {
+                continue;
+            }
             return {
                 level,
                 levelType: levelInfo.type,
@@ -52,8 +65,10 @@ function detectSweep(state, tick, params) {
             };
         }
 
-        // Downside sweep
         if (tick.ltp < level - tolerance && delta < -deltaThreshold && volumeBurst) {
+            if (params.requireBookImbalance && !passesBookImbalance(tick, 'down', params)) {
+                continue;
+            }
             return {
                 level,
                 levelType: levelInfo.type,
@@ -69,4 +84,4 @@ function detectSweep(state, tick, params) {
     return null;
 }
 
-export { detectSweep, levelTolerance };
+export { detectSweep, levelTolerance, passesBookImbalance };

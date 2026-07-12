@@ -1,5 +1,5 @@
 import { getActiveLevels } from './levelDetection.js';
-import { computeVolumeRate } from './tickDelta.js';
+import { computeVolumeRate, computeBookImbalance } from './tickDelta.js';
 
 /**
  * Phase E — pre-signal filters (time, liquidity, volatility).
@@ -50,6 +50,17 @@ function passesFilters(state, tick, params) {
         }
         if (atrPct > params.atrHighPct) {
             return { pass: false, reason: 'volatility_too_high' };
+        }
+    }
+
+    if (params.requireBookImbalance) {
+        const imbalance = computeBookImbalance(tick);
+        if (imbalance != null) {
+            const mid = params.bookImbalanceThreshold;
+            const inExtreme = imbalance >= mid || imbalance <= (1 - mid);
+            if (!inExtreme) {
+                return { pass: false, reason: 'book_imbalance_weak' };
+            }
         }
     }
 

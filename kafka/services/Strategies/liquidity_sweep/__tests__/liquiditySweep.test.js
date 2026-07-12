@@ -1,9 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseTick, isDataGap } from '../utils/tickParser.js';
-import { classifyTickSide, enrichTick, computeRollingDelta } from '../modules/tickDelta.js';
-import { detectSweep } from '../modules/sweepDetection.js';
+import { classifyTickSide, enrichTick, computeRollingDelta, getDeltaWeight } from '../modules/tickDelta.js';
+import { detectSweep, passesBookImbalance } from '../modules/sweepDetection.js';
 import { processAbsorption } from '../modules/absorption.js';
+import { buildTradeLevels, updateTrailingStop } from '../modules/tradeLevels.js';
 import { DEFAULT_PARAMS } from '../config/defaultParams.js';
 
 function makeMarketTick({ ltp, ltq = 100, ltt = Date.now(), bidP, askP, prevLtp }) {
@@ -87,6 +88,18 @@ describe('tickDelta', () => {
         const delta = computeRollingDelta(ticks, 3);
         assert.ok(delta !== 0);
     });
+
+    it('down-weights low-confidence ticks in delta', () => {
+        const high = { signedQty: 100, sideConfidence: 'high' };
+        const low = { signedQty: 100, sideConfidence: 'low' };
+        const params = { lowConfidenceDeltaWeight: 0.5 };
+        assert.equal(getDeltaWeight(high, params), 1);
+        assert.equal(getDeltaWeight(low, params), 0.5);
+        const weightedHigh = computeRollingDelta([high], 1, params);
+        const weightedLow = computeRollingDelta([low], 1, params);
+        assert.equal(weightedHigh, 100);
+        assert.equal(weightedLow, 50);
+    });
 });
 
 describe('sweepDetection', () => {
@@ -157,9 +170,10 @@ describe('absorption', () => {
         });
         tickBuffer.push(enrichTick(tick, 999));
         state.tickBuffer = tickBuffer;
-        const { signal } = processAbsorption(state, tick, params, 'TEST_SYMBOL');
+        const { signal, state: newState } = processAbsorption(state, tick, params, 'TEST_SYMBOL');
         assert.ok(signal);
         assert.equal(signal.direction, 'short');
+        assert.equal(newState.machineState, 'PENDING_ENTRY');
     });
 
     it('invalidates on continuation beyond sweep extreme', () => {
@@ -179,5 +193,42 @@ describe('absorption', () => {
         const { signal, state: newState } = processAbsorption(state, tick, params, 'TEST');
         assert.equal(signal, null);
         assert.equal(newState.sweep, null);
+    });
+});
+
+describe('tradeManagement', () => {
+    it('rejects insufficient R:R in buildTradeLevels', () => {
+        const params = { ...DEFAULT_PARAMS, minRR: 2, maxRR: 3, stopBufferPct: 0.002, stopBufferTicks: 5, tickSize: 0.05 };
+        const signal = { entryPrice: 1000, direction: 'long', sweepExtreme: 995 };
+        const state = { levels: { sessionVWAP: 1000.5, hvn: [] } };
+        const levels = buildTradeLevels(signal, state, params);
+        assert.equal(levels.sufficientRR, true);
+        assert.ok(levels.targetDist >= levels.riskDistance * params.minRR);
+    });
+
+    it('ratchets trailing stop after partial', () => {
+        const params = { ...DEFAULT_PARAMS, trailOffsetR: 0.5 };
+        const position = {
+            direction: 'long',
+            entry: 100,
+            stop: 98,
+            riskDistance: 2,
+            partialTaken: true,
+            breakevenMoved: true,
+            trailStop: 100,
+        };
+        updateTrailingStop(position, 104, params);
+        assert.equal(position.trailStop, 103);
+        updateTrailingStop(position, 103, params);
+        assert.equal(position.trailStop, 103);
+    });
+});
+
+describe('bookImbalance', () => {
+    it('passes upside imbalance when tbq dominates', () => {
+        const tick = { tbq: 700, tsq: 300 };
+        const params = { bookImbalanceThreshold: 0.55 };
+        assert.equal(passesBookImbalance(tick, 'up', params), true);
+        assert.equal(passesBookImbalance(tick, 'down', params), false);
     });
 });

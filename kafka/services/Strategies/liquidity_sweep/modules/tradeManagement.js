@@ -1,7 +1,18 @@
 import axios from 'axios';
-import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis } from './redis_utils/account_utils.js';
+import {
+    getAccountBalanceFromRedis,
+    getBoughtQuantityWithTagFromRedis,
+    setBoughtQuantityWithTagToRedis,
+} from '../redis_utils/account_utils.js';
+import {
+    getOpenPositionCount,
+    incrementOpenPositions,
+    decrementOpenPositions,
+    getShortQuantityWithTagFromRedis,
+    setShortQuantityWithTagToRedis,
+} from '../redis_utils/concurrency.js';
 import { logger } from '/app/utils/logUtils.js';
-import { findSecondaryTarget } from './filters.js';
+import { buildTradeLevels, updateTrailingStop } from './tradeLevels.js';
 import { logTradeEvent } from './signalLogger.js';
 
 async function triggerOrder(requestBody) {
@@ -43,23 +54,31 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     if (quantityOverride != null && quantityOverride > 0) {
         quantity = quantityOverride;
     } else if (transaction_type === 'BUY' && use_full_amount) {
-        const current_acc_balance = await getAccountBalanceFromRedis(account_id);
-        let maxAffordableValue = current_acc_balance;
-        if (commission_type === 'FLAT') {
-            maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
-        } else if (commission_type === 'PERCENTAGE') {
-            maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
-        }
-        maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
-        if (lot_size) {
-            quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
+        const shortQty = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+        if (shortQty > 0) {
+            quantity = shortQty;
         } else {
-            quantity = Math.floor(maxAffordableValue / ltp);
+            const current_acc_balance = await getAccountBalanceFromRedis(account_id);
+            let maxAffordableValue = current_acc_balance;
+            if (commission_type === 'FLAT') {
+                maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
+            } else if (commission_type === 'PERCENTAGE') {
+                maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
+            }
+            maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+            if (lot_size) {
+                quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
+            } else {
+                quantity = Math.floor(maxAffordableValue / ltp);
+            }
         }
     }
 
     if (transaction_type === 'SELL' && use_full_amount && quantityOverride == null) {
         quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+        if (quantity <= 0) {
+            quantity = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+        }
     }
 
     const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
@@ -80,42 +99,6 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     };
 }
 
-function computeStopBuffer(sweepExtreme, params) {
-    const pctBuffer = sweepExtreme * params.stopBufferPct;
-    const tickBuffer = params.tickSize * params.stopBufferTicks;
-    return Math.max(pctBuffer, tickBuffer);
-}
-
-function buildTradeLevels(signal, state, params) {
-    const entry = signal.entryPrice;
-    const buffer = computeStopBuffer(signal.sweepExtreme, params);
-    const isLong = signal.direction === 'long';
-
-    const stop = isLong
-        ? signal.sweepExtreme - buffer
-        : signal.sweepExtreme + buffer;
-
-    const riskDistance = Math.abs(entry - stop);
-    const minTargetDist = riskDistance * params.minRR;
-    const maxTargetDist = riskDistance * params.maxRR;
-
-    let targetDist = minTargetDist;
-    const secondary = findSecondaryTarget(signal, state);
-    if (secondary != null) {
-        const secondaryDist = Math.abs(entry - secondary);
-        if (secondaryDist > minTargetDist) {
-            targetDist = Math.min(secondaryDist, maxTargetDist);
-        }
-    } else {
-        targetDist = Math.min(minTargetDist, maxTargetDist);
-    }
-
-    const target = isLong ? entry + targetDist : entry - targetDist;
-    const target1 = isLong ? entry + minTargetDist : entry - minTargetDist;
-
-    return { entry, stop, target, target1, riskDistance, isLong };
-}
-
 async function computeRiskBasedQuantity(strategy_details, entry, riskDistance, params) {
     if (riskDistance <= 0 || entry <= 0) {
         return 1;
@@ -130,8 +113,22 @@ async function computeRiskBasedQuantity(strategy_details, entry, riskDistance, p
     return Math.max(qty, 1);
 }
 
-async function openPosition(signal, state, symbol, strategy_details, params, openedAt) {
+async function tryExecuteEntry(signal, state, symbol, strategy_details, params, openedAt) {
+    const openCount = await getOpenPositionCount(strategy_details.account_id);
+    if (openCount >= params.maxConcurrentTrades) {
+        logTradeEvent(symbol, 'skipped_max_concurrent', { openCount, max: params.maxConcurrentTrades }, strategy_details);
+        return { position: null, reason: 'max_concurrent' };
+    }
+
     const levels = buildTradeLevels(signal, state, params);
+    if (!levels.sufficientRR) {
+        logTradeEvent(symbol, 'skipped_insufficient_rr', {
+            targetDist: levels.targetDist,
+            minRequired: levels.riskDistance * params.minRR,
+        }, strategy_details);
+        return { position: null, reason: 'insufficient_rr' };
+    }
+
     const qty = await computeRiskBasedQuantity(
         strategy_details,
         levels.entry,
@@ -148,33 +145,49 @@ async function openPosition(signal, state, symbol, strategy_details, params, ope
         qty
     );
 
-    if (requestBody?.quantity > 0) {
-        await triggerOrder(requestBody);
-        if (levels.isLong) {
-            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-        }
-        logTradeEvent(symbol, 'OPEN', {
-            direction: signal.direction,
-            entry: levels.entry,
-            stop: levels.stop,
-            target: levels.target,
-            qty: requestBody.quantity,
-        });
+    if (!requestBody?.quantity || requestBody.quantity <= 0) {
+        return { position: null, reason: 'zero_qty' };
     }
 
-    return {
+    await triggerOrder(requestBody);
+    await incrementOpenPositions(strategy_details.account_id);
+
+    if (levels.isLong) {
+        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+    } else {
+        await setShortQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+    }
+
+    logTradeEvent(symbol, 'OPEN', {
         direction: signal.direction,
         entry: levels.entry,
         stop: levels.stop,
         target: levels.target,
-        target1: levels.target1,
-        riskDistance: levels.riskDistance,
-        qty: requestBody?.quantity || qty,
-        remainingQty: requestBody?.quantity || qty,
-        openedAt: openedAt || Date.now(),
-        breakevenMoved: false,
-        partialTaken: false,
+        qty: requestBody.quantity,
+    }, strategy_details);
+
+    return {
+        position: {
+            direction: signal.direction,
+            entry: levels.entry,
+            stop: levels.stop,
+            target: levels.target,
+            target1: levels.target1,
+            riskDistance: levels.riskDistance,
+            qty: requestBody.quantity,
+            remainingQty: requestBody.quantity,
+            openedAt: openedAt || Date.now(),
+            breakevenMoved: false,
+            partialTaken: false,
+            trailStop: null,
+        },
+        reason: null,
     };
+}
+
+async function openPosition(signal, state, symbol, strategy_details, params, openedAt) {
+    const result = await tryExecuteEntry(signal, state, symbol, strategy_details, params, openedAt);
+    return result.position;
 }
 
 async function closePosition(position, ltp, symbol, strategy_details, reason, qtyOverride) {
@@ -192,8 +205,20 @@ async function closePosition(position, ltp, symbol, strategy_details, reason, qt
 
     if (requestBody?.quantity > 0) {
         await triggerOrder(requestBody);
-        logTradeEvent(symbol, 'CLOSE', { reason, ltp, qty: requestBody.quantity });
+        if (isLong) {
+            const remaining = Math.max(0, (await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - closeQty);
+            await setBoughtQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
+        } else {
+            const remaining = Math.max(0, (await getShortQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - closeQty);
+            await setShortQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
+        }
+        logTradeEvent(symbol, 'CLOSE', { reason, ltp, qty: requestBody.quantity }, strategy_details);
     }
+}
+
+async function finalizeClose(state, tick, symbol, strategy_details, params) {
+    await decrementOpenPositions(strategy_details.account_id);
+    return enterCooldown(state, params, tick.timestamp);
 }
 
 async function manageOpenPosition(state, tick, symbol, strategy_details, params) {
@@ -206,18 +231,16 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
     const ltp = tick.ltp;
     const elapsedMin = (tick.timestamp - position.openedAt) / (60 * 1000);
 
-    // Time stop
     if (elapsedMin >= params.timeStopMinutes) {
         const profitR = isLong
             ? (ltp - position.entry) / position.riskDistance
             : (position.entry - ltp) / position.riskDistance;
         if (profitR < params.breakevenAtR) {
             await closePosition(position, ltp, symbol, strategy_details, 'time_stop');
-            return enterCooldown(state, params, tick.timestamp);
+            return finalizeClose(state, tick, symbol, strategy_details, params);
         }
     }
 
-    // Breakeven at 1R
     if (!position.breakevenMoved) {
         const profitR = isLong
             ? (ltp - position.entry) / position.riskDistance
@@ -225,18 +248,22 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
         if (profitR >= params.breakevenAtR) {
             position.stop = position.entry;
             position.breakevenMoved = true;
-            logTradeEvent(symbol, 'BREAKEVEN', { stop: position.stop });
+            logTradeEvent(symbol, 'BREAKEVEN', { stop: position.stop }, strategy_details);
         }
     }
 
-    // Stop hit
-    const stopHit = isLong ? ltp <= position.stop : ltp >= position.stop;
+    updateTrailingStop(position, ltp, params);
+
+    const effectiveStop = position.partialTaken && position.trailStop != null
+        ? (isLong ? Math.max(position.stop, position.trailStop) : Math.min(position.stop, position.trailStop))
+        : position.stop;
+
+    const stopHit = isLong ? ltp <= effectiveStop : ltp >= effectiveStop;
     if (stopHit) {
-        await closePosition(position, ltp, symbol, strategy_details, 'stop_loss');
-        return enterCooldown(state, params, tick.timestamp);
+        await closePosition(position, ltp, symbol, strategy_details, position.partialTaken ? 'trail_stop' : 'stop_loss');
+        return finalizeClose(state, tick, symbol, strategy_details, params);
     }
 
-    // Partial exit at target1
     if (!position.partialTaken) {
         const target1Hit = isLong ? ltp >= position.target1 : ltp <= position.target1;
         if (target1Hit) {
@@ -245,16 +272,16 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
                 await closePosition(position, ltp, symbol, strategy_details, 'partial_target1', partialQty);
                 position.remainingQty -= partialQty;
                 position.partialTaken = true;
-                logTradeEvent(symbol, 'PARTIAL', { qty: partialQty, remaining: position.remainingQty });
+                position.trailStop = position.breakevenMoved ? position.entry : position.stop;
+                logTradeEvent(symbol, 'PARTIAL', { qty: partialQty, remaining: position.remainingQty }, strategy_details);
             }
         }
     }
 
-    // Full target
     const targetHit = isLong ? ltp >= position.target : ltp <= position.target;
     if (targetHit && position.remainingQty > 0) {
         await closePosition(position, ltp, symbol, strategy_details, 'target', position.remainingQty);
-        return enterCooldown(state, params, tick.timestamp);
+        return finalizeClose(state, tick, symbol, strategy_details, params);
     }
 
     return { ...state, position };
@@ -274,9 +301,10 @@ function enterCooldown(state, params, timestamp) {
 export {
     triggerOrder,
     computeOrderPayload,
-    buildTradeLevels,
     openPosition,
+    tryExecuteEntry,
     manageOpenPosition,
     enterCooldown,
     closePosition,
 };
+export { buildTradeLevels, updateTrailingStop } from './tradeLevels.js';

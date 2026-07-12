@@ -11,6 +11,11 @@ import {
   getDeploymentAnalysis,
   getDeploymentCandles,
 } from "../services/deployment.js";
+import {
+  createSweepSignalLog,
+  getSweepSignalLogs,
+  getSweepSignalStats,
+} from "../services/sweepSignal.js";
 
 export const createDeploymentController = async (req, res, next) => {
   try {
@@ -213,3 +218,51 @@ export const getDeploymentCandlesController = async (req, res, next) => {
     next(err);
   }
 };
+
+export const createSweepSignalLogController = async (req, res, next) => {
+  try {
+    const result = await createSweepSignalLog(req.params.id, req.body);
+    res.status(201).json({
+      message: "Sweep signal logged",
+      data: result,
+    });
+  } catch (err) {
+    if (err.message === "Deployment not found") {
+      return res.status(404).json({ message: err.message });
+    }
+    next(err);
+  }
+};
+
+export const getSweepSignalLogsController = async (req, res, next) => {
+  try {
+    const userId = req.auth.userId;
+    const result = await getSweepSignalLogs(userId, req.params.id, req.query);
+    if (!result) {
+      return res.status(404).json({ message: "Deployment not found" });
+    }
+    res.status(200).json({
+      message: "Sweep signals retrieved",
+      ...result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getSweepSignalStatsController = async (req, res, next) => {
+  try {
+    const userId = req.auth.userId;
+    const result = await getSweepSignalStats(userId, req.params.id);
+    if (!result) {
+      return res.status(404).json({ message: "Deployment not found" });
+    }
+    res.status(200).json({
+      message: "Sweep signal stats retrieved",
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
