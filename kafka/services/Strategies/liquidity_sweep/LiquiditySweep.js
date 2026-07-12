@@ -1,5 +1,5 @@
 import { resolveParams } from './config/defaultParams.js';
-import { parseTick, isDataGap } from './utils/tickParser.js';
+import { parseTick, isDataGap } from './modules/tickParser.js';
 import { updateLevels, getActiveLevels, createInitialLevelState, getSessionDate } from './modules/levelDetection.js';
 import { enrichTick, pushTickBuffer, updateMetrics } from './modules/tickDelta.js';
 import { detectSweep } from './modules/sweepDetection.js';

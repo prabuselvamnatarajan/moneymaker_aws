@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTick, isDataGap } from '../utils/tickParser.js';
+import { parseTick, isDataGap } from '../modules/tickParser.js';
 import { classifyTickSide, enrichTick, computeRollingDelta, getDeltaWeight } from '../modules/tickDelta.js';
 import { detectSweep, passesBookImbalance } from '../modules/sweepDetection.js';
 import { processAbsorption } from '../modules/absorption.js';
