@@ -48,8 +48,9 @@ async function getCollectionsToExport() {
 
 async function exportAll() {
     const collections = await getCollectionsToExport();
-    console.log(`Starting export for: ${collections.join(', ')}`);
-    await Promise.all(collections.map(exportCollection));
+    const collectionsToExport = [...new Set([...collections, 'usersymbols'])];
+    console.log(`Starting export for: ${collectionsToExport.join(', ')}`);
+    await Promise.all(collectionsToExport.map(exportCollection));
 }
 
 const cronSchedule = process.env.EXPORT_CRON_SCHEDULE || '15 16 * * *';
