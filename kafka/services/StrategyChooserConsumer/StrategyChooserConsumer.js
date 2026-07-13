@@ -17,6 +17,23 @@ const kafka = new Kafka({
   }
 });
 
+function handleFatalError(error, context = 'service') {
+    if (logger && logger.error) {
+        logger.error(`Fatal error in ${context}:`, error);
+    } else {
+        console.error(`Fatal error in ${context}:`, error);
+    }
+    process.exit(1);
+}
+
+process.on('uncaughtException', (error) => {
+    handleFatalError(error, 'uncaught exception');
+});
+
+process.on('unhandledRejection', (reason) => {
+    handleFatalError(reason, 'unhandled rejection');
+});
+
 async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
     for (let i = 0; i < retries; i++) {
         try {
@@ -35,6 +52,11 @@ async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
     const producer = kafka.producer();
 
+    // Listen to crash event to ensure the process exits if Kafka consumer crashes
+    consumer.on(consumer.events.CRASH, (event) => {
+        handleFatalError(event.payload.error, 'Kafka consumer crash');
+    });
+
     await connectWithRetry(consumer, 'Kafka Consumer');
     await connectWithRetry(producer, 'Kafka Producer');
 
@@ -45,22 +67,22 @@ async function createConsumer() {
 
     await consumer.run({
         eachMessage: async ({ topic, message: { key, value } }) => {
-            const symbol = key.toString();
-            const isBackTest = topic === BACKTEST_TOPIC;
-            logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
-            const strategies = await getStrategiesForSymbol(isBackTest, symbol);
-            logger.debug(`Active strategies for ${symbol}: ${JSON.stringify(strategies)}`);
-            const data = JSON.parse(value.toString());
+            try {
+                const symbol = key.toString();
+                const isBackTest = topic === BACKTEST_TOPIC;
+                logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
+                const strategies = await getStrategiesForSymbol(isBackTest, symbol);
+                logger.debug(`Active strategies for ${symbol}: ${JSON.stringify(strategies)}`);
+                const data = JSON.parse(value.toString());
 
-            let filteredStrategies = strategies;
-            if (isBackTest && data.deployment_id) {
-                filteredStrategies = strategies.filter(strategy => strategy.deployment_id === data.deployment_id);
-                logger.info(`Filtered strategies for symbol ${symbol} to deployment ${data.deployment_id}. Count: ${filteredStrategies.length}`);
-            }
+                let filteredStrategies = strategies;
+                if (isBackTest && data.deployment_id) {
+                    filteredStrategies = strategies.filter(strategy => strategy.deployment_id === data.deployment_id);
+                    logger.info(`Filtered strategies for symbol ${symbol} to deployment ${data.deployment_id}. Count: ${filteredStrategies.length}`);
+                }
 
-            await Promise.all(filteredStrategies.map(async (strategy) => {
-                try {
-                    let { name: strategyName, isTest = true } = strategy;
+                await Promise.all(filteredStrategies.map(async (strategy) => {
+                    const { name: strategyName, isTest = true } = strategy;
                     const isTestMode = isTest || isBackTest;
                     const topicName = isTestMode
                         ? `${strategyName}_backtest_data`
@@ -82,10 +104,10 @@ async function createConsumer() {
                     });
                     logger.debug(`Produced message to topic ${topicName} with key ${symbol}`);
                     logger.debug(`sending msg: ${JSON.stringify(strategyData)}`);
-                } catch (error) {
-                    logger.error(`Failed to produce message to topic ${strategyName}_live_data for symbol ${symbol}:`, error.message);
-                }
-            }));
+                }));
+            } catch (error) {
+                handleFatalError(error, 'message handling');
+            }
         },
     });
 }
@@ -94,11 +116,5 @@ async function createConsumer() {
     await initLogger();
     await createConsumer();
 })().catch((err) => {
-    if (logger && logger.error) {
-        logger.error('Unhandled error in consumer', err);
-    } else {
-        // Fallback if logger isn't available
-        console.error('Unhandled error in consumer', err);
-    }
-    process.exit(1);
+    handleFatalError(err, 'consumer startup');
 });
