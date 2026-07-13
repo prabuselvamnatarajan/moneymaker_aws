@@ -47,10 +47,21 @@ async function getCollectionsToExport() {
 }
 
 async function exportAll() {
-    const collections = await getCollectionsToExport();
+    let collections = [];
+    try {
+        collections = await getCollectionsToExport();
+    } catch (err) {
+        console.error('Error fetching export preferences in exportAll:', err.message);
+    }
     const collectionsToExport = [...new Set([...collections, 'usersymbols'])];
     console.log(`Starting export for: ${collectionsToExport.join(', ')}`);
-    await Promise.all(collectionsToExport.map(exportCollection));
+    await Promise.all(collectionsToExport.map(async (coll) => {
+        try {
+            await exportCollection(coll);
+        } catch (err) {
+            console.error(`Failed to export collection/symbol ${coll}:`, err.message);
+        }
+    }));
 }
 
 const cronSchedule = process.env.EXPORT_CRON_SCHEDULE || '15 16 * * *';
