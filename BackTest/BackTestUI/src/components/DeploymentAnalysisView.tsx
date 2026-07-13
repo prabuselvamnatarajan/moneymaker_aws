@@ -4,14 +4,12 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ScatterChart, Scatter, ZAxis, ReferenceArea } from 'recharts';
-import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Search, Clock, ChevronDown, ChevronRight, ExternalLink, RefreshCw, Link } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Search, Clock, ChevronDown, ChevronRight, ExternalLink, RefreshCw, Link, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { createChart, IChartApi, ISeriesApi, Time, AreaSeries, HistogramSeries } from 'lightweight-charts';
 import { DeploymentAnalysis, TimeSeriesDataPoint, IntradayTradeDataPoint, Deployment } from '../types';
 import { api } from '../api';
 import { useToast } from './Toast';
 import CandlestickSidebar from './CandlestickSidebar';
-
-const RefArea = ReferenceArea as any;
 
 interface DeploymentAnalysisViewProps {
   selectedDeploymentId: string | null;
@@ -163,591 +161,196 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
   const [tradesLoading, setTradesLoading] = useState(false);
   const [expandedPairs, setExpandedPairs] = useState<Set<string>>(new Set());
 
-  // Zooming states and handlers
-  const pnlContainerRef = useRef<HTMLDivElement>(null);
-  const intraContainerRef = useRef<HTMLDivElement>(null);
+  // --- lightweight-charts integration ---
+  const pnlChartContainerRef = useRef<HTMLDivElement>(null);
+  const pnlChartRef = useRef<IChartApi | null>(null);
+  const pnlSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
 
-  const [pnlZoomX, setPnLZoomX] = useState<[number, number] | null>(null);
-  const [pnlZoomY, setPnLZoomY] = useState<[number, number] | null>(null);
+  const intraChartContainerRef = useRef<HTMLDivElement>(null);
+  const intraChartRef = useRef<IChartApi | null>(null);
+  const intraSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
 
-  const [intraZoomX, setIntraZoomX] = useState<[number, number] | null>(null);
-  const [intraZoomY, setIntraZoomY] = useState<[number, number] | null>(null);
-
-  const isPnLZoomed = pnlZoomX !== null || pnlZoomY !== null;
-  const isIntraZoomed = intraZoomX !== null || intraZoomY !== null;
-
-  const handlePnLResetZoom = () => {
-    setPnLZoomX(null);
-    setPnLZoomY(null);
-    setPnLDragState(null);
-    setPnLTouchState(null);
-  };
-
-  const handleIntraResetZoom = () => {
-    setIntraZoomX(null);
-    setIntraZoomY(null);
-    setIntraDragState(null);
-    setIntraTouchState(null);
-  };
-
-  const processedChartData = chartData.map((d, index) => ({
-    ...d,
-    index,
-  }));
-
-  // Nice ticks and domains for P&L Chart
-  const pnlXMin = pnlZoomX ? pnlZoomX[0] : 0;
-  const pnlXMax = pnlZoomX ? pnlZoomX[1] : Math.max(1, processedChartData.length - 1);
-  const pnlXTicks = getNiceTicks(pnlXMin, pnlXMax, 6);
-  const pnlXDomainCalculated: [number, number] = pnlXTicks.length >= 2
-    ? [pnlXTicks[0], pnlXTicks[pnlXTicks.length - 1]]
-    : [pnlXMin, pnlXMax];
-
-  const pnlValues = processedChartData.map(d => d.pnl);
-  const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
-  const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
-  
-  const currentYMin = pnlZoomY ? pnlZoomY[0] : minVal;
-  const currentYMax = pnlZoomY ? pnlZoomY[1] : maxVal;
-  const safeYMin = currentYMin === currentYMax ? currentYMin - 100 : currentYMin;
-  const safeYMax = currentYMin === currentYMax ? currentYMax + 100 : currentYMax;
-  
-  const pnlYTicks = getNiceTicks(safeYMin, safeYMax, 6);
-  const pnlYDomainCalculated: [number, number] = pnlYTicks.length >= 2 
-    ? [pnlYTicks[0], pnlYTicks[pnlYTicks.length - 1]]
-    : [safeYMin, safeYMax];
-
-  // Nice ticks and domains for Scatter Chart
-  const scatterXDomain = intraZoomX || defaultDomain;
-  const scatterYDomain = intraZoomY || [0, 59];
-
-  const scatterXTicks = getNiceTicks(scatterXDomain[0], scatterXDomain[1], 6);
-  const scatterYTicks = getNiceTicks(scatterYDomain[0], scatterYDomain[1], 6);
-
-  const scatterXDomainCalculated: [number, number] = scatterXTicks.length >= 2
-    ? [scatterXTicks[0], scatterXTicks[scatterXTicks.length - 1]]
-    : [scatterXDomain[0], scatterXDomain[1]];
-
-  const scatterYDomainCalculated: [number, number] = scatterYTicks.length >= 2
-    ? [scatterYTicks[0], scatterYTicks[scatterYTicks.length - 1]]
-    : [scatterYDomain[0], scatterYDomain[1]];
-
-  // Helper to zoom X-axis around a target center index/hour
-  const zoomXAxis = (
-    isPnL: boolean,
-    factor: number,
-    centerIndexOrHour?: number
-  ) => {
-    if (isPnL) {
-      const dataLen = processedChartData.length;
-      if (dataLen <= 1) return;
-      const current = pnlZoomX || [0, dataLen - 1];
-      const range = current[1] - current[0];
-      const center = centerIndexOrHour !== undefined && !isNaN(centerIndexOrHour) 
-        ? centerIndexOrHour 
-        : (current[0] + current[1]) / 2;
-      const newRange = Math.max(2, range * factor);
-      
-      const leftRatio = (center - current[0]) / (range || 1);
-      let newStart = center - newRange * leftRatio;
-      let newEnd = newStart + newRange;
-      
-      if (newStart < 0) {
-        newStart = 0;
-        newEnd = Math.min(dataLen - 1, newRange);
+  const pnlSeriesData = useMemo(() => {
+    const sorted = [...chartData].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const mapped = sorted.map(pt => ({
+      time: Math.floor(new Date(pt.timestamp).getTime() / 1000),
+      value: pt.pnl,
+    }));
+    
+    const uniqueData: { time: number; value: number }[] = [];
+    let lastTime = 0;
+    for (const item of mapped) {
+      let t = item.time;
+      if (t <= lastTime) {
+        t = lastTime + 1;
       }
-      if (newEnd > dataLen - 1) {
-        newEnd = dataLen - 1;
-        newStart = Math.max(0, newEnd - newRange);
-      }
-      
-      if (!isNaN(newStart) && !isNaN(newEnd) && isFinite(newStart) && isFinite(newEnd) && newStart < newEnd) {
-        setPnLZoomX([newStart, newEnd]);
-      }
-    } else {
-      const current = intraZoomX || defaultDomain;
-      const range = current[1] - current[0];
-      const center = centerIndexOrHour !== undefined && !isNaN(centerIndexOrHour) 
-        ? centerIndexOrHour 
-        : (current[0] + current[1]) / 2;
-      const newRange = Math.max(1, range * factor);
-      
-      const leftRatio = (center - current[0]) / (range || 1);
-      let newStart = center - newRange * leftRatio;
-      let newEnd = newStart + newRange;
-      
-      if (newStart < 0) {
-        newStart = 0;
-        newEnd = Math.min(24, newRange);
-      }
-      if (newEnd > 24) {
-        newEnd = 24;
-        newStart = Math.max(0, newEnd - newRange);
-      }
-      
-      if (!isNaN(newStart) && !isNaN(newEnd) && isFinite(newStart) && isFinite(newEnd) && newStart < newEnd) {
-        setIntraZoomX([newStart, newEnd]);
-      }
+      uniqueData.push({ time: t, value: item.value });
+      lastTime = t;
     }
-  };
+    return uniqueData;
+  }, [chartData]);
 
-  // Helper to zoom Y-axis around a target center value
-  const zoomYAxis = (
-    isPnL: boolean,
-    factor: number,
-    centerVal?: number
-  ) => {
-    if (isPnL) {
-      const pnlValues = processedChartData.map(d => d.pnl);
-      const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
-      const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
-      const current = pnlZoomY || [minVal, maxVal];
-      let range = Number(current[1]) - Number(current[0]);
-      if (isNaN(range) || !isFinite(range) || range <= 0) {
-        range = 100;
-      }
-      const center = centerVal !== undefined && !isNaN(centerVal) 
-        ? centerVal 
-        : (Number(current[0]) + Number(current[1])) / 2;
-      const newRange = range * factor;
-      
-      const bottomRatio = (center - Number(current[0])) / (range || 1);
-      let newStart = center - newRange * bottomRatio;
-      let newEnd = newStart + newRange;
-      
-      if (!isNaN(newStart) && !isNaN(newEnd) && isFinite(newStart) && isFinite(newEnd) && newStart < newEnd) {
-        setPnLZoomY([newStart, newEnd]);
-      }
-    } else {
-      const current = intraZoomY || [0, 59];
-      const range = current[1] - current[0];
-      const center = centerVal !== undefined && !isNaN(centerVal) 
-        ? centerVal 
-        : (current[0] + current[1]) / 2;
-      const newRange = Math.max(5, range * factor);
-      
-      const bottomRatio = (center - current[0]) / (range || 1);
-      let newStart = center - newRange * bottomRatio;
-      let newEnd = newStart + newRange;
-      
-      if (newStart < 0) {
-        newStart = 0;
-        newEnd = Math.min(59, newRange);
-      }
-      if (newEnd > 59) {
-        newEnd = 59;
-        newStart = Math.max(0, newEnd - newRange);
-      }
-      
-      if (!isNaN(newStart) && !isNaN(newEnd) && isFinite(newStart) && isFinite(newEnd) && newStart < newEnd) {
-        setIntraZoomY([newStart, newEnd]);
-      }
-    }
-  };
-
-  // Scroll wheel zooming
-  useEffect(() => {
-    const pnlEl = pnlContainerRef.current;
-    if (!pnlEl) return;
+  const intradaySeriesData = useMemo(() => {
+    const baseDate = new Date();
+    baseDate.setHours(0, 0, 0, 0);
     
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const rect = pnlEl.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      // XAxis is at the bottom (y > 330), YAxis is on the left (x < 65)
-      const isYAxisZone = x < 65;
-      const isXAxisZone = y > 330;
-      
-      // Fine-grained delta-based zoom speed
-      const rawDelta = e.deltaY;
-      const normalizedDelta = Math.min(Math.max(rawDelta, -100), 100) / 100;
-      
-      // Scroll up (deltaY < 0): zoom out -> factor > 1
-      // Scroll down (deltaY > 0): zoom in -> factor < 1
-      const intensity = 0.04; // 4% zoom per tick
-      const factor = 1 - normalizedDelta * intensity;
-      
-      // Calculate mouse value positions
-      const gridLeft = 65;
-      const gridRight = rect.width - 20;
-      const gridTop = 20;
-      const gridBottom = rect.height - 60;
-      const gridWidth = gridRight - gridLeft;
-      const gridHeight = gridBottom - gridTop;
-      
-      const pctX = Math.min(Math.max((x - gridLeft) / gridWidth, 0), 1);
-      const pctY = Math.min(Math.max((gridBottom - y) / gridHeight, 0), 1);
-      
-      const currentX = pnlZoomX || [0, Math.max(1, processedChartData.length - 1)];
-      const pnlValues = processedChartData.map(d => d.pnl);
-      const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
-      const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
-      const currentY = pnlZoomY || [minVal, maxVal];
-      
-      const mouseValX = currentX[0] + pctX * (currentX[1] - currentX[0]);
-      const mouseValY = currentY[0] + pctY * (currentY[1] - currentY[0]);
-      
-      if (isYAxisZone) {
-        zoomYAxis(true, factor, mouseValY);
-      } else if (isXAxisZone) {
-        zoomXAxis(true, factor, mouseValX);
-      } else {
-        zoomXAxis(true, factor, mouseValX);
-        zoomYAxis(true, factor, mouseValY);
-      }
-    };
-
-    pnlEl.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      pnlEl.removeEventListener('wheel', handleWheel);
-    };
-  }, [processedChartData, pnlZoomX, pnlZoomY]);
-
-  useEffect(() => {
-    const intraEl = intraContainerRef.current;
-    if (!intraEl) return;
-    
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const rect = intraEl.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      const isYAxisZone = x < 65;
-      const isXAxisZone = y > 330;
-      
-      const rawDelta = e.deltaY;
-      const normalizedDelta = Math.min(Math.max(rawDelta, -100), 100) / 100;
-      const intensity = 0.04;
-      const factor = 1 - normalizedDelta * intensity;
-      
-      const gridLeft = 65;
-      const gridRight = rect.width - 20;
-      const gridTop = 20;
-      const gridBottom = rect.height - 60;
-      const gridWidth = gridRight - gridLeft;
-      const gridHeight = gridBottom - gridTop;
-      
-      const pctX = Math.min(Math.max((x - gridLeft) / gridWidth, 0), 1);
-      const pctY = Math.min(Math.max((gridBottom - y) / gridHeight, 0), 1);
-      
-      const currentX = intraZoomX || defaultDomain;
-      const currentY = intraZoomY || [0, 59];
-      
-      const mouseValX = currentX[0] + pctX * (currentX[1] - currentX[0]);
-      const mouseValY = currentY[0] + pctY * (currentY[1] - currentY[0]);
-      
-      if (isYAxisZone) {
-        zoomYAxis(false, factor, mouseValY);
-      } else if (isXAxisZone) {
-        zoomXAxis(false, factor, mouseValX);
-      } else {
-        zoomXAxis(false, factor, mouseValX);
-        zoomYAxis(false, factor, mouseValY);
-      }
-    };
-
-    intraEl.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      intraEl.removeEventListener('wheel', handleWheel);
-    };
-  }, [intradayData, intraZoomX, intraZoomY, defaultDomain]);
-
-  // Drag Panning States & Handlers
-  const [pnlDragState, setPnLDragState] = useState<{
-    isDragging: boolean;
-    startX: number;
-    startY: number;
-    startDomainX: [number, number];
-    startDomainY: [number, number];
-  } | null>(null);
-
-  const [intraDragState, setIntraDragState] = useState<{
-    isDragging: boolean;
-    startX: number;
-    startY: number;
-    startDomainX: [number, number];
-    startDomainY: [number, number];
-  } | null>(null);
-
-  const handlePnLMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    const rect = pnlContainerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-    
-    const currentX = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
-    const pnlValues = processedChartData.map(d => d.pnl);
-    const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
-    const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
-    const currentY = pnlZoomY || [minVal, maxVal];
-    
-    setPnLDragState({
-      isDragging: true,
-      startX: clientX,
-      startY: clientY,
-      startDomainX: [currentX[0], currentX[1]],
-      startDomainY: [Number(currentY[0]), Number(currentY[1])],
+    const mapped = intradayData.map(trade => {
+      const tradeDate = new Date(baseDate);
+      tradeDate.setHours(trade.hour, trade.minute, trade.second, 0);
+      return {
+        time: Math.floor(tradeDate.getTime() / 1000) as Time,
+        value: trade.pnl,
+        color: trade.pnl >= 0 ? '#10b981' : '#ef4444',
+      };
     });
-  };
+    
+    mapped.sort((a, b) => (a.time as number) - (b.time as number));
+    
+    const uniqueData: typeof mapped = [];
+    let lastTime = 0;
+    for (const item of mapped) {
+      let t = item.time as number;
+      if (t <= lastTime) {
+        t = lastTime + 1;
+      }
+      uniqueData.push({ ...item, time: t as Time });
+      lastTime = t;
+    }
+    return uniqueData;
+  }, [intradayData]);
 
-  const handlePnLMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!pnlDragState || !pnlDragState.isDragging) return;
-    
-    const rect = pnlContainerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const dx = e.clientX - pnlDragState.startX;
-    const dy = e.clientY - pnlDragState.startY;
-    
-    const gridWidth = rect.width - 85;
-    const gridHeight = rect.height - 80;
-    
-    const xRange = pnlDragState.startDomainX[1] - pnlDragState.startDomainX[0];
-    const yRange = pnlDragState.startDomainY[1] - pnlDragState.startDomainY[0];
-    
-    const shiftX = -dx * (xRange / gridWidth);
-    const shiftY = dy * (yRange / gridHeight);
-    
-    const dataLen = processedChartData.length;
-    let newStartX = pnlDragState.startDomainX[0] + shiftX;
-    let newEndX = pnlDragState.startDomainX[1] + shiftX;
-    
-    if (newStartX < 0) {
-      newEndX -= newStartX;
-      newStartX = 0;
-    }
-    if (newEndX > dataLen - 1) {
-      newStartX -= (newEndX - (dataLen - 1));
-      newEndX = dataLen - 1;
-    }
-    
-    if (!isNaN(newStartX) && !isNaN(newEndX) && isFinite(newStartX) && isFinite(newEndX) && newStartX < newEndX) {
-      setPnLZoomX([newStartX, newEndX]);
-    }
-    
-    const newStartY = pnlDragState.startDomainY[0] + shiftY;
-    const newEndY = pnlDragState.startDomainY[1] + shiftY;
-    if (!isNaN(newStartY) && !isNaN(newEndY) && isFinite(newStartY) && isFinite(newEndY) && newStartY < newEndY) {
-      setPnLZoomY([newStartY, newEndY]);
-    }
-  };
+  // Set up P&L Chart
+  useEffect(() => {
+    if (!pnlChartContainerRef.current) return;
 
-  const handlePnLMouseUp = () => {
-    setPnLDragState(null);
-  };
-
-  const handleIntraMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    const rect = intraContainerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const clientX = e.clientX;
-    const clientY = e.clientY;
-    
-    const currentX = intraZoomX || defaultDomain;
-    const currentY = intraZoomY || [0, 59];
-    
-    setIntraDragState({
-      isDragging: true,
-      startX: clientX,
-      startY: clientY,
-      startDomainX: [currentX[0], currentX[1]],
-      startDomainY: [currentY[0], currentY[1]],
+    const chart = createChart(pnlChartContainerRef.current, {
+      layout: {
+        background: { color: '#0f172a' },
+        textColor: '#94a3b8',
+      },
+      grid: {
+        vertLines: { color: '#1e293b' },
+        horzLines: { color: '#1e293b' },
+      },
+      crosshair: {
+        mode: 1,
+      },
+      rightPriceScale: {
+        borderColor: '#334155',
+      },
+      timeScale: {
+        borderColor: '#334155',
+        timeVisible: true,
+        secondsVisible: true,
+      },
+      width: pnlChartContainerRef.current.clientWidth,
+      height: 380,
     });
-  };
 
-  const handleIntraMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!intraDragState || !intraDragState.isDragging) return;
-    
-    const rect = intraContainerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const dx = e.clientX - intraDragState.startX;
-    const dy = e.clientY - intraDragState.startY;
-    
-    const gridWidth = rect.width - 85;
-    const gridHeight = rect.height - 80;
-    
-    const xRange = intraDragState.startDomainX[1] - intraDragState.startDomainX[0];
-    const yRange = intraDragState.startDomainY[1] - intraDragState.startDomainY[0];
-    
-    const shiftX = -dx * (xRange / gridWidth);
-    const shiftY = dy * (yRange / gridHeight);
-    
-    let newStartX = intraDragState.startDomainX[0] + shiftX;
-    let newEndX = intraDragState.startDomainX[1] + shiftX;
-    
-    if (newStartX < 0) {
-      newEndX -= newStartX;
-      newStartX = 0;
-    }
-    if (newEndX > 24) {
-      newStartX -= (newEndX - 24);
-      newEndX = 24;
-    }
-    
-    let newStartY = intraDragState.startDomainY[0] + shiftY;
-    let newEndY = intraDragState.startDomainY[1] + shiftY;
-    
-    if (newStartY < 0) {
-      newEndY -= newStartY;
-      newStartY = 0;
-    }
-    if (newEndY > 59) {
-      newStartY -= (newEndY - 59);
-      newEndY = 59;
-    }
-    
-    if (!isNaN(newStartX) && !isNaN(newEndX) && isFinite(newStartX) && isFinite(newEndX) && newStartX < newEndX) {
-      setIntraZoomX([newStartX, newEndX]);
-    }
-    if (!isNaN(newStartY) && !isNaN(newEndY) && isFinite(newStartY) && isFinite(newEndY) && newStartY < newEndY) {
-      setIntraZoomY([newStartY, newEndY]);
-    }
-  };
+    const series = chart.addSeries(AreaSeries, {
+      lineColor: '#6366f1',
+      topColor: 'rgba(99, 102, 241, 0.2)',
+      bottomColor: 'rgba(99, 102, 241, 0)',
+      lineWidth: 2,
+    });
 
-  const handleIntraMouseUp = () => {
-    setIntraDragState(null);
-  };
+    series.applyOptions({
+      priceFormat: {
+        type: 'custom',
+        formatter: (price: number) => `₹${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      },
+    });
 
-  // Touch zoom state and handlers (two finger zoom)
-  const [pnlTouchState, setPnLTouchState] = useState<{
-    startDist: number;
-    startDomainX: [number, number];
-    startDomainY: [number, number];
-    centerX: number;
-    centerY: number;
-  } | null>(null);
+    pnlChartRef.current = chart;
+    pnlSeriesRef.current = series;
 
-  const [intraTouchState, setIntraTouchState] = useState<{
-    startDist: number;
-    startDomainX: [number, number];
-    startDomainY: [number, number];
-    centerX: number;
-    centerY: number;
-  } | null>(null);
+    const handleResize = () => {
+      if (pnlChartContainerRef.current && pnlChartRef.current) {
+        pnlChartRef.current.applyOptions({ width: pnlChartContainerRef.current.clientWidth });
+      }
+    };
+    window.addEventListener('resize', handleResize);
 
-  const handlePnLTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      const currentX = pnlZoomX || [0, Math.max(0, processedChartData.length - 1)];
-      const pnlValues = processedChartData.map(d => d.pnl);
-      const minVal = pnlValues.length > 0 ? Math.min(...pnlValues) : 0;
-      const maxVal = pnlValues.length > 0 ? Math.max(...pnlValues) : 100;
-      const currentY = pnlZoomY || [minVal, maxVal];
-      
-      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      
-      const rect = pnlContainerRef.current?.getBoundingClientRect();
-      if (rect) {
-        const x = centerX - rect.left;
-        const y = centerY - rect.top;
-        const gridLeft = 65;
-        const gridRight = rect.width - 20;
-        const gridTop = 20;
-        const gridBottom = rect.height - 60;
-        const gridWidth = gridRight - gridLeft;
-        const gridHeight = gridBottom - gridTop;
-        const pctX = Math.min(Math.max((x - gridLeft) / gridWidth, 0), 1);
-        const pctY = Math.min(Math.max((gridBottom - y) / gridHeight, 0), 1);
-        
-        const mouseValX = currentX[0] + pctX * (currentX[1] - currentX[0]);
-        const mouseValY = currentY[0] + pctY * (currentY[1] - currentY[0]);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+      pnlChartRef.current = null;
+      pnlSeriesRef.current = null;
+    };
+  }, []);
 
-        setPnLTouchState({
-          startDist: dist,
-          startDomainX: [currentX[0], currentX[1]],
-          startDomainY: [Number(currentY[0]), Number(currentY[1])],
-          centerX: mouseValX,
-          centerY: mouseValY,
-        });
+  // Update P&L Chart data
+  useEffect(() => {
+    if (pnlSeriesRef.current && pnlSeriesData.length > 0) {
+      pnlSeriesRef.current.setData(pnlSeriesData);
+      if (pnlChartRef.current) {
+        pnlChartRef.current.timeScale().fitContent();
       }
     }
-  };
+  }, [pnlSeriesData]);
 
-  const handlePnLTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (pnlTouchState && e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      if (pnlTouchState.startDist > 0 && dist > 0) {
-        const factor = pnlTouchState.startDist / dist;
-        zoomXAxis(true, factor, pnlTouchState.centerX);
-        zoomYAxis(true, factor, pnlTouchState.centerY);
+  // Set up Intraday Chart
+  useEffect(() => {
+    if (!intraChartContainerRef.current) return;
+
+    const chart = createChart(intraChartContainerRef.current, {
+      layout: {
+        background: { color: '#0f172a' },
+        textColor: '#94a3b8',
+      },
+      grid: {
+        vertLines: { color: '#1e293b' },
+        horzLines: { color: '#1e293b' },
+      },
+      crosshair: {
+        mode: 1,
+      },
+      rightPriceScale: {
+        borderColor: '#334155',
+      },
+      timeScale: {
+        borderColor: '#334155',
+        timeVisible: true,
+        secondsVisible: true,
+      },
+      width: intraChartContainerRef.current.clientWidth,
+      height: 380,
+    });
+
+    const series = chart.addSeries(HistogramSeries, {
+      priceFormat: {
+        type: 'custom',
+        formatter: (price: number) => `₹${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      },
+    });
+
+    intraChartRef.current = chart;
+    intraSeriesRef.current = series;
+
+    const handleResize = () => {
+      if (intraChartContainerRef.current && intraChartRef.current) {
+        intraChartRef.current.applyOptions({ width: intraChartContainerRef.current.clientWidth });
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+      intraChartRef.current = null;
+      intraSeriesRef.current = null;
+    };
+  }, []);
+
+  // Update Intraday Chart data
+  useEffect(() => {
+    if (intraSeriesRef.current && intradaySeriesData.length > 0) {
+      intraSeriesRef.current.setData(intradaySeriesData);
+      if (intraChartRef.current) {
+        intraChartRef.current.timeScale().fitContent();
       }
     }
-  };
-
-  const handlePnLTouchEnd = () => {
-    setPnLTouchState(null);
-  };
-
-  const handleIntraTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      const currentX = intraZoomX || defaultDomain;
-      const currentY = intraZoomY || [0, 59];
-      
-      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      
-      const rect = intraContainerRef.current?.getBoundingClientRect();
-      if (rect) {
-        const x = centerX - rect.left;
-        const y = centerY - rect.top;
-        const gridLeft = 65;
-        const gridRight = rect.width - 20;
-        const gridTop = 20;
-        const gridBottom = rect.height - 60;
-        const gridWidth = gridRight - gridLeft;
-        const gridHeight = gridBottom - gridTop;
-        const pctX = Math.min(Math.max((x - gridLeft) / gridWidth, 0), 1);
-        const pctY = Math.min(Math.max((gridBottom - y) / gridHeight, 0), 1);
-        
-        const mouseValX = currentX[0] + pctX * (currentX[1] - currentX[0]);
-        const mouseValY = currentY[0] + pctY * (currentY[1] - currentY[0]);
-
-        setIntraTouchState({
-          startDist: dist,
-          startDomainX: [currentX[0], currentX[1]],
-          startDomainY: [currentY[0], currentY[1]],
-          centerX: mouseValX,
-          centerY: mouseValY,
-        });
-      }
-    }
-  };
-
-  const handleIntraTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (intraTouchState && e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      if (intraTouchState.startDist > 0 && dist > 0) {
-        const factor = intraTouchState.startDist / dist;
-        zoomXAxis(false, factor, intraTouchState.centerX);
-        zoomYAxis(false, factor, intraTouchState.centerY);
-      }
-    }
-  };
-
-  const handleIntraTouchEnd = () => {
-    setIntraTouchState(null);
-  };
+  }, [intradaySeriesData]);
 
   useEffect(() => {
     if (selectedDeploymentId) {
@@ -895,8 +498,8 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       );
       setAnalysis(result.data);
       setChartData(result.data.time_series || []);
-      handlePnLResetZoom();
-      handleIntraResetZoom();
+      pnlChartRef.current?.timeScale().fitContent();
+      intraChartRef.current?.timeScale().fitContent();
 
       // Fetch raw trades for the trades list
       setTradesLoading(true);
@@ -1310,89 +913,43 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                 <TrendingUp className="w-5 h-5 text-indigo-400" />
                 Profit & Loss Over Time
               </h3>
-              {isPnLZoomed && (
+              
+              {/* Zoom Controls */}
+              <div className="flex items-center gap-1.5 bg-slate-950 rounded p-0.5 border border-slate-800">
                 <button
-                  onClick={handlePnLResetZoom}
-                  className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded text-xs uppercase transition-all cursor-pointer"
+                  type="button"
+                  onClick={() => pnlChartRef.current?.timeScale().zoomTo(-10)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
+                  title="Zoom In"
                 >
-                  Reset
+                  <ZoomIn className="w-4 h-4" />
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => pnlChartRef.current?.timeScale().zoomTo(10)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => pnlChartRef.current?.timeScale().fitContent()}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
+                  title="Reset Zoom"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <div 
-              ref={pnlContainerRef}
-              onMouseDown={handlePnLMouseDown}
-              onMouseMove={handlePnLMouseMove}
-              onMouseUp={handlePnLMouseUp}
-              onTouchStart={handlePnLTouchStart}
-              onTouchMove={handlePnLTouchMove}
-              onTouchEnd={handlePnLTouchEnd}
-              onMouseLeave={handlePnLMouseUp}
-              onDoubleClick={handlePnLResetZoom}
-              className="h-[400px] select-none cursor-grab active:cursor-grabbing"
-              title="Scroll to zoom (both or single axis), Drag to pan, Double-click to reset"
-            >
-              {chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart 
-                    data={processedChartData}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis 
-                      type="number"
-                      dataKey="index" 
-                      domain={pnlXDomainCalculated}
-                      ticks={pnlXTicks}
-                      allowDataOverflow={true}
-                      tickFormatter={(idx) => {
-                        const point = processedChartData[Math.round(idx)];
-                        return point ? formatTimestamp(point.timestamp) : '';
-                      }}
-                      stroke="#94a3b8"
-                      tick={{ fontSize: 12 }}
-                    />
-                    <YAxis 
-                      domain={pnlYDomainCalculated}
-                      ticks={pnlYTicks}
-                      allowDataOverflow={true}
-                      stroke="#94a3b8"
-                      tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => {
-                        if (value % 1 === 0) return `₹${value}`;
-                        return `₹${Number(value.toFixed(2)).toString()}`;
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        color: '#f1f5f9',
-                      }}
-                      labelFormatter={(idx) => {
-                        const point = processedChartData[Math.round(idx)];
-                        return point ? formatTimestamp(point.timestamp) : '';
-                      }}
-                      formatter={(value: number) => [formatCurrency(value), 'Cumulative P&L']}
-                    />
-                    <Legend />
-                    <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
-                    <Line
-                      type="monotone"
-                      dataKey="pnl"
-                      name="P&L"
-                      stroke="#6366f1"
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 6, fill: '#6366f1' }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-500">
+            
+            <div className="relative bg-[#0f172a] rounded-lg border border-slate-800 overflow-hidden min-h-[380px]">
+              {pnlSeriesData.length === 0 && (
+                <div className="absolute inset-0 bg-[#0f172a] z-10 flex items-center justify-center text-slate-500 text-sm">
                   No trade data available for the selected period
                 </div>
               )}
+              <div ref={pnlChartContainerRef} className="w-full h-[380px]" />
             </div>
           </div>
 
@@ -1403,109 +960,47 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                 <Clock className="w-5 h-5 text-cyan-400" />
                 Intraday Trade Distribution ({timezone === 'UTC' ? 'UTC' : 'Local'})
               </h3>
-              {isIntraZoomed && (
+              
+              {/* Zoom Controls */}
+              <div className="flex items-center gap-1.5 bg-slate-950 rounded p-0.5 border border-slate-800">
                 <button
-                  onClick={handleIntraResetZoom}
-                  className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded text-xs uppercase transition-all cursor-pointer"
+                  type="button"
+                  onClick={() => intraChartRef.current?.timeScale().zoomTo(-10)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
+                  title="Zoom In"
                 >
-                  Reset
+                  <ZoomIn className="w-4 h-4" />
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => intraChartRef.current?.timeScale().zoomTo(10)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => intraChartRef.current?.timeScale().fitContent()}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
+                  title="Reset Zoom"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+            
             <p className="text-slate-400 text-xs mb-4">
               Shows individual trades spread across the day (00:00 - 23:59). Zoom and pan to explore. Chart auto-zooms to the most active trading hours on load.
             </p>
-            <div 
-              ref={intraContainerRef}
-              onMouseDown={handleIntraMouseDown}
-              onMouseMove={handleIntraMouseMove}
-              onMouseUp={handleIntraMouseUp}
-              onTouchStart={handleIntraTouchStart}
-              onTouchMove={handleIntraTouchMove}
-              onTouchEnd={handleIntraTouchEnd}
-              onMouseLeave={handleIntraMouseUp}
-              onDoubleClick={handleIntraResetZoom}
-              className="h-[400px] select-none cursor-grab active:cursor-grabbing"
-              title="Scroll to zoom (both or single axis), Drag to pan, Double-click to reset"
-            >
-              {intradayData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart
-                    margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis
-                      type="number"
-                      dataKey="hour"
-                      name="Hour"
-                      domain={scatterXDomainCalculated}
-                      ticks={scatterXTicks}
-                      allowDataOverflow={true}
-                      stroke="#94a3b8"
-                      tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => {
-                        const clamped = Math.min(24, Math.max(0, value));
-                        const hr = Math.floor(clamped);
-                        const mn = Math.round((clamped - hr) * 60);
-                        return `${String(hr).padStart(2, '0')}:${String(mn).padStart(2, '0')}`;
-                      }}
-                      label={{ value: 'Time of Day (Hours)', position: 'insideBottom', offset: -10, fill: '#94a3b8', fontSize: 12 }}
-                    />
-                    <YAxis
-                      type="number"
-                      dataKey="minute"
-                      name="Minute"
-                      domain={scatterYDomainCalculated}
-                      ticks={scatterYTicks}
-                      allowDataOverflow={true}
-                      stroke="#94a3b8"
-                      tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => {
-                        const clamped = Math.min(59, Math.max(0, value));
-                        if (clamped % 1 === 0) return String(Math.floor(clamped)).padStart(2, '0');
-                        const minInt = Math.floor(clamped);
-                        const secs = Math.round((clamped - minInt) * 60);
-                        return `${String(minInt).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-                      }}
-                      label={{ value: 'Minutes', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 12 }}
-                    />
-                    <ZAxis type="number" dataKey="pnl" range={[50, 200]} name="P&L" />
-                    <Tooltip
-                      cursor={{ strokeDasharray: '3 3' }}
-                      contentStyle={{
-                        backgroundColor: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        color: '#f1f5f9',
-                      }}
-                      labelFormatter={(label) => `Hour: ${String(Math.floor(label)).padStart(2, '0')}`}
-                      formatter={(value: any, name: string, props: any) => {
-                        const payload = props?.payload;
-                        if (payload) {
-                          return [
-                            `${String(payload.hour).padStart(2, '0')}:${String(payload.minute).padStart(2, '0')}:${String(payload.second).padStart(2, '0')}`,
-                            'Time'
-                          ];
-                        }
-                        return [value, name];
-                      }}
-                    />
-                    <Legend />
-                    <ReferenceLine x={0} stroke="#64748b" strokeDasharray="3 3" />
-                    <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
-                    <Scatter
-                      name="Trades"
-                      data={intradayData}
-                      fill="#06b6d4"
-                      shape="circle"
-                    />
-                  </ScatterChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-500">
+            
+            <div className="relative bg-[#0f172a] rounded-lg border border-slate-800 overflow-hidden min-h-[380px]">
+              {intradaySeriesData.length === 0 && (
+                <div className="absolute inset-0 bg-[#0f172a] z-10 flex items-center justify-center text-slate-500 text-sm">
                   No intraday trade data available
                 </div>
               )}
+              <div ref={intraChartContainerRef} className="w-full h-[380px]" />
             </div>
           </div>
 
