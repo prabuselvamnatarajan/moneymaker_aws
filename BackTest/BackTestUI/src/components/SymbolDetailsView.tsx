@@ -82,9 +82,12 @@ export default function SymbolDetailsView({
       const res = await api.symbols.getCandles(symbol.ticker, chartDate, chartTimeframe);
       const chartData: CandlestickData<Time>[] = res.data.data.map(c => {
         const rawTime = c.time;
+        // lightweight-charts renders UTC by default.
+        // UTC mode: rawTime directly → shows 03:45 UTC ✓
+        // Local/IST mode: rawTime - getTimezoneOffset*60 → for IST (offset=-330): +19800s → shows 09:15 ✓
         const adjustedTime = timezone === 'UTC'
-          ? (rawTime + (new Date(rawTime * 1000).getTimezoneOffset() * 60))
-          : rawTime;
+          ? rawTime
+          : (rawTime - (new Date(rawTime * 1000).getTimezoneOffset() * 60));
         return {
           time: adjustedTime as Time,
           open: c.open,
@@ -190,8 +193,8 @@ export default function SymbolDetailsView({
 
     const rawBucketTime = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
     const currentBucketTime = timezone === 'UTC'
-      ? (rawBucketTime + (new Date(rawBucketTime * 1000).getTimezoneOffset() * 60))
-      : rawBucketTime;
+      ? rawBucketTime
+      : (rawBucketTime - (new Date(rawBucketTime * 1000).getTimezoneOffset() * 60));
 
     let updatedBar: CandlestickData<Time>;
     if (currentBucketTime <= lastBarTimeNum) {

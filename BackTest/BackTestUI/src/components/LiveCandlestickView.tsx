@@ -61,9 +61,13 @@ export default function LiveCandlestickView({ symbols, timezone }: LiveCandlesti
       const res = await api.symbols.getCandles(selectedSymbol, selectedDate, timeframe);
       const chartData: CandlestickData<Time>[] = res.data.data.map(c => {
         const rawTime = c.time;
+        // lightweight-charts renders times as UTC by default.
+        // For UTC mode: pass rawTime directly → chart shows 03:45 UTC ✓
+        // For local/IST mode: subtract getTimezoneOffset (negative for IST = -330)
+        //   so rawTime - (-330*60) = rawTime + 19800 → chart shows 09:15 ✓
         const adjustedTime = timezone === 'UTC'
-          ? (rawTime + (new Date(rawTime * 1000).getTimezoneOffset() * 60))
-          : rawTime;
+          ? rawTime
+          : (rawTime - (new Date(rawTime * 1000).getTimezoneOffset() * 60));
         return {
           time: adjustedTime as Time,
           open: c.open,
@@ -172,8 +176,8 @@ export default function LiveCandlestickView({ symbols, timezone }: LiveCandlesti
 
     const rawBucketTime = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
     const currentBucketTime = timezone === 'UTC'
-      ? (rawBucketTime + (new Date(rawBucketTime * 1000).getTimezoneOffset() * 60))
-      : rawBucketTime;
+      ? rawBucketTime
+      : (rawBucketTime - (new Date(rawBucketTime * 1000).getTimezoneOffset() * 60));
 
     // If it falls in the current bucket, update last candle, otherwise start a new one
     let updatedBar: CandlestickData<Time>;
