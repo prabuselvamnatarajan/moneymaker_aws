@@ -65,9 +65,15 @@ async function exportCollection(collectionName) {
       const db = client.db(targetDbName);
       const collection = db.collection(collectionName);
 
-      // Get today's date range in IST
-      const start = todayIST.startOf('day').toUTC().toJSDate();
-      const end = todayIST.endOf('day').toUTC().toJSDate();
+      // Get date range in IST
+      let start, end;
+      if (targetDbName === 'stock_database') {
+        start = todayIST.set({ hour: 9, minute: 0, second: 0, millisecond: 0 }).toUTC().toJSDate();
+        end = todayIST.set({ hour: 15, minute: 40, second: 0, millisecond: 0 }).toUTC().toJSDate();
+      } else {
+        start = todayIST.startOf('day').toUTC().toJSDate();
+        end = todayIST.endOf('day').toUTC().toJSDate();
+      }
 
       const query = { [timeField]: { $gte: start, $lte: end } };
       data = await collection.find(query).toArray();
