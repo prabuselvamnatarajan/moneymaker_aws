@@ -1,4 +1,6 @@
 import Deployment from "../models/deployment.js";
+import fs from "fs/promises";
+import path from "path";
 import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
 import Account from "../models/account.js";
@@ -6,6 +8,7 @@ import UserSymbol from "../models/userSymbol.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
+import { getSymbolCandles } from "./symbol.js";
 
 const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount"];
 
@@ -636,4 +639,14 @@ export const syncAllDeploymentsToRedis = async () => {
       await client.disconnect();
     }
   }
+};
+
+export const getDeploymentCandles = async (userId, id, timeframe = "1m") => {
+  const deployment = await Deployment.findOne({ _id: id, user_id: userId });
+  if (!deployment) return null;
+
+  const symbol = deployment.symbol;
+  const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
+
+  return await getSymbolCandles(symbol, date, timeframe);
 };

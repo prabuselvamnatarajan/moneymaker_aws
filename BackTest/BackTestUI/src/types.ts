@@ -126,6 +126,7 @@ export interface TransactionFilters {
 
 export type ViewScreen = 
   | 'dashboard' 
+  | 'live-candlestick'
   | 'transactions' 
   | 'accounts-list' 
   | 'strategies-list' 

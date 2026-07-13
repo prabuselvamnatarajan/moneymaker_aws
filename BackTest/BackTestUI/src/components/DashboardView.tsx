@@ -3,16 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useToast } from './Toast';
 import { 
   IndianRupee as IndianRupeeIcon, Activity as ActivityIcon, Percent as PercentIcon, 
   ArrowUpRight as ArrowUpRightIcon, ArrowDownRight as ArrowDownRightIcon, 
   Play as PlayIcon, Pause as PauseIcon, Plus as PlusIcon, 
   ShieldCheck as ShieldCheckIcon, RefreshCw as RefreshCwIcon, 
-  Send as SendIcon, Radio as RadioIcon, Zap as ZapIcon, Info, Sliders, Server
+  Send as SendIcon, Radio as RadioIcon, Zap as ZapIcon, Info, Sliders, Server,
+
 } from 'lucide-react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { createChart, IChartApi, ISeriesApi, Time, AreaSeries } from 'lightweight-charts';
 import { Account, Strategy, SymbolData, Transaction } from '../types';
 import { api } from '../api';
 import { mapLedger } from '../adapters';
@@ -49,6 +50,10 @@ export default function DashboardView({
   onNavigateToEntity,
   onSelectTransaction,
 }: DashboardViewProps) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRefs = useRef<Map<string, ISeriesApi<'Area'>>>(new Map());
+
   // Manual trading console form state
   const [selectedAcc, setSelectedAcc] = useState(accounts[0]?.id || '');
   const [selectedStrat, setSelectedStrat] = useState(strategies[0]?.id || '');
@@ -157,7 +162,20 @@ export default function DashboardView({
 
   const chartData = useMemo(() => {
     if (!transactions || transactions.length === 0) {
-      return PERFORMANCE_HISTORY;
+      return PERFORMANCE_HISTORY.map((pt) => {
+        let t = 0;
+        if (pt.time === 'Start') {
+          const d = new Date();
+          d.setHours(9, 0, 0, 0);
+          t = Math.floor(d.getTime() / 1000);
+        } else {
+          const [h, m] = pt.time.split(':').map(Number);
+          const d = new Date();
+          d.setHours(h, m, 0, 0);
+          t = Math.floor(d.getTime() / 1000);
+        }
+        return { ...pt, timestamp: t };
+      });
     }
 
     const sortedTx = [...transactions]
@@ -165,7 +183,20 @@ export default function DashboardView({
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     if (sortedTx.length === 0) {
-      return PERFORMANCE_HISTORY;
+      return PERFORMANCE_HISTORY.map((pt) => {
+        let t = 0;
+        if (pt.time === 'Start') {
+          const d = new Date();
+          d.setHours(9, 0, 0, 0);
+          t = Math.floor(d.getTime() / 1000);
+        } else {
+          const [h, m] = pt.time.split(':').map(Number);
+          const d = new Date();
+          d.setHours(h, m, 0, 0);
+          t = Math.floor(d.getTime() / 1000);
+        }
+        return { ...pt, timestamp: t };
+      });
     }
 
     const strategyPnls: Record<string, number> = {};
@@ -177,12 +208,15 @@ export default function DashboardView({
     });
 
     // Add starting point
-    const startPoint: any = { time: 'Start' };
+    const firstTxTime = new Date(sortedTx[0].timestamp).getTime();
+    const startTimeSec = Math.floor((firstTxTime - 30 * 60 * 1000) / 1000);
+    const startPoint: any = { timestamp: startTimeSec };
     visibleStrats.forEach(s => {
       startPoint[s.name.replace(/\s+/g, '')] = 0;
     });
     points.push(startPoint);
 
+    let lastTime = startTimeSec;
     sortedTx.forEach((tx) => {
       const stratId = tx.strategyId;
       if (stratId) {
@@ -190,10 +224,13 @@ export default function DashboardView({
         strategyPnls[stratId] = (strategyPnls[stratId] || 0) + change;
       }
       
-      const date = new Date(tx.timestamp);
-      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      let txTime = Math.floor(new Date(tx.timestamp).getTime() / 1000);
+      if (txTime <= lastTime) {
+        txTime = lastTime + 1;
+      }
+      lastTime = txTime;
       
-      const point: any = { time: timeStr };
+      const point: any = { timestamp: txTime };
       visibleStrats.forEach(s => {
         const cleanName = s.name.replace(/\s+/g, '');
         point[cleanName] = parseFloat((strategyPnls[s.id] || 0).toFixed(2));
@@ -203,6 +240,111 @@ export default function DashboardView({
 
     return points;
   }, [transactions, strategies]);
+
+  // Initialize Yield Progression Chart
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+
+    const chart = createChart(chartContainerRef.current, {
+      layout: {
+        background: { color: '#020617' },
+        textColor: '#94a3b8',
+      },
+      grid: {
+        vertLines: { color: '#1e293b' },
+        horzLines: { color: '#1e293b' },
+      },
+      crosshair: {
+        mode: 1,
+      },
+      rightPriceScale: {
+        borderColor: '#334155',
+      },
+      timeScale: {
+        borderColor: '#334155',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      width: chartContainerRef.current.clientWidth,
+      height: 256,
+    });
+
+    chartRef.current = chart;
+
+    const handleResize = () => {
+      if (chartContainerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+      chartRef.current = null;
+      seriesRefs.current.clear();
+    };
+  }, []);
+
+  // Update Yield Progression Chart Data
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const chart = chartRef.current;
+
+    const activeStrats = strategies.filter(s => s.name.toLowerCase() !== 'manual');
+    const activeIds = new Set(activeStrats.map(s => s.id));
+    
+    // Remove inactive series
+    seriesRefs.current.forEach((series, id) => {
+      if (!activeIds.has(id)) {
+        try {
+          chart.removeSeries(series);
+        } catch (e) {
+          console.error('Error removing series:', e);
+        }
+        seriesRefs.current.delete(id);
+      }
+    });
+
+    // Add or update series
+    activeStrats.forEach((s, idx) => {
+      let series = seriesRefs.current.get(s.id);
+      const cleanName = s.name.replace(/\s+/g, '');
+      const colors = ['#818cf8', '#10b981', '#fbbf24', '#f87171', '#22d3ee', '#a78bfa'];
+      const color = colors[idx % colors.length];
+
+      if (!series) {
+        series = chart.addSeries(AreaSeries, {
+          lineColor: color,
+          topColor: color + '22',
+          bottomColor: color + '00',
+          lineWidth: 2,
+          title: s.name,
+        });
+        series.applyOptions({
+          priceFormat: {
+            type: 'custom',
+            formatter: (price: number) => `₹${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          },
+        });
+        seriesRefs.current.set(s.id, series);
+      }
+
+      // lightweight-charts renders as UTC. Shift time by the browser's local offset so
+      // the x-axis shows local time labels (e.g. 09:15 IST instead of 03:45 UTC).
+      const tzShift = -(new Date().getTimezoneOffset() * 60);
+      const seriesData = chartData.map(pt => ({
+        time: (pt.timestamp + tzShift) as Time,
+        value: pt[cleanName] || 0,
+      }));
+
+      series.setData(seriesData);
+    });
+
+    if (chartData.length > 0) {
+      chart.timeScale().fitContent();
+    }
+  }, [chartData, strategies]);
 
   // Handle manual order placement
   const handlePlaceOrder = (e: React.FormEvent) => {
@@ -386,61 +528,16 @@ export default function DashboardView({
         {/* Performance Chart Block (Spans 2 columns) */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4 font-sans">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <h3 className="text-sm font-bold text-slate-200">Deployed Strategy Yield Progression</h3>
                 <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Temporal charting of active automated strategies (Cumulative INR return)</p>
               </div>
-              <span className="text-[10px] text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded font-mono border border-indigo-500/10">
-                15m Intervals
-              </span>
+
             </div>
 
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={chartData}
-                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis 
-                    dataKey="time" 
-                    stroke="#475569" 
-                    fontSize={10} 
-                    fontFamily="monospace"
-                    tickLine={false} 
-                  />
-                  <YAxis 
-                    stroke="#475569" 
-                    fontSize={10} 
-                    fontFamily="monospace"
-                    tickLine={false}
-                    tickFormatter={(v) => `₹${v}`}
-                  />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#020617', borderColor: '#1e293b', borderRadius: '8px' }}
-                    labelStyle={{ fontFamily: 'monospace', color: '#94a3b8', fontSize: '11px' }}
-                    itemStyle={{ fontSize: '11px', fontFamily: 'sans-serif' }}
-                  />
-                  {strategies.filter(s => s.name.toLowerCase() !== 'manual').map((s, idx) => {
-                    const cleanName = s.name.replace(/\s+/g, '');
-                    const colors = ['#818cf8', '#10b981', '#fbbf24', '#f87171', '#22d3ee', '#a78bfa'];
-                    const color = colors[idx % colors.length];
-                    return (
-                      <Area 
-                        key={s.id}
-                        name={s.name}
-                        type="monotone" 
-                        dataKey={cleanName} 
-                        stroke={color} 
-                        strokeWidth={2}
-                        fillOpacity={0.05} 
-                        fill={color}
-                      />
-                    );
-                  })}
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="h-64 w-full relative bg-[#020617] rounded-lg border border-slate-800 overflow-hidden">
+              <div ref={chartContainerRef} className="w-full h-full" />
             </div>
           </div>
 

@@ -9,6 +9,7 @@ import {
   getDeploymentLogs,
   getDeploymentMetrics,
   getDeploymentAnalysis,
+  getDeploymentCandles,
 } from "../services/deployment.js";
 
 export const createDeploymentController = async (req, res, next) => {
@@ -190,6 +191,23 @@ export const getDeploymentAnalysisController = async (req, res, next) => {
     res.status(200).json({
       message: "Deployment analysis retrieved successfully",
       data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getDeploymentCandlesController = async (req, res, next) => {
+  try {
+    const userId = req.auth.userId;
+    const { timeframe } = req.query;
+    const result = await getDeploymentCandles(userId, req.params.id, timeframe);
+    if (!result) {
+      return res.status(404).json({ message: "Deployment not found" });
+    }
+    res.status(200).json({
+      message: "Candles retrieved successfully",
+      ...result,
     });
   } catch (err) {
     next(err);
