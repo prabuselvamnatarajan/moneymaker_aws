@@ -40,6 +40,29 @@ async function exportCollection(collectionName) {
           data.push(cleanSym);
         }
       }
+
+      // Export the active symbols' stock data from stock_database
+      const stockDb = client.db('stock_database');
+      const start = todayIST.set({ hour: 9, minute: 0, second: 0, millisecond: 0 }).toUTC().toJSDate();
+      const end = todayIST.set({ hour: 15, minute: 40, second: 0, millisecond: 0 }).toUTC().toJSDate();
+
+      for (const sym of data) {
+        const symName = sym.symbol;
+        if (!symName) continue;
+
+        try {
+          const symCollection = stockDb.collection(symName);
+          const symbolData = await symCollection.find({ timestamp: { $gte: start, $lte: end } }).toArray();
+
+          const sanitizedSymName = symName.replace(/[^a-zA-Z0-9-_]/g, '_');
+          const symFilePath = path.join(exportPath, `${sanitizedSymName}.json`);
+
+          fs.writeFileSync(symFilePath, JSON.stringify(symbolData, null, 2));
+          console.log(`Exported active symbol collection: ${symName} (${symbolData.length} records) to ${symFilePath}`);
+        } catch (symErr) {
+          console.error(`Error exporting active symbol collection ${symName}:`, symErr.message);
+        }
+      }
     } else {
       if (collectionName === 'trades') {
         targetDbName = 'BacktestApp';
