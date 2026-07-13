@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi, CandlestickData, Time, CandlestickSeries } from 'lightweight-charts';
-import { ChevronRight, ZoomIn, ZoomOut, RotateCcw, AlertTriangle } from 'lucide-react';
+import { ChevronRight, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 
 interface CandlestickSidebarProps {
@@ -128,23 +128,6 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
     }
   }, [timeframe]);
 
-  const handleZoomIn = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().zoomTo(-10);
-    }
-  };
-
-  const handleZoomOut = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().zoomTo(10);
-    }
-  };
-
-  const handleResetZoom = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
-    }
-  };
 
   if (!isOpen) return null;
 
@@ -174,7 +157,7 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
       </div>
 
       {/* Control Actions / Timeframe Selector */}
-      <div className="px-4 py-3 bg-[#0f1115]/40 border-b border-[#232a35] flex items-center justify-between shrink-0 gap-2">
+      <div className="px-4 py-3 bg-[#0f1115]/40 border-b border-[#232a35] flex items-center shrink-0">
         <div className="flex bg-[#0f1115] rounded-lg p-0.5 border border-[#232a35]">
           {(['1m', '5m', '15m'] as const).map(tf => (
             <button
@@ -189,31 +172,6 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
               {tf}
             </button>
           ))}
-        </div>
-
-        {/* Zoom Controls */}
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={handleZoomIn}
-            className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-            title="Zoom In"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleZoomOut}
-            className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleResetZoom}
-            className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-            title="Reset Zoom"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
         </div>
       </div>
 

@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi, CandlestickData, Time, CandlestickSeries } from 'lightweight-charts';
 import { 
   LineChart, TrendingUp, TrendingDown, Clock, Activity, 
-  ZoomIn, ZoomOut, RotateCcw, AlertTriangle, RefreshCw 
+  AlertTriangle, RefreshCw 
 } from 'lucide-react';
 import { SymbolData } from '../types';
 import { api } from '../api';
@@ -199,23 +199,6 @@ export default function LiveCandlestickView({ symbols, timezone }: LiveCandlesti
     candlestickSeriesRef.current.update(updatedBar);
   }, [matchedSymbolObj?.lastPrice, timeframe, timezone]);
 
-  const handleZoomIn = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().zoomTo(-10);
-    }
-  };
-
-  const handleZoomOut = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().zoomTo(10);
-    }
-  };
-
-  const handleResetZoom = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
-    }
-  };
 
   const isPositive = matchedSymbolObj ? matchedSymbolObj.change24h >= 0 : true;
 
@@ -299,7 +282,7 @@ export default function LiveCandlestickView({ symbols, timezone }: LiveCandlesti
         <div className="xl:col-span-3 space-y-4">
           <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 space-y-4">
             
-            <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
                   <LineChart className="w-4 h-4 text-indigo-400" />
@@ -307,29 +290,7 @@ export default function LiveCandlestickView({ symbols, timezone }: LiveCandlesti
                 </h3>
               </div>
 
-              {/* Zoom Controls */}
               <div className="flex items-center gap-1.5">
-                <button
-                  onClick={handleZoomIn}
-                  className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-350 hover:text-white transition-colors border border-slate-800 cursor-pointer"
-                  title="Zoom In"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={handleZoomOut}
-                  className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-350 hover:text-white transition-colors border border-slate-800 cursor-pointer"
-                  title="Zoom Out"
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={handleResetZoom}
-                  className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-350 hover:text-white transition-colors border border-slate-800 cursor-pointer"
-                  title="Reset Zoom"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
                 <button
                   onClick={loadCandleData}
                   disabled={loading}

@@ -11,7 +11,7 @@ import {
   Play as PlayIcon, Pause as PauseIcon, Plus as PlusIcon, 
   ShieldCheck as ShieldCheckIcon, RefreshCw as RefreshCwIcon, 
   Send as SendIcon, Radio as RadioIcon, Zap as ZapIcon, Info, Sliders, Server,
-  ZoomIn as ZoomInIcon, ZoomOut as ZoomOutIcon, RotateCcw as RotateCcwIcon
+
 } from 'lucide-react';
 import { createChart, IChartApi, ISeriesApi, Time, AreaSeries } from 'lightweight-charts';
 import { Account, Strategy, SymbolData, Transaction } from '../types';
@@ -530,34 +530,7 @@ export default function DashboardView({
                 <h3 className="text-sm font-bold text-slate-200">Deployed Strategy Yield Progression</h3>
                 <p className="text-[10px] text-slate-500 mt-0.5 font-sans">Temporal charting of active automated strategies (Cumulative INR return)</p>
               </div>
-              
-              {/* Zoom Controls */}
-              <div className="flex items-center gap-1.5 bg-slate-900 rounded p-0.5 border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => chartRef.current?.timeScale().zoomTo(-10)}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-750 cursor-pointer"
-                  title="Zoom In"
-                >
-                  <ZoomInIcon className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => chartRef.current?.timeScale().zoomTo(10)}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-750 cursor-pointer"
-                  title="Zoom Out"
-                >
-                  <ZoomOutIcon className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => chartRef.current?.timeScale().fitContent()}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-755 cursor-pointer"
-                  title="Reset Zoom"
-                >
-                  <RotateCcwIcon className="w-3.5 h-3.5" />
-                </button>
-              </div>
+
             </div>
 
             <div className="h-64 w-full relative bg-[#020617] rounded-lg border border-slate-800 overflow-hidden">

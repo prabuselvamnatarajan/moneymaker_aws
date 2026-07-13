@@ -7,7 +7,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { 
   LineChart, TrendingUp, TrendingDown, Clock, Activity, ArrowLeft, 
   Layers, ExternalLink, RefreshCw, BarChart3, HelpCircle, ArrowUpRight, Power,
-  ZoomIn, ZoomOut, RotateCcw, AlertTriangle
+  AlertTriangle
 } from 'lucide-react';
 import { createChart, IChartApi, ISeriesApi, CandlestickData, Time, CandlestickSeries } from 'lightweight-charts';
 import { SymbolData, Transaction, Strategy } from '../types';
@@ -216,23 +216,6 @@ export default function SymbolDetailsView({
     candlestickSeriesRef.current.update(updatedBar);
   }, [symbol?.lastPrice, chartTimeframe, timezone]);
 
-  const handleZoomIn = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().zoomTo(-10);
-    }
-  };
-
-  const handleZoomOut = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().zoomTo(10);
-    }
-  };
-
-  const handleResetZoom = () => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
-    }
-  };
 
   // --- Self-fetched transactions for this symbol ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -503,29 +486,8 @@ export default function SymbolDetailsView({
               ))}
             </div>
 
-            {/* Zoom / Reset */}
+            {/* Reload Chart */}
             <div className="flex items-center gap-1">
-              <button
-                onClick={handleZoomIn}
-                className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-450 hover:text-slate-200 transition-colors border border-slate-850 cursor-pointer"
-                title="Zoom In"
-              >
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={handleZoomOut}
-                className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-450 hover:text-slate-200 transition-colors border border-slate-850 cursor-pointer"
-                title="Zoom Out"
-              >
-                <ZoomOut className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={handleResetZoom}
-                className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-450 hover:text-slate-200 transition-colors border border-slate-850 cursor-pointer"
-                title="Reset Zoom"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
               <button
                 onClick={loadCandleData}
                 disabled={chartLoading}
