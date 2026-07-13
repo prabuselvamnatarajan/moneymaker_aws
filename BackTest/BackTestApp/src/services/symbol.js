@@ -399,14 +399,14 @@ export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
   // Sort ticks by exchange LTT ascending so open = first price, close = last price
   const validTicks = [];
   for (const tick of data) {
-    const marketFF = tick.fullFeed?.marketFF;
-    if (!marketFF?.ltpc) continue;
+    const feed = tick.fullFeed?.marketFF || tick.fullFeed?.indexFF;
+    if (!feed?.ltpc) continue;
 
-    const ltpc = marketFF.ltpc;
+    const ltpc = feed.ltpc;
     const ltp = ltpc.ltp;
     if (ltp === undefined || ltp === null) continue;
 
-    // ltt is inside ltpc (tick.fullFeed.marketFF.ltpc.ltt) as ms epoch from exchange
+    // ltt is inside ltpc (tick.fullFeed.[marketFF/indexFF].ltpc.ltt) as ms epoch from exchange
     // Fallback to server-stored tick.timestamp if ltt is absent
     let tickTimeMs;
     if (ltpc.ltt) {
