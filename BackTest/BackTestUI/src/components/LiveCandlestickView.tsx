@@ -17,8 +17,6 @@ interface LiveCandlestickViewProps {
   timezone: string;
 }
 
-const AVAILABLE_DATES = ['2026-06-24', '2026-06-18', '2026-06-17'];
-
 export default function LiveCandlestickView({ symbols, timezone }: LiveCandlestickViewProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -27,13 +25,33 @@ export default function LiveCandlestickView({ symbols, timezone }: LiveCandlesti
 
   const activeSymbols = symbols.filter(s => s.isActive);
   const [selectedSymbol, setSelectedSymbol] = useState(activeSymbols[0]?.ticker || symbols[0]?.ticker || '');
-  const [selectedDate, setSelectedDate] = useState(AVAILABLE_DATES[0]);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState('');
   const [timeframe, setTimeframe] = useState<'1m' | '5m' | '15m'>('1m');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [candlesCount, setCandlesCount] = useState(0);
 
   const matchedSymbolObj = symbols.find(s => s.ticker === selectedSymbol);
+
+  // Fetch available backtest dates from server
+  useEffect(() => {
+    const fetchDates = async () => {
+      try {
+        const res = await api.symbols.getBacktestDates();
+        if (res.data && res.data.length > 0) {
+          setAvailableDates(res.data);
+          setSelectedDate(res.data[0]);
+        }
+      } catch (err: any) {
+        console.error('Error fetching backtest dates:', err);
+        const fallback = ['2026-06-24', '2026-06-18', '2026-06-17'];
+        setAvailableDates(fallback);
+        setSelectedDate(fallback[0]);
+      }
+    };
+    fetchDates();
+  }, []);
 
   const loadCandleData = async () => {
     if (!selectedSymbol || !selectedDate) return;
@@ -78,7 +96,7 @@ export default function LiveCandlestickView({ symbols, timezone }: LiveCandlesti
 
   // Setup lightweight-charts instance
   useEffect(() => {
-    if (!chartContainerRef.current) return;
+    if (!chartContainerRef.current || !selectedDate) return;
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
@@ -244,7 +262,7 @@ export default function LiveCandlestickView({ symbols, timezone }: LiveCandlesti
               onChange={(e) => setSelectedDate(e.target.value)}
               className="bg-slate-900 border border-slate-800 rounded-md p-2 text-slate-200 font-mono focus:outline-hidden focus:border-indigo-500 w-full sm:w-36"
             >
-              {AVAILABLE_DATES.map(d => (
+              {availableDates.map(d => (
                 <option key={d} value={d}>
                   {d}
                 </option>

@@ -487,6 +487,17 @@ export const api = {
         };
       }>(res);
     },
+
+    async getBacktestDates() {
+      const res = await fetch(`${BASE_URL}/symbols/backtest-dates`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{
+        message: string;
+        data: string[];
+      }>(res);
+    },
   },
 
   // Strategies API

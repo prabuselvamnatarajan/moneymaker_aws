@@ -482,5 +482,36 @@ export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
   };
 };
 
+export const getAvailableBacktestDates = async () => {
+  const dates = new Set();
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+  const checkDir = async (dirPath) => {
+    try {
+      const files = await fs.readdir(dirPath);
+      for (const file of files) {
+        if (dateRegex.test(file)) {
+          try {
+            const stat = await fs.stat(path.join(dirPath, file));
+            if (stat.isDirectory()) {
+              dates.add(file);
+            }
+          } catch (e) {
+            // Ignore if stat fails
+          }
+        }
+      }
+    } catch (err) {
+      // Ignore
+    }
+  };
+
+  await checkDir(path.join(process.cwd(), "..", "exportedData"));
+  await checkDir("/shared/exportedData");
+
+  const sortedDates = Array.from(dates).sort((a, b) => b.localeCompare(a));
+  return sortedDates.length > 0 ? sortedDates : ["2026-06-24", "2026-06-18", "2026-06-17"];
+};
+
 
 

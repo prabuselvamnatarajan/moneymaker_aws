@@ -7,7 +7,8 @@ import {
   updateSymbolController,
   deleteSymbolController,
   bulkCreateSymbolController,
-  getSymbolCandlesController
+  getSymbolCandlesController,
+  getBacktestDatesController
 } from "../controllers/symbol.js";
 
 const router = express.Router();
@@ -15,6 +16,7 @@ const router = express.Router();
 router.post("/bulk", authenticate, bulkCreateSymbolController);
 router.post("/", authenticate, createSymbolController);
 router.get("/", authenticate, getAllSymbolsController);
+router.get("/backtest-dates", authenticate, getBacktestDatesController);
 router.get("/:symbol/candles", authenticate, getSymbolCandlesController);
 router.get("/:id", authenticate, getSymbolByIdController);
 router.put("/:id", authenticate, updateSymbolController);

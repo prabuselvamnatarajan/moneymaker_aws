@@ -28,8 +28,6 @@ interface SymbolDetailsViewProps {
   onToggleSymbolActive?: (id: string, isActive: boolean) => void;
 }
 
-const AVAILABLE_DATES = ['2026-06-24', '2026-06-18', '2026-06-17'];
-
 export default function SymbolDetailsView({
   symbol,
   strategies,
@@ -50,7 +48,27 @@ export default function SymbolDetailsView({
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const lastBarRef = useRef<any>(null);
 
-  const [chartDate, setChartDate] = useState(AVAILABLE_DATES[0]);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [chartDate, setChartDate] = useState('');
+
+  // Fetch available backtest dates from server
+  useEffect(() => {
+    const fetchDates = async () => {
+      try {
+        const res = await api.symbols.getBacktestDates();
+        if (res.data && res.data.length > 0) {
+          setAvailableDates(res.data);
+          setChartDate(res.data[0]);
+        }
+      } catch (err: any) {
+        console.error('Error fetching backtest dates:', err);
+        const fallback = ['2026-06-24', '2026-06-18', '2026-06-17'];
+        setAvailableDates(fallback);
+        setChartDate(fallback[0]);
+      }
+    };
+    fetchDates();
+  }, []);
   const [chartTimeframe, setChartTimeframe] = useState<'1m' | '5m' | '15m'>('1m');
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
@@ -98,7 +116,7 @@ export default function SymbolDetailsView({
   };
 
   useEffect(() => {
-    if (!chartContainerRef.current) return;
+    if (!chartContainerRef.current || !chartDate) return;
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
@@ -463,7 +481,7 @@ export default function SymbolDetailsView({
               onChange={(e) => setChartDate(e.target.value)}
               className="bg-slate-900 border border-slate-800 rounded-md p-1.5 text-xs text-slate-300 font-mono focus:outline-hidden focus:border-indigo-500"
             >
-              {AVAILABLE_DATES.map(d => (
+              {availableDates.map(d => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>

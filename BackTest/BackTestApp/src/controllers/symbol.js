@@ -5,7 +5,8 @@ import {
   updateSymbol,
   deleteSymbol,
   bulkCreateSymbols,
-  getSymbolCandles
+  getSymbolCandles,
+  getAvailableBacktestDates
 } from "../services/symbol.js";
 
 export const bulkCreateSymbolController = async (req, res, next) => {
@@ -110,3 +111,16 @@ export const getSymbolCandlesController = async (req, res, next) => {
     next(error);
   }
 };
+
+export const getBacktestDatesController = async (req, res, next) => {
+  try {
+    const result = await getAvailableBacktestDates();
+    res.status(200).json({
+      message: "Backtest dates retrieved successfully",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
