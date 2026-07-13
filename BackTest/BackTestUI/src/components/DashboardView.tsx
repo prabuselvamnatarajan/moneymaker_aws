@@ -13,7 +13,7 @@ import {
   Send as SendIcon, Radio as RadioIcon, Zap as ZapIcon, Info, Sliders, Server,
   ZoomIn as ZoomInIcon, ZoomOut as ZoomOutIcon, RotateCcw as RotateCcwIcon
 } from 'lucide-react';
-import { createChart, IChartApi, ISeriesApi, Time } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, Time, AreaSeries } from 'lightweight-charts';
 import { Account, Strategy, SymbolData, Transaction } from '../types';
 import { api } from '../api';
 import { mapLedger } from '../adapters';
@@ -314,7 +314,7 @@ export default function DashboardView({
       const color = colors[idx % colors.length];
 
       if (!series) {
-        series = chart.addAreaSeries({
+        series = chart.addSeries(AreaSeries, {
           lineColor: color,
           topColor: color + '22',
           bottomColor: color + '00',
