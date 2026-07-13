@@ -277,7 +277,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       pnlChartRef.current = null;
       pnlSeriesRef.current = null;
     };
-  }, []);
+  }, [analysis]);
 
   // Update P&L Chart data
   useEffect(() => {
@@ -340,7 +340,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       intraChartRef.current = null;
       intraSeriesRef.current = null;
     };
-  }, []);
+  }, [analysis]);
 
   // Update Intraday Chart data
   useEffect(() => {
