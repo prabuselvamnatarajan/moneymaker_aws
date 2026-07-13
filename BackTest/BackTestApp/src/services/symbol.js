@@ -362,13 +362,7 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
       }
     }
   }
-
-  await syncAllActiveSymbolsToRedis();
-
-  return {
-    message: `Successfully processed bulk symbol addition. Added ${addedSymbols.length} new symbols.`,
-    data: addedSymbols
-  };
+  return addedSymbols;
 };
 
 export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
@@ -383,7 +377,6 @@ export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
       await fs.access(fallbackPath);
       filePath = fallbackPath;
     } catch (fallbackErr) {
-      // Keep original filePath to let standard error handling capture it
     }
   }
   
@@ -392,100 +385,76 @@ export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
     const fileContent = await fs.readFile(filePath, "utf8");
     data = JSON.parse(fileContent);
   } catch (err) {
-    console.error(`[Candles Service] Error reading or parsing file ${filePath}:`, err.message);
-    return {
-      symbol,
-      date,
-      timeframe,
-      data: []
-    };
-  }
-
-  if (!Array.isArray(data)) {
     return { symbol, date, timeframe, data: [] };
   }
 
-  let intervalMs = 60 * 1000;
-  if (timeframe === "5m") {
-    intervalMs = 5 * 60 * 1000;
-  } else if (timeframe === "15m") {
-    intervalMs = 15 * 60 * 1000;
-  }
+  if (!Array.isArray(data)) return { symbol, date, timeframe, data: [] };
 
+  const intervalMs = { "1m": 60000, "5m": 300000, "15m": 900000 }[timeframe] || 60000;
+  const IST_OFFSET_MS = 19800000; // +5:30 in ms
+  const OPEN_MS  = (9 * 60 + 15) * 60000;   // 09:15 in ms-of-day
+  const CLOSE_MS = (15 * 60 + 30) * 60000;   // 15:30 in ms-of-day
   const buckets = {};
 
+  // Sort ticks by exchange LTT ascending so open = first price, close = last price
+  const validTicks = [];
   for (const tick of data) {
-    if (!tick.timestamp || !tick.fullFeed || !tick.fullFeed.marketFF || !tick.fullFeed.marketFF.ltpc) {
-      continue;
-    }
-    const ltp = tick.fullFeed.marketFF.ltpc.ltp;
-    if (ltp === undefined || ltp === null) {
-      continue;
-    }
+    const marketFF = tick.fullFeed?.marketFF;
+    if (!marketFF?.ltpc) continue;
 
-    const timestampMs = new Date(tick.timestamp).getTime();
-    if (isNaN(timestampMs)) {
+    const ltpc = marketFF.ltpc;
+    const ltp = ltpc.ltp;
+    if (ltp === undefined || ltp === null) continue;
+
+    // ltt is inside ltpc (tick.fullFeed.marketFF.ltpc.ltt) as ms epoch from exchange
+    // Fallback to server-stored tick.timestamp if ltt is absent
+    let tickTimeMs;
+    if (ltpc.ltt) {
+      tickTimeMs = parseInt(ltpc.ltt, 10);
+    } else if (tick.timestamp) {
+      tickTimeMs = new Date(tick.timestamp).getTime();
+    } else {
       continue;
     }
+    if (isNaN(tickTimeMs) || tickTimeMs <= 0) continue;
 
-    const bucketTimeMs = Math.floor(timestampMs / intervalMs) * intervalMs;
-    const volume = tick.fullFeed.marketFF.ltpc.ltq ? parseFloat(tick.fullFeed.marketFF.ltpc.ltq) : 0;
+    // Verify the ltt date (in IST) matches the requested date.
+    // Pre-market ticks carry stale ltt from the previous session's close;
+    // they would pass the market-hours window check but belong to yesterday.
+    const istDateStr = new Date(tickTimeMs + IST_OFFSET_MS).toISOString().slice(0, 10);
+    if (istDateStr !== date) continue;
+
+    // Filter to NSE market hours only: 9:15 AM – 3:30 PM IST
+    const istMsOfDay = (tickTimeMs + IST_OFFSET_MS) % 86400000;
+    if (istMsOfDay < OPEN_MS || istMsOfDay > CLOSE_MS) continue;
+
+    validTicks.push({ tickTimeMs, ltp, volume: parseFloat(ltpc.ltq || 0) });
+  }
+
+  // Sort ascending by exchange time — guarantees open = first, close = last
+  validTicks.sort((a, b) => a.tickTimeMs - b.tickTimeMs);
+
+  for (const { tickTimeMs, ltp, volume } of validTicks) {
+    const bucketTimeMs = Math.floor(tickTimeMs / intervalMs) * intervalMs;
 
     if (!buckets[bucketTimeMs]) {
-      buckets[bucketTimeMs] = {
-        time: Math.floor(bucketTimeMs / 1000),
-        open: ltp,
-        high: ltp,
-        low: ltp,
-        close: ltp,
-        volume: volume,
-        ticksCount: 1,
-        firstTickTime: timestampMs,
-        lastTickTime: timestampMs
-      };
+      buckets[bucketTimeMs] = { time: Math.floor(bucketTimeMs / 1000), open: ltp, high: ltp, low: ltp, close: ltp, volume };
     } else {
       const b = buckets[bucketTimeMs];
-      if (timestampMs < b.firstTickTime) {
-        b.open = ltp;
-        b.firstTickTime = timestampMs;
-      }
-      if (timestampMs > b.lastTickTime) {
-        b.close = ltp;
-        b.lastTickTime = timestampMs;
-      }
-      if (ltp > b.high) b.high = ltp;
-      if (ltp < b.low) b.low = ltp;
+      b.close = ltp;
+      b.high = Math.max(b.high, ltp);
+      b.low = Math.min(b.low, ltp);
       b.volume += volume;
-      b.ticksCount += 1;
     }
   }
 
-  const candles = Object.keys(buckets)
-    .map(key => {
-      const b = buckets[key];
-      return {
-        time: b.time,
-        open: b.open,
-        high: b.high,
-        low: b.low,
-        close: b.close,
-        volume: Math.round(b.volume)
-      };
-    })
-    .sort((a, b) => a.time - b.time);
-
-  return {
-    symbol,
-    date,
-    timeframe,
-    data: candles
-  };
+  return { symbol, date, timeframe, data: Object.values(buckets).sort((a, b) => a.time - b.time) };
 };
 
 export const getAvailableBacktestDates = async () => {
   const dates = new Set();
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-
+  
   const checkDir = async (dirPath) => {
     try {
       const files = await fs.readdir(dirPath);
@@ -493,25 +462,15 @@ export const getAvailableBacktestDates = async () => {
         if (dateRegex.test(file)) {
           try {
             const stat = await fs.stat(path.join(dirPath, file));
-            if (stat.isDirectory()) {
-              dates.add(file);
-            }
-          } catch (e) {
-            // Ignore if stat fails
-          }
+            if (stat.isDirectory()) dates.add(file);
+          } catch (e) {}
         }
       }
-    } catch (err) {
-      // Ignore
-    }
+    } catch (err) {}
   };
 
   await checkDir(path.join(process.cwd(), "..", "exportedData"));
   await checkDir("/shared/exportedData");
 
-  const sortedDates = Array.from(dates).sort((a, b) => b.localeCompare(a));
-  return sortedDates.length > 0 ? sortedDates : ["2026-06-24", "2026-06-18", "2026-06-17"];
+  return Array.from(dates).sort((a, b) => b.localeCompare(a));
 };
-
-
-
