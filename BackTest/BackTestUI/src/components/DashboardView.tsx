@@ -330,8 +330,11 @@ export default function DashboardView({
         seriesRefs.current.set(s.id, series);
       }
 
+      // lightweight-charts renders as UTC. Shift time by the browser's local offset so
+      // the x-axis shows local time labels (e.g. 09:15 IST instead of 03:45 UTC).
+      const tzShift = -(new Date().getTimezoneOffset() * 60);
       const seriesData = chartData.map(pt => ({
-        time: pt.timestamp as Time,
+        time: (pt.timestamp + tzShift) as Time,
         value: pt[cleanName] || 0,
       }));
 

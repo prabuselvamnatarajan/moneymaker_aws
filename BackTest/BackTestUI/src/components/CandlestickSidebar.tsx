@@ -31,10 +31,14 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
     setError(null);
     try {
       let chartData: CandlestickData<Time>[] = [];
+      // lightweight-charts renders times as UTC by default.
+      // This sidebar shows NSE/Indian market data, so always apply IST offset.
+      // IST offset shift: rawTime - getTimezoneOffset*60 = rawTime + 19800 for IST browsers.
+      const tzShift = -(new Date().getTimezoneOffset() * 60);
       if (deploymentId) {
         const res = await api.deployments.getCandles(deploymentId, timeframe);
         chartData = res.data.map(c => ({
-          time: c.time as Time,
+          time: (c.time + tzShift) as Time,
           open: c.open,
           high: c.high,
           low: c.low,
@@ -43,7 +47,7 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
       } else {
         const res = await api.symbols.getCandles(symbol, date, timeframe);
         chartData = res.data.data.map(c => ({
-          time: c.time as Time,
+          time: (c.time + tzShift) as Time,
           open: c.open,
           high: c.high,
           low: c.low,

@@ -172,8 +172,11 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
 
   const pnlSeriesData = useMemo(() => {
     const sorted = [...chartData].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    // lightweight-charts renders as UTC. For local/IST mode we shift time forward by the browser offset
+    // so the UTC label on the chart shows the IST time (e.g. 09:15 instead of 03:45).
+    const tzShift = timezone === 'UTC' ? 0 : -(new Date().getTimezoneOffset() * 60);
     const mapped = sorted.map(pt => ({
-      time: Math.floor(new Date(pt.timestamp).getTime() / 1000),
+      time: Math.floor(new Date(pt.timestamp).getTime() / 1000) + tzShift,
       value: pt.pnl,
     }));
     
@@ -188,17 +191,21 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       lastTime = t;
     }
     return uniqueData;
-  }, [chartData]);
+  }, [chartData, timezone]);
 
   const intradaySeriesData = useMemo(() => {
     const baseDate = new Date();
     baseDate.setHours(0, 0, 0, 0);
-    
+    // lightweight-charts renders as UTC. new Date().setHours() uses local timezone,
+    // so the resulting epoch already encodes local time. We need to shift it so the
+    // chart's UTC label shows the correct local time.
+    // For IST: tzShift = -(-330*60) = +19800s. For UTC: tzShift = 0.
+    const tzShift = timezone === 'UTC' ? 0 : -(new Date().getTimezoneOffset() * 60);
     const mapped = intradayData.map(trade => {
       const tradeDate = new Date(baseDate);
       tradeDate.setHours(trade.hour, trade.minute, trade.second, 0);
       return {
-        time: Math.floor(tradeDate.getTime() / 1000) as Time,
+        time: (Math.floor(tradeDate.getTime() / 1000) + tzShift) as Time,
         value: trade.pnl,
         color: trade.pnl >= 0 ? '#10b981' : '#ef4444',
       };
@@ -217,7 +224,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
       lastTime = t;
     }
     return uniqueData;
-  }, [intradayData]);
+  }, [intradayData, timezone]);
 
   // Set up P&L Chart
   useEffect(() => {
