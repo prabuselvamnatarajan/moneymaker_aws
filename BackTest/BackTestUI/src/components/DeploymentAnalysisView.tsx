@@ -913,34 +913,6 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                 <TrendingUp className="w-5 h-5 text-indigo-400" />
                 Profit & Loss Over Time
               </h3>
-              
-              {/* Zoom Controls */}
-              <div className="flex items-center gap-1.5 bg-slate-950 rounded p-0.5 border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => pnlChartRef.current?.timeScale().zoomTo(-10)}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-                  title="Zoom In"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => pnlChartRef.current?.timeScale().zoomTo(10)}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-                  title="Zoom Out"
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => pnlChartRef.current?.timeScale().fitContent()}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-                  title="Reset Zoom"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              </div>
             </div>
             
             <div className="relative bg-[#0f172a] rounded-lg border border-slate-800 overflow-hidden min-h-[380px]">
@@ -960,34 +932,6 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
                 <Clock className="w-5 h-5 text-cyan-400" />
                 Intraday Trade Distribution ({timezone === 'UTC' ? 'UTC' : 'Local'})
               </h3>
-              
-              {/* Zoom Controls */}
-              <div className="flex items-center gap-1.5 bg-slate-950 rounded p-0.5 border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => intraChartRef.current?.timeScale().zoomTo(-10)}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-                  title="Zoom In"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => intraChartRef.current?.timeScale().zoomTo(10)}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-                  title="Zoom Out"
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => intraChartRef.current?.timeScale().fitContent()}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white transition-colors border border-slate-700 cursor-pointer"
-                  title="Reset Zoom"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              </div>
             </div>
             
             <p className="text-slate-400 text-xs mb-4">
