@@ -2,6 +2,7 @@ import { MongoClient } from 'mongodb';
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 import { initLogger, logger } from '/app/utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -20,6 +21,8 @@ const kafka = new Kafka({
 });
 
 const client = new MongoClient(MONGO_URI);
+
+registerFatalErrorHandlers();
 
 async function storeInMongoDB(symbol, data) {
     logger.info(`Processing ${symbol} data:`, data);
@@ -44,6 +47,7 @@ async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5
 
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
+    registerKafkaCrashHandler(consumer);
 
     await connectWithRetry(client, 'MongoDB Client'); // Ensure MongoDB client is connected
     await connectWithRetry(consumer, 'Kafka Consumer');
@@ -51,18 +55,22 @@ async function createConsumer() {
 
     await consumer.run({
         eachMessage: async ({ message }) => {
-            const symbol = message.key.toString();
-            logger.info(`Received message for symbol ${symbol}`);
-            const data = JSON.parse(message.value.toString());
-            await retry(async () => {
-                await storeInMongoDB(symbol, data);
-            }, {
-                retries: 5,
-                minTimeout: 1000,
-                onRetry: (error, attempt) => {
-                    logger.warn(`Retry attempt ${attempt} for storing data due to error: ${error.message}`);
-                }
-            });
+            try {
+                const symbol = message.key.toString();
+                logger.info(`Received message for symbol ${symbol}`);
+                const data = JSON.parse(message.value.toString());
+                await retry(async () => {
+                    await storeInMongoDB(symbol, data);
+                }, {
+                    retries: 5,
+                    minTimeout: 1000,
+                    onRetry: (error, attempt) => {
+                        logger.warn(`Retry attempt ${attempt} for storing data due to error: ${error.message}`);
+                    }
+                });
+            } catch (error) {
+                handleFatalError(error, 'message handling');
+            }
         },
     });
 }
@@ -71,11 +79,5 @@ async function createConsumer() {
     await initLogger();
     await createConsumer();
 })().catch((err) => {
-    if (logger && logger.error) {
-        logger.error('Unhandled error in storerConsumer', err);
-    } else {
-        // Fallback if logger isn't available
-        console.error('Unhandled error in storerConsumer', err);
-    }
-    process.exit(1);
+    handleFatalError(err, 'consumer startup');
 });

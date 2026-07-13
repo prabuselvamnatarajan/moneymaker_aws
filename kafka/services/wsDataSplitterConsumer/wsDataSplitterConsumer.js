@@ -3,6 +3,7 @@ import retry from 'async-retry';
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import { calculateLatency } from './utils/latencyUtil.js';
 import { initLogger, logger } from './utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from './utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -20,18 +21,7 @@ const kafka = new Kafka({
 
 const redisPubSub = new RedisPubSub({ url: REDIS_URL });
 
-function handleFatalError(error, context = 'service') {
-    logger.error(`Fatal error in ${context}:`, error);
-    process.exit(1);
-}
-
-process.on('uncaughtException', (error) => {
-    handleFatalError(error, 'uncaught exception');
-});
-
-process.on('unhandledRejection', (reason) => {
-    handleFatalError(reason, 'unhandled rejection');
-});
+registerFatalErrorHandlers();
 
 async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
     for (let i = 0; i < retries; i++) {
@@ -89,6 +79,7 @@ async function processAndProduceMessages(data) {
 
 async function createConsumer() {   
     const consumer = kafka.consumer({ groupId: 'WS_data_splitter', sessionTimeout: 30000 });
+    registerKafkaCrashHandler(consumer);
 
     try {
         await connectWithRetry(consumer, 'Kafka Consumer');

@@ -1,6 +1,7 @@
 import { Kafka } from 'kafkajs';
 import getStrategiesForSymbol from './redis_utils/getStrategiesForSymbol.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -17,22 +18,7 @@ const kafka = new Kafka({
   }
 });
 
-function handleFatalError(error, context = 'service') {
-    if (logger && logger.error) {
-        logger.error(`Fatal error in ${context}:`, error);
-    } else {
-        console.error(`Fatal error in ${context}:`, error);
-    }
-    process.exit(1);
-}
-
-process.on('uncaughtException', (error) => {
-    handleFatalError(error, 'uncaught exception');
-});
-
-process.on('unhandledRejection', (reason) => {
-    handleFatalError(reason, 'unhandled rejection');
-});
+registerFatalErrorHandlers();
 
 async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
     for (let i = 0; i < retries; i++) {
@@ -53,9 +39,7 @@ async function createConsumer() {
     const producer = kafka.producer();
 
     // Listen to crash event to ensure the process exits if Kafka consumer crashes
-    consumer.on(consumer.events.CRASH, (event) => {
-        handleFatalError(event.payload.error, 'Kafka consumer crash');
-    });
+    registerKafkaCrashHandler(consumer);
 
     await connectWithRetry(consumer, 'Kafka Consumer');
     await connectWithRetry(producer, 'Kafka Producer');
