@@ -672,7 +672,7 @@ export default function App() {
         );
       case 'deployment-analysis':
         return (
-          <DeploymentAnalysisView selectedDeploymentId={selectedEntityId} timezone={timezone} />
+          <DeploymentAnalysisView selectedDeploymentId={selectedEntityId} timezone={timezone} onSelectTransaction={setSelectedTransaction} />
         );
       case 'live-candlestick':
         return (

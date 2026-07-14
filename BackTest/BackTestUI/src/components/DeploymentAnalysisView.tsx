@@ -11,10 +11,12 @@ import { api } from '../api';
 import { useToast } from './Toast';
 import CandlestickSidebar from './CandlestickSidebar';
 import SweepSignalLogView from './SweepSignalLogView';
+import { mapTrade } from '../adapters';
 
 interface DeploymentAnalysisViewProps {
   selectedDeploymentId: string | null;
   timezone?: string;
+  onSelectTransaction?: (tx: any) => void;
 }
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
@@ -96,7 +98,7 @@ const getNiceTicks = (min: number, max: number, targetTicks: number = 6): number
   return ticks;
 };
 
-export default function DeploymentAnalysisView({ selectedDeploymentId, timezone = 'UTC' }: DeploymentAnalysisViewProps) {
+export default function DeploymentAnalysisView({ selectedDeploymentId, timezone = 'UTC', onSelectTransaction }: DeploymentAnalysisViewProps) {
   const { showError } = useToast();
   
   const [deploymentId, setDeploymentId] = useState<string>('');
@@ -1005,6 +1007,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
             expandedPairs={expandedPairs}
             setExpandedPairs={setExpandedPairs}
             formatCurrency={formatCurrency}
+            onSelectTransaction={onSelectTransaction}
           />
           </>
           )}
@@ -1044,6 +1047,7 @@ interface TradesListProps {
   expandedPairs: Set<string>;
   setExpandedPairs: React.Dispatch<React.SetStateAction<Set<string>>>;
   formatCurrency: (v: number) => string;
+  onSelectTransaction?: (tx: any) => void;
 }
 
 function TradesList({
@@ -1054,6 +1058,7 @@ function TradesList({
   expandedPairs,
   setExpandedPairs,
   formatCurrency,
+  onSelectTransaction,
 }: TradesListProps) {
   // Build maps of trade_id -> pnl delta AND trade_id -> cumulative pnl from timeSeries
   const { pnlDeltaMap, cumulativePnlMap } = useMemo(() => {
@@ -1296,7 +1301,10 @@ function TradesList({
                           <span className="font-mono text-slate-400 text-[11px] truncate max-w-[130px]" title={trade.tradeId}>
                             {trade.tradeId}
                           </span>
-                          <ExternalLink className="w-3 h-3 text-slate-600 cursor-pointer hover:text-indigo-400 shrink-0" />
+                          <ExternalLink 
+                            className="w-3 h-3 text-slate-600 cursor-pointer hover:text-indigo-400 shrink-0" 
+                            onClick={() => onSelectTransaction?.(mapTrade(trade))}
+                          />
                         </div>
                       </td>
                       <td className="py-2 px-2">
