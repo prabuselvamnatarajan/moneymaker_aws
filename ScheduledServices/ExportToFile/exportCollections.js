@@ -17,7 +17,6 @@ async function exportCollection(collectionName) {
     await client.connect();
     let targetDbName = dbName;
     let timeField = 'timestamp';
-    let data;
 
     const todayIST = DateTime.now().setZone(IST);
     const dateFolder = todayIST.toFormat('yyyy-MM-dd');
@@ -33,12 +32,12 @@ async function exportCollection(collectionName) {
       const collection = db.collection(collectionName);
       const activeSymbols = await collection.find({ is_active: true }).toArray();
       const seen = new Set();
-      data = [];
+      const cleanSymbols = [];
       for (const sym of activeSymbols) {
         if (sym.instrument_token && !seen.has(sym.instrument_token)) {
           seen.add(sym.instrument_token);
           const { _id, user_id, ...cleanSym } = sym;
-          data.push(cleanSym);
+          cleanSymbols.push(cleanSym);
         }
       }
 
@@ -47,23 +46,48 @@ async function exportCollection(collectionName) {
       const start = todayIST.set({ hour: 9, minute: 0, second: 0, millisecond: 0 }).toUTC().toJSDate();
       const end = todayIST.set({ hour: 15, minute: 40, second: 0, millisecond: 0 }).toUTC().toJSDate();
 
-      for (const sym of data) {
+      for (const sym of cleanSymbols) {
         const symName = sym.symbol;
         if (!symName) continue;
 
         try {
           const symCollection = stockDb.collection(symName);
-          const symbolData = await symCollection.find({ timestamp: { $gte: start, $lte: end } }).toArray();
-
+          // Ensure index on timestamp exists to optimize query execution and avoid collection scans
+          await symCollection.createIndex({ timestamp: 1 });
+          
           const sanitizedSymName = symName.replace(/[^a-zA-Z0-9-_]/g, '_');
           const symFilePath = path.join(exportPath, `${sanitizedSymName}.json`);
 
-          fs.writeFileSync(symFilePath, JSON.stringify(symbolData, null, 2));
-          console.log(`Exported active symbol collection: ${symName} (${symbolData.length} records) to ${symFilePath}`);
+          const cursor = symCollection.find({ timestamp: { $gte: start, $lte: end } });
+          let recordCount = 0;
+          const writeStream = fs.createWriteStream(symFilePath);
+          writeStream.write('[');
+          let isFirst = true;
+          for await (const doc of cursor) {
+            if (!isFirst) {
+              writeStream.write(',');
+            }
+            writeStream.write(JSON.stringify(doc));
+            isFirst = false;
+            recordCount++;
+          }
+          writeStream.write(']');
+          await new Promise((resolve, reject) => {
+            writeStream.end();
+            writeStream.on('finish', resolve);
+            writeStream.on('error', reject);
+          });
+
+          console.log(`Exported active symbol collection: ${symName} (${recordCount} records) to ${symFilePath}`);
         } catch (symErr) {
           console.error(`Error exporting active symbol collection ${symName}:`, symErr.message);
         }
       }
+
+      // Write usersymbols collection metadata
+      await fs.promises.writeFile(filePath, JSON.stringify(cleanSymbols));
+      console.log(`Exported ${cleanSymbols.length} documents from ${collectionName} to ${filePath}`);
+
     } else {
       if (collectionName === 'trades') {
         targetDbName = 'BacktestApp';
@@ -99,12 +123,36 @@ async function exportCollection(collectionName) {
       }
 
       const query = { [timeField]: { $gte: start, $lte: end } };
-      data = await collection.find(query).toArray();
+      
+      // Optimize stock database collection queries by ensuring index
+      if (targetDbName === 'stock_database') {
+        await collection.createIndex({ [timeField]: 1 });
+      }
+
+      const cursor = collection.find(query);
+      
+      // Use streaming to write cursor output directly to file
+      const writeStream = fs.createWriteStream(filePath);
+      writeStream.write('[');
+      let isFirst = true;
+      let recordCount = 0;
+      for await (const doc of cursor) {
+        if (!isFirst) {
+          writeStream.write(',');
+        }
+        writeStream.write(JSON.stringify(doc));
+        isFirst = false;
+        recordCount++;
+      }
+      writeStream.write(']');
+      await new Promise((resolve, reject) => {
+        writeStream.end();
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+      });
+
+      console.log(`Exported ${recordCount} documents from ${collectionName} to ${filePath}`);
     }
-
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-
-    console.log(`Exported ${data.length} documents from ${collectionName} to ${filePath}`);
   } catch (err) {
     console.error(`Error exporting ${collectionName}:`, err.message);
   } finally {
