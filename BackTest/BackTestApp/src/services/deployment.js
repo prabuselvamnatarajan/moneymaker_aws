@@ -5,6 +5,7 @@ import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
 import Account from "../models/account.js";
 import UserSymbol from "../models/userSymbol.js";
+import Strategy from "../models/strategy.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
@@ -69,6 +70,7 @@ const resetBacktestDeployment = async (deployment) => {
             } else {
               await client.set(balanceKey, JSON.stringify(balanceData));
             }
+            await client.del(`liquidity_sweep:open:${accountIdStr}`);
             console.log(`[Reset] Synced account balance for ${accountIdStr} to Redis: ${account.initial_balance}`);
           } catch (err) {
             console.error(`[Reset] Error syncing account balance to Redis: ${err.message}`);
@@ -113,6 +115,80 @@ const resetBacktestDeployment = async (deployment) => {
     }
   } catch (err) {
     console.error(`[Reset] Error during backtest deployment reset: ${err.message}`);
+  }
+};
+
+const LIQUIDITY_SWEEP_STRATEGY = "liquidity_sweep";
+
+const resetLiquiditySweepRuntimeState = async (deployment) => {
+  let strategyName = deployment.strategy_id?.strategy_name;
+  if (!strategyName && deployment.strategy_id) {
+    const strategy = await Strategy.findById(deployment.strategy_id);
+    strategyName = strategy?.strategy_name;
+  }
+  if (strategyName !== LIQUIDITY_SWEEP_STRATEGY) {
+    return;
+  }
+
+  const deploymentIdStr = deployment._id.toString();
+  const symbol = deployment.symbol;
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    return;
+  }
+
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    await client.connect();
+
+    for (const mode of ["backtest", "live"]) {
+      const stateKey = `strategies:${LIQUIDITY_SWEEP_STRATEGY}:${mode}:${deploymentIdStr}:${symbol}`;
+      let state = null;
+      try {
+        if (typeof client.json?.get === "function") {
+          state = await client.json.get(stateKey);
+        } else {
+          const raw = await client.get(stateKey);
+          state = raw ? JSON.parse(raw) : null;
+        }
+      } catch (err) {
+        console.warn(`[Reset] Could not read strategy state ${stateKey}: ${err.message}`);
+      }
+
+      if (state?.machineState === "IN_POSITION" && deployment.account_id) {
+        const account = await Account.findById(deployment.account_id);
+        const accountIdStr = account?.account_id || account?._id?.toString();
+        if (accountIdStr) {
+          const openKey = `liquidity_sweep:open:${accountIdStr}`;
+          const val = await client.decr(openKey);
+          if (val < 0) {
+            await client.set(openKey, "0");
+          }
+          console.log(`[Reset] Decremented liquidity_sweep open counter for account ${accountIdStr}`);
+        }
+      }
+
+      await client.del(stateKey);
+    }
+
+    let cursor = 0;
+    const pattern = `*${deploymentIdStr}*`;
+    do {
+      const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+      cursor = reply.cursor;
+      const keys = reply.keys;
+      if (keys && keys.length > 0) {
+        await client.del(keys);
+        console.log(`[Reset] Deleted runtime keys for deployment ${deploymentIdStr}:`, keys);
+      }
+    } while (cursor !== 0);
+  } catch (err) {
+    console.error(`[Reset] Error resetting liquidity_sweep runtime state: ${err.message}`);
+  } finally {
+    if (client) {
+      await client.disconnect();
+    }
   }
 };
 
@@ -167,7 +243,7 @@ export const getAllDeployments = async (userId, queryParams) => {
 };
 
 export const getDeploymentById = async (userId, id) => {
-  return await Deployment.findOne({ _id: id, user_id: userId });
+  return await Deployment.findOne({ _id: id, user_id: userId }).populate("strategy_id");
 };
 
 export const updateDeployment = async (userId, id, updateData) => {
@@ -225,6 +301,9 @@ export const transitionDeployment = async (userId, id, action) => {
   if (action === "start" || action === "restart") {
     deployment.start_time = new Date();
     await resetBacktestDeployment(deployment);
+    if (deployment.strategy_mode !== "BACKTEST") {
+      await resetLiquiditySweepRuntimeState(deployment);
+    }
   }
   if (action === "stop") {
     deployment.end_time = new Date();
@@ -592,6 +671,7 @@ export const syncAllDeploymentsToRedis = async () => {
         commission_rate: dep.account_id.commission_rate || 0,
         target_pts: dep.strategy_id.target_pts !== undefined ? dep.strategy_id.target_pts : 500,
         sl_pts: dep.strategy_id.sl_pts !== undefined ? dep.strategy_id.sl_pts : 500,
+        params: dep.strategy_id.params || {},
       });
 
       // Sync account balance to Redis

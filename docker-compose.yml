@@ -693,6 +693,67 @@ services:
     networks:
       - app-net
 
+  liquidity-sweep-strategy:
+    image: liquidity-sweep-strategy:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
+      - redis
+      - get-ohlc
+      - backtest-app
+    environment:
+      SERVICE_NAME: liquidity-sweep-strategy-service
+      SERVICE_MODE: live
+      STRATEGY_NAME: liquidity_sweep
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+      TARGET_TOPIC: liquidity_sweep_live_data
+      TARGET_GROUP_ID: liquidity_sweep_strategy_group
+      SHARED_DIR: /shared
+      PLACEORDER_API: http://placeorder
+      GET_OHLC_API: http://get-ohlc
+      SWEEP_LOG_API: http://backtest-app
+      BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
+    networks:
+      - app-net
+
+  liquidity-sweep-strategy-backtest:
+    image: liquidity-sweep-strategy:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
+      - redis
+      - get-ohlc
+      - backtest-app
+    environment:
+      SERVICE_NAME: liquidity-sweep-strategy-service
+      SERVICE_MODE: backtest
+      STRATEGY_NAME: liquidity_sweep
+      IS_BACKTEST: "true"
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+      TARGET_TOPIC: liquidity_sweep_backtest_data
+      TARGET_GROUP_ID: backtest_liquidity_sweep_strategy_group
+      SHARED_DIR: /shared
+      PLACEORDER_API: http://placeorder
+      GET_OHLC_API: http://get-ohlc
+      SWEEP_LOG_API: http://backtest-app
+      BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
+    networks:
+      - app-net
+
 volumes:
   mongo1-data:
     driver: local

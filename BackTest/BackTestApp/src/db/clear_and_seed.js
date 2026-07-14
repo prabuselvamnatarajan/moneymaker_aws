@@ -241,6 +241,27 @@ export const clearAndSeedDB = async () => {
         strategy_name: "Breakout Rider",
         strategy_description: "Rides large macro breakout trends.",
         is_active: true
+      },
+      {
+        user_id: standardUser._id,
+        strategy_name: "liquidity_sweep",
+        strategy_description: "Tick-level liquidity sweep and absorption reversal strategy using order flow delta.",
+        is_active: true,
+        params: {
+          burstMultiplier: 2.5,
+          deltaThresholdMultiplier: 1.5,
+          minRR: 2.0,
+          maxRR: 3.0,
+          accountRiskPerTrade: 0.0075,
+          cooldownMinutes: 5,
+          openingRangeMinutes: 15,
+          hvnWindowMinutes: 45,
+          entryOnNextTick: true,
+          lowConfidenceDeltaWeight: 0.5,
+          bookImbalanceThreshold: 0.55,
+          trailOffsetR: 0.5,
+          maxConcurrentTrades: 1,
+        }
       }
     ];
     const seededStrategies = await Strategy.insertMany(strategiesData);

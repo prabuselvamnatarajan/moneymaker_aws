@@ -43,6 +43,35 @@ async function getUserIdForSymbol(symbol) {
   return '';
 }
 
+let reconnectAttempt = 0;
+let reconnectTimer = null;
+const MAX_RECONNECT_DELAY_MS = 60000;
+
+function scheduleReconnect(reason) {
+  if (activeSymbols.size === 0) {
+    return;
+  }
+  if (reconnectTimer) {
+    return;
+  }
+
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY_MS);
+  reconnectAttempt += 1;
+  console.log(`[WS Upstox] Scheduling reconnect in ${delay}ms (${reason}). Active symbols: ${activeSymbols.size}`);
+
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    try {
+      const symbolList = Array.from(activeSymbols);
+      const userId = symbolList.length > 0 ? await getUserIdForSymbol(symbolList[0]) : '';
+      await ensureWSConnection(userId);
+    } catch (err) {
+      console.error('[WS Upstox] Reconnect attempt failed:', err.message);
+      scheduleReconnect('retry_after_failure');
+    }
+  }, delay);
+}
+
 async function ensureWSConnection(userId = '') {
   if (activeWS && (activeWS.readyState === WebSocket.OPEN || activeWS.readyState === WebSocket.CONNECTING)) {
     return;
@@ -294,6 +323,7 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
     // WebSocket event handlers
     ws.on("open", () => {
       console.log("connected");
+      reconnectAttempt = 0;
       console.log(symbol);
       resolve(ws); // Resolve the promise once connected
 
@@ -340,8 +370,9 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
       console.log("disconnected");
       if (activeWS === ws) {
         activeWS = null;
-        subscribedSymbols.clear(); // Clear currently active subscriptions since connection closed
+        subscribedSymbols.clear();
       }
+      scheduleReconnect('connection_closed');
     });
 
     ws.on("message", async (data) => {
@@ -369,8 +400,9 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
       }
       if (activeWS === ws) {
         activeWS = null;
-        subscribedSymbols.clear(); // Clear currently active subscriptions since connection closed
+        subscribedSymbols.clear();
       }
+      scheduleReconnect('connection_error');
       reject(error);
     });
   });

@@ -114,6 +114,11 @@ export default function StrategyTemplatesView({
                       <p className="text-[10px] text-slate-500 font-mono">
                         ID: {strat._id}
                       </p>
+                      {strat.params && Object.keys(strat.params).length > 0 && (
+                        <p className="text-[10px] text-slate-500 font-mono truncate max-w-xl" title={JSON.stringify(strat.params)}>
+                          Params: {JSON.stringify(strat.params)}
+                        </p>
+                      )}
                     </div>
                     
                     <div className="shrink-0">
