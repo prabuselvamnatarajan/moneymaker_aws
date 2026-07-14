@@ -309,6 +309,37 @@ services:
     networks:
       - app-net
 
+  position-tracker-consumer:
+    image: position-tracker-consumer:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
+      - mongo1
+      - mongo2
+      - mongo3
+      - redis
+    environment:
+      SERVICE_NAME: position-tracker-consumer
+      SERVICE_MODE: live
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+      MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
+      MONGO_DB: BacktestApp
+      TARGET_TOPIC: splited-live-data,backtest-stream-data
+      TARGET_GROUP_ID: position_tracker_group
+      UNREALISED_WRITE_THROTTLE_MS: "2000"
+    volumes:
+      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./MicroServices/Shared/utils:/app/utils:ro
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
+
   stream-to-client:
     image: stream-to-client:latest
     depends_on:

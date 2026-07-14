@@ -177,6 +177,33 @@ export interface DeploymentAnalysis {
   }>;
 }
 
+/** One buy/sell cycle grouping associated trades with excursion tracking */
+export interface Position {
+  id: string;
+  positionId: string;
+  deploymentId: string;
+  symbol: string;
+  strategyMode?: string;
+  direction: 'LONG' | 'SHORT';
+  status: 'OPEN' | 'CLOSED';
+  totalSize: number;
+  openSize: number;
+  averageEntryPrice: number;
+  buyPrice: number;
+  sellPrice: number;
+  realisedPnl: number;
+  unrealisedPnl: number;
+  maxUp: number;
+  maxDown: number;
+  maxUpPct: number;
+  maxDownPct: number;
+  commissionTotal: number;
+  openedAt: string;
+  closedAt: string | null;
+  lastLtp: number;
+  trades: any[];
+}
+
 export interface TimeSeriesDataPoint {
   timestamp: string;
   pnl: number;

@@ -751,7 +751,9 @@ export const api = {
         headers: getHeaders(),
       });
       return handleResponse<{ items: any[] }>(res);
-    },    // Fetch trades using any combination of account, deployment/strategy, symbol, direction, and status filters, with date ranges and sorting
+    },
+
+    // Fetch trades using any combination of account, deployment/strategy, symbol, direction, and status filters, with date ranges and sorting
     async listWithFilters(params: { 
       account_id?: string[]; 
       deployment_id?: string[]; 
@@ -818,6 +820,27 @@ export const api = {
         body: JSON.stringify(tradeData),
       });
       return handleResponse<{ data: any; message: string }>(res);
+    },
+  },
+
+  positions: {
+    async listForDeployment(deploymentId: string) {
+      const res = await fetch(
+        `${BASE_URL}/positions?deployment_id=${encodeURIComponent(deploymentId)}&limit=500&order=desc&populate_trades=true`,
+        {
+          method: 'GET',
+          headers: getHeaders(),
+        }
+      );
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    async get(id: string) {
+      const res = await fetch(`${BASE_URL}/positions/${encodeURIComponent(id)}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ data: any }>(res);
     },
   },
 

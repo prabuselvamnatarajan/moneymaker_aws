@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Account, Strategy, SymbolData, Transaction } from './types';
+import { Account, Strategy, SymbolData, Transaction, Position } from './types';
 
 // Map backend Account to UI Account
 export function mapAccount(backendAcc: any): Account {
@@ -89,6 +89,34 @@ export function mapTrade(backendTrade: any): Transaction & { deployment_id?: str
     closingBalance: 0,
     // Pass through deployment_id for downstream patching (e.g. GlobalTransactionsView)
     deployment_id: backendTrade.deployment_id,
+  };
+}
+
+export function mapPosition(backendPos: any): Position {
+  return {
+    id: backendPos._id || backendPos.position_id,
+    positionId: backendPos.position_id || backendPos._id,
+    deploymentId: backendPos.deployment_id?._id || backendPos.deployment_id || '',
+    symbol: backendPos.symbol || '',
+    strategyMode: backendPos.strategy_mode,
+    direction: backendPos.direction === 'SHORT' ? 'SHORT' : 'LONG',
+    status: backendPos.status === 'CLOSED' ? 'CLOSED' : 'OPEN',
+    totalSize: backendPos.total_size || 0,
+    openSize: backendPos.open_size || 0,
+    averageEntryPrice: backendPos.average_entry_price || 0,
+    buyPrice: backendPos.buy_price || 0,
+    sellPrice: backendPos.sell_price || 0,
+    realisedPnl: backendPos.realised_pnl || 0,
+    unrealisedPnl: backendPos.unrealised_pnl || 0,
+    maxUp: backendPos.max_up || 0,
+    maxDown: backendPos.max_down || 0,
+    maxUpPct: backendPos.max_up_pct || 0,
+    maxDownPct: backendPos.max_down_pct || 0,
+    commissionTotal: backendPos.commission_total || 0,
+    openedAt: backendPos.opened_at || '',
+    closedAt: backendPos.closed_at || null,
+    lastLtp: backendPos.last_ltp || 0,
+    trades: Array.isArray(backendPos.trades) ? backendPos.trades : [],
   };
 }
 
