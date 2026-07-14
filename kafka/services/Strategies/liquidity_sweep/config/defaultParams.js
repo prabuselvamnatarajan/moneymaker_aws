@@ -1,11 +1,11 @@
 export const DEFAULT_PARAMS = {
-    burstMultiplier: 2.5,
-    deltaThresholdMultiplier: 1.5,
+    burstMultiplier: 2.0,
+    deltaThresholdMultiplier: 1.2,
     sweepTolerancePct: 0.0005,
     sweepToleranceTicks: 3,
     deltaWindowTicks: 5,
-    rejectionMaxTicks: 8,
-    rejectionMaxTimeSec: 8,
+    rejectionMaxTicks: 15,
+    rejectionMaxTimeSec: 15,
     invalidationMargin: 0.0018,
     stopBufferPct: 0.002,
     stopBufferTicks: 5,
@@ -16,10 +16,10 @@ export const DEFAULT_PARAMS = {
     openingRangeMinutes: 15,
     hvnWindowMinutes: 45,
     bucketSizePct: 0.0005,
-    minAvgTradedValuePerMin: 500000,
+    minAvgTradedValuePerMin: 100000,
     tickBufferSize: 50,
     volumeRateWindowSec: 10,
-    gapThresholdSec: 3,
+    gapThresholdSec: 15,
     tickSize: 0.05,
     // Phase 2 filters & trade management
     skipFirstMinutes: 5,
@@ -30,7 +30,7 @@ export const DEFAULT_PARAMS = {
     breakevenAtR: 1.0,
     partialExitPct: 0.5,
     atrLookbackBars: 14,
-    atrLowPct: 0.001,
+    atrLowPct: 0.0005,
     atrHighPct: 0.05,
     entryOnNextTick: true,
     lowConfidenceDeltaWeight: 0.5,
@@ -38,8 +38,8 @@ export const DEFAULT_PARAMS = {
     requireBookImbalance: false,
     trailOffsetR: 0.5,
     maxConcurrentTrades: 1,
-    useLtqProxy: false,
-    useTickRateVolumeProxy: false,
+    useLtqProxy: true,
+    useTickRateVolumeProxy: true,
 };
 
 /** Relaxed defaults for backtest / index tick replay (sparse ltq, gaps between ticks). */

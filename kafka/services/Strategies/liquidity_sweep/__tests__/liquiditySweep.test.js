@@ -269,8 +269,8 @@ describe('backtest params', () => {
         const params = resolveParams({ isTest: true, strategy_mode: 'PAPER' });
         assert.equal(params.minAvgTradedValuePerMin, DEFAULT_PARAMS.minAvgTradedValuePerMin);
         assert.equal(params.gapThresholdSec, DEFAULT_PARAMS.gapThresholdSec);
-        assert.equal(params.useLtqProxy, false);
-        assert.equal(params.useTickRateVolumeProxy, false);
+        assert.equal(params.useLtqProxy, DEFAULT_PARAMS.useLtqProxy);
+        assert.equal(params.useTickRateVolumeProxy, DEFAULT_PARAMS.useTickRateVolumeProxy);
     });
 
     it('uses unit delta proxy for index ticks with zero ltq', () => {
