@@ -1,4 +1,6 @@
 import mongoose from "mongoose";
+import fs from "fs/promises";
+import path from "path";
 import Trade from "../models/trade.js";
 import Account from "../models/account.js";
 import Ledger from "../models/ledger.js";
@@ -17,6 +19,100 @@ import {
   removeOpenPositionFromRedis,
   readLiveCache,
 } from "../utils/positionRedis.js";
+
+async function updateBacktestExcursions(position, currentTradeTime, TradeModel) {
+  let startTime = position.opened_at;
+  if (position.trades && position.trades.length > 0) {
+    const lastTradeId = position.trades[position.trades.length - 1];
+    const lastTrade = await TradeModel.findById(lastTradeId);
+    if (lastTrade) {
+      startTime = lastTrade.execution_time || lastTrade.created_at || startTime;
+    }
+  }
+
+  const startMs = new Date(startTime).getTime();
+  const endMs = new Date(currentTradeTime).getTime();
+
+  if (startMs >= endMs) {
+    return;
+  }
+
+  const symbol = position.symbol;
+  const date = position.opened_at ? new Date(position.opened_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+
+  const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
+  let filePath = path.join(process.cwd(), "..", "exportedData", date, `${sanitizedSymbol}.json`);
+  
+  try {
+    await fs.access(filePath);
+  } catch (err) {
+    const fallbackPath = path.join("/shared", "exportedData", date, `${sanitizedSymbol}.json`);
+    try {
+      await fs.access(fallbackPath);
+      filePath = fallbackPath;
+    } catch (fallbackErr) {
+      const absolutePath = path.join("/home/prabu/Desktop/Work Folder/MoneyMaker GitLab AWS/BackTest/exportedData", date, `${sanitizedSymbol}.json`);
+      try {
+        await fs.access(absolutePath);
+        filePath = absolutePath;
+      } catch (absErr) {
+        console.error(`[updateBacktestExcursions] Ticks file not found for ${symbol} on ${date}. Paths tried: ${filePath}, ${fallbackPath}, ${absolutePath}`);
+        return;
+      }
+    }
+  }
+
+  let ticks = [];
+  try {
+    const fileContent = await fs.readFile(filePath, "utf8");
+    ticks = JSON.parse(fileContent);
+  } catch (err) {
+    console.error(`[updateBacktestExcursions] Error reading/parsing ticks file: ${err.message}`);
+    return;
+  }
+
+  if (!Array.isArray(ticks)) return;
+
+  let maxUp = position.max_up || 0;
+  let maxDown = position.max_down || 0;
+  let maxUpPct = position.max_up_pct || 0;
+  let maxDownPct = position.max_down_pct || 0;
+
+  for (const tick of ticks) {
+    const feed = tick.fullFeed?.marketFF || tick.fullFeed?.indexFF;
+    if (!feed?.ltpc) continue;
+
+    const ltpc = feed.ltpc;
+    const ltp = ltpc.ltp;
+    if (ltp === undefined || ltp === null) continue;
+
+    let tickTimeMs;
+    if (ltpc.ltt) {
+      tickTimeMs = parseInt(ltpc.ltt, 10);
+    } else if (tick.timestamp) {
+      tickTimeMs = new Date(tick.timestamp).getTime();
+    } else {
+      continue;
+    }
+
+    if (tickTimeMs < startMs || tickTimeMs > endMs) {
+      continue;
+    }
+
+    const unrealised = calcUnrealizedPnl(position.average_entry_price, position.direction, position.open_size, ltp);
+    const pct = calcProfitPct(position.average_entry_price, position.direction, ltp);
+
+    maxUp = Math.max(maxUp, unrealised);
+    maxDown = Math.min(maxDown, unrealised);
+    maxUpPct = Math.max(maxUpPct, pct);
+    maxDownPct = Math.min(maxDownPct, pct);
+  }
+
+  position.max_up = maxUp;
+  position.max_down = maxDown;
+  position.max_up_pct = maxUpPct;
+  position.max_down_pct = maxDownPct;
+}
 
 function buildAccountQuery(accountId) {
   if (mongoose.isValidObjectId(accountId)) {
@@ -54,7 +150,7 @@ function buildPositionBase(tradeData, account, deployment, direction, size, entr
     max_down_pct: 0,
     commission_total: commission || 0,
     trades: [],
-    opened_at: new Date(),
+    opened_at: tradeData.execution_time ? new Date(tradeData.execution_time) : new Date(),
     closed_at: null,
     last_ltp: price > 0 ? price : 0,
   };
@@ -68,7 +164,9 @@ async function finalizeClosePosition(position, trade, price, pnlContribution, se
   const direction = position.direction;
 
   // Fold closing price into excursions using size before zeroing
-  if (price > 0 && openBeforeClose > 0 && entry > 0) {
+  if (position.strategy_mode === "BACKTEST") {
+    await updateBacktestExcursions(position, trade.execution_time || trade.created_at || new Date(), Trade);
+  } else if (price > 0 && openBeforeClose > 0 && entry > 0) {
     const unrealised = calcUnrealizedPnl(entry, direction, openBeforeClose, price);
     const pct = calcProfitPct(entry, direction, price);
     const extremum = applyExcursion(
@@ -100,7 +198,7 @@ async function finalizeClosePosition(position, trade, price, pnlContribution, se
   position.open_size = 0;
   position.unrealised_pnl = 0;
   position.status = "CLOSED";
-  position.closed_at = new Date();
+  position.closed_at = trade.execution_time ? new Date(trade.execution_time) : new Date();
   position.last_ltp = price > 0 ? price : position.last_ltp;
   if (!position.trades.some((id) => String(id) === String(trade._id))) {
     position.trades.push(trade._id);
@@ -378,6 +476,10 @@ export const createTrade = async (tradeData) => {
       commission,
       position_id: null,
     };
+    if (tradeData.execution_time) {
+      tradePayload.execution_time = new Date(tradeData.execution_time);
+      tradePayload.created_at = new Date(tradeData.execution_time);
+    }
     const [trade] = await Trade.create([tradePayload], { session });
 
     if (isOpen) {
@@ -451,6 +553,9 @@ export const createTrade = async (tradeData) => {
       linkedPositionId = linkedPositionId || created._id;
       redisOps.push({ type: "sync", position: created.toObject() });
     } else if ((isScaleIn || isPartialClose) && openPositionDoc) {
+      if (openPositionDoc.strategy_mode === "BACKTEST") {
+        await updateBacktestExcursions(openPositionDoc, trade.execution_time || trade.created_at || new Date(), Trade);
+      }
       applyBuySellPrice(openPositionDoc, type_of_order, price, quantity);
       openPositionDoc.open_size = Math.abs(newPositionSize);
       openPositionDoc.average_entry_price =
@@ -466,7 +571,15 @@ export const createTrade = async (tradeData) => {
           ((openPositionDoc.realised_pnl || 0) + pnl).toFixed(2)
         );
       }
-      if (price > 0) {
+      if (openPositionDoc.strategy_mode === "BACKTEST") {
+        openPositionDoc.last_ltp = price;
+        openPositionDoc.unrealised_pnl = calcUnrealizedPnl(
+          openPositionDoc.average_entry_price,
+          openPositionDoc.direction,
+          openPositionDoc.open_size,
+          price
+        );
+      } else if (price > 0) {
         openPositionDoc.last_ltp = price;
         const unrealised = calcUnrealizedPnl(
           openPositionDoc.average_entry_price,

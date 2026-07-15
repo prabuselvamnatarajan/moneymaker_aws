@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
+import Position from "../models/position.js";
 import Account from "../models/account.js";
 import UserSymbol from "../models/userSymbol.js";
 import Strategy from "../models/strategy.js";
@@ -36,10 +37,11 @@ const resetBacktestDeployment = async (deployment) => {
   const symbol = deployment.symbol;
 
   try {
-    // 1. Delete trades and ledgers in MongoDB for this deployment
+    // 1. Delete trades, ledgers and positions in MongoDB for this deployment
     const deletedTrades = await Trade.deleteMany({ deployment_id: deploymentId });
     const deletedLedgers = await Ledger.deleteMany({ deployment_id: deploymentId });
-    console.log(`[Reset] Deleted ${deletedTrades.deletedCount} trades and ${deletedLedgers.deletedCount} ledgers for deployment ${deploymentId}`);
+    const deletedPositions = await Position.deleteMany({ deployment_id: deploymentId });
+    console.log(`[Reset] Deleted ${deletedTrades.deletedCount} trades, ${deletedLedgers.deletedCount} ledgers, and ${deletedPositions.deletedCount} positions for deployment ${deploymentId}`);
 
     // Reset cached position state on deployment
     deployment.position_size = 0;
@@ -659,6 +661,7 @@ export const syncAllDeploymentsToRedis = async () => {
         name: dep.strategy_id.strategy_name,
         isTest: isTest,
         account_id: dep.account_id.account_id || dep.account_id._id.toString(),
+        user_symbol_id: dep.user_symbol_id ? dep.user_symbol_id.toString() : undefined,
         instrument_token: dep.instrument_token,
         symbol: dep.symbol,
         strategy_id: dep.strategy_id._id.toString(),

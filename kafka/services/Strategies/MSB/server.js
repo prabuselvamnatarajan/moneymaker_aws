@@ -80,6 +80,7 @@ async function createConsumer() {
                 logger.debug(`Processing data for symbol ${symbol}:`, data);
                 logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
                 data.ltp = ltp;
+                data.timestamp = msg.timestamp || (msg.fullFeed?.marketFF?.ltpc?.ltt || msg.fullFeed?.indexFF?.ltpc?.ltt ? new Date(parseInt(msg.fullFeed.marketFF?.ltpc?.ltt || msg.fullFeed.indexFF?.ltpc?.ltt)).toISOString() : new Date().toISOString());
 
                 // call the actual strategy function here
                 let newState = await MSB(lastState, data, symbol, strategy_details);

@@ -20,7 +20,7 @@ async function triggerOrder(requestBody) {
     }
 }
 
-async function computeOrderPayload(strategy_details, transaction_type, ltp, tag) {
+async function computeOrderPayload(strategy_details, transaction_type, ltp, tag, timestamp) {
     let { 
         account_id, 
         use_full_amount = false, 
@@ -58,6 +58,9 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag)
         // For SELL orders, quantity should be determined based on holdings.
         // so we get the last bought quantity from redis with the tag.
         quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+    }
+    if (timestamp) {
+        strategy_details.execution_time = new Date(timestamp).toISOString();
     }
     const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
     let orderPayLoad = {
@@ -104,7 +107,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 logger.info(`MSB: Closing Live long position at ${low}`);
             }
 
-            let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol);
+            let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
                 await triggerOrder(requestBody);
             } else {
@@ -131,7 +134,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 logger.info(`MSB: Opening Live long position at ${high}`);
             }
 
-            let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol);
+            let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
                 await triggerOrder(requestBody);
                 await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
