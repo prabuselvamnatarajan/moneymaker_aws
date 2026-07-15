@@ -52,6 +52,11 @@ async function createConsumer() {
                 const msg = JSON.parse(message.value.toString());
                 console.log(`msg: ${JSON.stringify(msg)}`);
                 let { strategy_details = {} } = msg;
+                const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
+                if (isBackTest && msg.run_id && strategy_details.backtest_run_id && msg.run_id !== strategy_details.backtest_run_id) {
+                    logger.info(`Discarding stale backtest message in MSB strategy. Msg run_id: ${msg.run_id}, Active: ${strategy_details.backtest_run_id}`);
+                    return;
+                }
                 if (msg.done) {
                     logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
                     if (strategy_details.deployment_id) {
@@ -66,7 +71,6 @@ async function createConsumer() {
                 };
 
 
-                const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
                 if (isBackTest) {
                     strategy_details.isTest = true;
                 }

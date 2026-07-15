@@ -61,7 +61,14 @@ async function createConsumer() {
 
                 let filteredStrategies = strategies;
                 if (isBackTest && data.deployment_id) {
-                    filteredStrategies = strategies.filter(strategy => strategy.deployment_id === data.deployment_id);
+                    filteredStrategies = strategies.filter(strategy => {
+                        if (strategy.deployment_id !== data.deployment_id) return false;
+                        if (data.run_id && strategy.backtest_run_id && data.run_id !== strategy.backtest_run_id) {
+                            logger.info(`Discarding stale backtest message for deployment ${data.deployment_id}. Msg run_id: ${data.run_id}, Active run_id: ${strategy.backtest_run_id}`);
+                            return false;
+                        }
+                        return true;
+                    });
                     logger.info(`Filtered strategies for symbol ${symbol} to deployment ${data.deployment_id}. Count: ${filteredStrategies.length}`);
                 }
 

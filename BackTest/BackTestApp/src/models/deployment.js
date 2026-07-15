@@ -84,6 +84,9 @@ const deploymentSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  backtest_run_id: {
+    type: String,
+  },
 });
 
 // Update timestamp on save

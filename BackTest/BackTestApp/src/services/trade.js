@@ -37,41 +37,55 @@ async function updateBacktestExcursions(position, currentTradeTime, TradeModel) 
     return;
   }
 
-  const symbol = position.symbol;
-  const date = position.opened_at ? new Date(position.opened_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+  // Get all date strings between startMs and endMs inclusive to handle multi-day positions
+  const dates = [];
+  let currentMs = startMs;
+  while (currentMs <= endMs) {
+    dates.push(new Date(currentMs).toISOString().slice(0, 10));
+    currentMs += 24 * 60 * 60 * 1000;
+  }
+  const lastDateStr = new Date(endMs).toISOString().slice(0, 10);
+  if (!dates.includes(lastDateStr)) {
+    dates.push(lastDateStr);
+  }
 
+  const symbol = position.symbol;
   const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
-  let filePath = path.join(process.cwd(), "..", "exportedData", date, `${sanitizedSymbol}.json`);
   
-  try {
-    await fs.access(filePath);
-  } catch (err) {
-    const fallbackPath = path.join("/shared", "exportedData", date, `${sanitizedSymbol}.json`);
+  let ticks = [];
+  for (const d of dates) {
+    let filePath = path.join(process.cwd(), "..", "exportedData", d, `${sanitizedSymbol}.json`);
     try {
-      await fs.access(fallbackPath);
-      filePath = fallbackPath;
-    } catch (fallbackErr) {
-      const absolutePath = path.join("/home/prabu/Desktop/Work Folder/MoneyMaker GitLab AWS/BackTest/exportedData", date, `${sanitizedSymbol}.json`);
+      await fs.access(filePath);
+    } catch (err) {
+      const fallbackPath = path.join("/shared", "exportedData", d, `${sanitizedSymbol}.json`);
       try {
-        await fs.access(absolutePath);
-        filePath = absolutePath;
-      } catch (absErr) {
-        console.error(`[updateBacktestExcursions] Ticks file not found for ${symbol} on ${date}. Paths tried: ${filePath}, ${fallbackPath}, ${absolutePath}`);
-        return;
+        await fs.access(fallbackPath);
+        filePath = fallbackPath;
+      } catch (fallbackErr) {
+        const absolutePath = path.join("/home/prabu/Desktop/Work Folder/MoneyMaker GitLab AWS/BackTest/exportedData", d, `${sanitizedSymbol}.json`);
+        try {
+          await fs.access(absolutePath);
+          filePath = absolutePath;
+        } catch (absErr) {
+          console.warn(`[updateBacktestExcursions] Ticks file not found for ${symbol} on ${d}.`);
+          continue;
+        }
       }
+    }
+
+    try {
+      const fileContent = await fs.readFile(filePath, "utf8");
+      const dayTicks = JSON.parse(fileContent);
+      if (Array.isArray(dayTicks)) {
+        ticks = ticks.concat(dayTicks);
+      }
+    } catch (err) {
+      console.error(`[updateBacktestExcursions] Error reading/parsing ticks file for ${d}: ${err.message}`);
     }
   }
 
-  let ticks = [];
-  try {
-    const fileContent = await fs.readFile(filePath, "utf8");
-    ticks = JSON.parse(fileContent);
-  } catch (err) {
-    console.error(`[updateBacktestExcursions] Error reading/parsing ticks file: ${err.message}`);
-    return;
-  }
-
-  if (!Array.isArray(ticks)) return;
+  if (ticks.length === 0) return;
 
   let maxUp = position.max_up || 0;
   let maxDown = position.max_down || 0;
@@ -87,10 +101,10 @@ async function updateBacktestExcursions(position, currentTradeTime, TradeModel) 
     if (ltp === undefined || ltp === null) continue;
 
     let tickTimeMs;
-    if (ltpc.ltt) {
-      tickTimeMs = parseInt(ltpc.ltt, 10);
-    } else if (tick.timestamp) {
+    if (tick.timestamp) {
       tickTimeMs = new Date(tick.timestamp).getTime();
+    } else if (ltpc.ltt) {
+      tickTimeMs = parseInt(ltpc.ltt, 10);
     } else {
       continue;
     }

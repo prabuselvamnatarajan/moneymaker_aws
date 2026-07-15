@@ -8,7 +8,8 @@ export function calcUnrealizedPnl(entryPrice, direction, openSize, ltp) {
   const size = Number(openSize) || 0;
   const price = Number(ltp) || 0;
   if (!(size > 0) || !(entry > 0)) return 0;
-  if (direction === "LONG") {
+  const dir = String(direction).toUpperCase();
+  if (dir === "LONG") {
     return parseFloat(((price - entry) * size).toFixed(4));
   }
   return parseFloat(((entry - price) * size).toFixed(4));
@@ -19,7 +20,8 @@ export function calcProfitPct(entryPrice, direction, ltp) {
   const entry = Number(entryPrice) || 0;
   const price = Number(ltp) || 0;
   if (!(entry > 0)) return 0;
-  if (direction === "LONG") {
+  const dir = String(direction).toUpperCase();
+  if (dir === "LONG") {
     return parseFloat((((price - entry) / entry) * 100).toFixed(4));
   }
   return parseFloat((((entry - price) / entry) * 100).toFixed(4));

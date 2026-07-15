@@ -14,13 +14,18 @@ import { getSymbolCandles } from "./symbol.js";
 
 const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount"];
 
-const triggerBacktestIfNeeded = (deployment) => {
+const triggerBacktestIfNeeded = async (deployment) => {
   if (deployment.strategy_mode === "BACKTEST" && deployment.current_status === "RUNNING") {
     const symbolName = deployment.symbol;
     const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
     const timeMs = (deployment.backtest_speed !== undefined && deployment.backtest_speed !== null) ? deployment.backtest_speed : 1000;
-    const triggerUrl = `${process.env.BACKTEST_CLIENT_URL || "http://backtest-client"}/?symbolName=${encodeURIComponent(symbolName)}&date=${encodeURIComponent(date)}&time_ms=${timeMs}&deployment_id=${encodeURIComponent(deployment._id.toString())}`;
-    console.log(`[Backtest] Triggering backtest client: ${triggerUrl}`);
+    
+    const runId = Date.now().toString();
+    deployment.backtest_run_id = runId;
+    await deployment.save();
+    
+    const triggerUrl = `${process.env.BACKTEST_CLIENT_URL || "http://backtest-client"}/?symbolName=${encodeURIComponent(symbolName)}&date=${encodeURIComponent(date)}&time_ms=${timeMs}&deployment_id=${encodeURIComponent(deployment._id.toString())}&run_id=${runId}`;
+    console.log(`[Backtest] Triggering backtest client with run_id ${runId}: ${triggerUrl}`);
     fetch(triggerUrl)
       .then(res => res.text())
       .then(body => console.log(`[Backtest] Trigger response: ${body}`))
@@ -211,7 +216,7 @@ export const createDeployment = async (userId, deploymentData) => {
   const deployment = new Deployment({ ...deploymentData, user_id: userId });
   const result = await deployment.save();
   await resetBacktestDeployment(result);
-  triggerBacktestIfNeeded(result);
+  await triggerBacktestIfNeeded(result);
   await syncAllDeploymentsToRedis();
   return result;
 };
@@ -335,7 +340,7 @@ export const transitionDeployment = async (userId, id, action) => {
   }
 
   await deployment.save();
-  triggerBacktestIfNeeded(deployment);
+  await triggerBacktestIfNeeded(deployment);
   await syncAllDeploymentsToRedis();
   return deployment;
 };
@@ -675,6 +680,7 @@ export const syncAllDeploymentsToRedis = async () => {
         target_pts: dep.strategy_id.target_pts !== undefined ? dep.strategy_id.target_pts : 500,
         sl_pts: dep.strategy_id.sl_pts !== undefined ? dep.strategy_id.sl_pts : 500,
         params: dep.strategy_id.params || {},
+        backtest_run_id: dep.backtest_run_id || "",
       });
 
       // Sync account balance to Redis

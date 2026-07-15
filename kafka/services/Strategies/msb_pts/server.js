@@ -52,6 +52,11 @@ async function createConsumer() {
                 const msg = JSON.parse(message.value.toString());
                 console.log(`msg: ${JSON.stringify(msg)}`);
                 let { strategy_details = {} } = msg;
+                const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
+                if (isBackTest && msg.run_id && strategy_details.backtest_run_id && msg.run_id !== strategy_details.backtest_run_id) {
+                    logger.info(`Discarding stale backtest message in msb_pts strategy. Msg run_id: ${msg.run_id}, Active: ${strategy_details.backtest_run_id}`);
+                    return;
+                }
                 if (msg.done) {
                     logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
                     if (strategy_details.deployment_id) {
@@ -66,7 +71,6 @@ async function createConsumer() {
                 };
 
 
-                const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
                 if (isBackTest) {
                     strategy_details.isTest = true;
                 }
@@ -80,6 +84,7 @@ async function createConsumer() {
                 logger.debug(`Processing data for symbol ${symbol}:`, data);
                 logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
                 data.ltp = ltp;
+                data.timestamp = msg.timestamp || (msg.fullFeed?.marketFF?.ltpc?.ltt || msg.fullFeed?.indexFF?.ltpc?.ltt ? new Date(parseInt(msg.fullFeed.marketFF?.ltpc?.ltt || msg.fullFeed.indexFF?.ltpc?.ltt)).toISOString() : new Date().toISOString());
 
                 // call the actual strategy function here
                 let newState = await MSB(lastState, data, symbol, strategy_details);

@@ -95,6 +95,14 @@ function parseTick(dataObject, previousLtp = null) {
         confidence = 'low';
     }
 
+    let tickTimestamp = ltt;
+    if (dataObject && dataObject.timestamp) {
+        const parsedTs = new Date(dataObject.timestamp).getTime();
+        if (!isNaN(parsedTs)) {
+            tickTimestamp = parsedTs;
+        }
+    }
+
     return {
         ltp,
         ltq,
@@ -113,7 +121,7 @@ function parseTick(dataObject, previousLtp = null) {
         feedType,
         confidence,
         previousLtp,
-        timestamp: ltt,
+        timestamp: tickTimestamp,
     };
 }
 
