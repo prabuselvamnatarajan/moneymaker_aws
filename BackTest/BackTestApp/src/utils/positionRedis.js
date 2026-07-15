@@ -62,7 +62,7 @@ export function buildLiveCache(position) {
 }
 
 export async function syncOpenPositionToRedis(position) {
-  if (!position || position.status !== "OPEN" || !(position.open_size > 0)) {
+  if (!position || position.status !== "OPEN" || !(position.open_size > 0) || position.strategy_mode === "BACKTEST") {
     return;
   }
   const id = position._id.toString();

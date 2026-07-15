@@ -98,7 +98,7 @@ async function selfHealCache(positionMongoId, symbolHint) {
       _id: new ObjectId(positionMongoId),
       status: 'OPEN',
     });
-    if (!doc || !(doc.open_size > 0)) {
+    if (!doc || !(doc.open_size > 0) || doc.strategy_mode === 'BACKTEST') {
       await redisClient.del(liveKey(positionMongoId)).catch(() => {});
       if (symbolHint) {
         await redisClient.sRem(openSymbolKey(symbolHint), positionMongoId).catch(() => {});
