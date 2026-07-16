@@ -231,15 +231,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             prevHigh.low = low;
         } else if (prevHigh.low > low) {
             isUp = false;
-            logger.info(`msb_pts: Established initial trend DOWN at ${low}. Opening SHORT position.`);
-            let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
-            if (requestBody && requestBody.quantity > 0) {
-                await triggerOrder(requestBody);
-                await setShortQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                position = { direction: "SHORT", entryPrice: ltp };
-                lastSellPrice = ltp;
-                closedByTargetOrSl = false;
-            }
+            logger.info(`msb_pts: Established initial trend DOWN at ${low}.`);
             prevLow.high = high;
             prevLow.low = low;
         } else {
@@ -276,17 +268,6 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 lastBuyPrice = null;
             }
 
-            // Open SHORT position (entry signal)
-            logger.info(`msb_pts: Opening SHORT position at ${ltp} on trend break DOWN`);
-            let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
-            if (requestBody && requestBody.quantity > 0) {
-                await triggerOrder(requestBody);
-                await setShortQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                position = { direction: "SHORT", entryPrice: ltp };
-                lastSellPrice = ltp;
-                closedByTargetOrSl = false;
-            }
-
             prevLow.high = high;
             prevLow.low = low;
         } else {
@@ -302,7 +283,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             // Trend broke up
             isUp = true;
 
-            // Handle SHORT exit
+            // Handle SHORT exit (if any short position was active)
             if (position && position.direction === "SHORT") {
                 if (closedByTargetOrSl) {
                     logger.info(`msb_pts: Skip duplicate exit order for SHORT. Position already closed by Target/SL.`);
