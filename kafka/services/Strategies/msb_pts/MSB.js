@@ -1,5 +1,11 @@
 import axios from 'axios';
-import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis } from './redis_utils/account_utils.js';
+import { 
+    getAccountBalanceFromRedis, 
+    getBoughtQuantityWithTagFromRedis, 
+    setBoughtQuantityWithTagToRedis,
+    getShortQuantityWithTagFromRedis,
+    setShortQuantityWithTagToRedis 
+} from './redis_utils/account_utils.js';
 import { logger } from '/app/utils/logUtils.js';
 
 async function triggerOrder(requestBody) {
@@ -37,28 +43,68 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         commission_type = "PERCENTAGE",
         commission_rate = 0
     } = strategy_details;
-    if ( transaction_type == "BUY" && use_full_amount) {
-        let current_acc_balance = await getAccountBalanceFromRedis(account_id);
-        let maxAffordableValue = current_acc_balance;
-        if (commission_type === "FLAT") {
-            maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
-        } else if (commission_type === "PERCENTAGE") {
-            maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
-        }
-        // Subtract a tiny safety buffer of 0.05 to prevent floating-point or rounding-off failures
-        maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
 
-        if (lot_size) {
-            quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
-        } else {
-            quantity = Math.floor(maxAffordableValue / ltp);
+    if (use_full_amount) {
+        if (transaction_type === "BUY") {
+            // Check if we are closing a SHORT position
+            let shortQty = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+            if (shortQty > 0) {
+                quantity = shortQty;
+            } else {
+                // Opening a LONG position
+                let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+                let maxAffordableValue = current_acc_balance;
+                if (commission_type === "FLAT") {
+                    maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
+                } else if (commission_type === "PERCENTAGE") {
+                    maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
+                }
+                maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+
+                if (lot_size) {
+                    quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
+                } else {
+                    quantity = Math.floor(maxAffordableValue / ltp);
+                }
+            }
+        } else if (transaction_type === "SELL") {
+            // Check if we are closing a LONG position
+            let boughtQty = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+            if (boughtQty > 0) {
+                quantity = boughtQty;
+            } else {
+                // Opening a SHORT position
+                let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+                let maxAffordableValue = current_acc_balance;
+                if (commission_type === "FLAT") {
+                    maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
+                } else if (commission_type === "PERCENTAGE") {
+                    maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
+                }
+                maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+
+                if (lot_size) {
+                    quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
+                } else {
+                    quantity = Math.floor(maxAffordableValue / ltp);
+                }
+            }
+        }
+    } else {
+        // If not use_full_amount, fetch correct quantity for exits
+        if (transaction_type === "BUY") {
+            let shortQty = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+            if (shortQty > 0) {
+                quantity = shortQty;
+            }
+        } else if (transaction_type === "SELL") {
+            let boughtQty = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+            if (boughtQty > 0) {
+                quantity = boughtQty;
+            }
         }
     }
-    if (transaction_type == "SELL" && use_full_amount) {
-        // For SELL orders, quantity should be determined based on holdings.
-        // so we get the last bought quantity from redis with the tag.
-        quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
-    }
+
     if (timestamp) {
         strategy_details.execution_time = new Date(timestamp).toISOString();
     }
@@ -82,83 +128,220 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
 }
 
 async function MSB(prevData, currentData, symbol, strategy_details) {
-    if ( !prevData || Object.keys(prevData).length === 0 ) {
+    if (!prevData || Object.keys(prevData).length === 0) {
         // initialize
         let initialState = {
             isUp: null,
             prevHigh: { high: currentData.high, low: currentData.low },
             prevLow: { high: currentData.high, low: currentData.low },
-            lastBuyPrice: null
+            lastBuyPrice: null,
+            lastSellPrice: null,
+            position: null,
+            closedByTargetOrSl: false
         };
         return initialState;
     }
-    let { isUp, prevHigh, prevLow, lastBuyPrice } = prevData;
+
+    let { isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl = false } = prevData;
     let { isTest } = strategy_details;
     let { high, low, ltp } = currentData;
-    
+
+    let target_type = strategy_details.target_type || "POINTS";
     let target_pts = strategy_details.target_pts !== undefined ? strategy_details.target_pts : 500;
     let sl_pts = strategy_details.sl_pts !== undefined ? strategy_details.sl_pts : 500;
+    let target_pct = strategy_details.target_pct !== undefined ? strategy_details.target_pct : 2;
+    let sl_pct = strategy_details.sl_pct !== undefined ? strategy_details.sl_pct : 2;
+    let advance_trade_decision = strategy_details.advance_trade_decision !== undefined ? strategy_details.advance_trade_decision : true;
 
-    if (isUp) {
-        // check if target or stop loss is reached based on ltp
-        let targetHit = ltp >= (lastBuyPrice + target_pts);
-        let slHit = ltp <= (lastBuyPrice - sl_pts);
+    // Check if previous schema's lastBuyPrice is set but new position object is not initialized
+    if (lastBuyPrice && !position) {
+        position = { direction: "LONG", entryPrice: lastBuyPrice };
+    }
 
-        if (targetHit || slHit) {
-            prevLow.high = high;
-            prevLow.low = low;
-            isUp = false;
-            lastBuyPrice = null;
+    // 1. Check for Target or Stop Loss hit first
+    let targetHit = false;
+    let slHit = false;
 
-            if (isTest) {
-                logger.info(`msb_pts Test: Closing Test long position at ${ltp} (Target/SL hit, lastBuyPrice: ${prevData.lastBuyPrice})`);
+    if (advance_trade_decision && position) {
+        if (position.direction === "LONG") {
+            if (target_type === "PERCENTAGE") {
+                targetHit = ltp >= position.entryPrice * (1 + target_pct / 100);
+                slHit = ltp <= position.entryPrice * (1 - sl_pct / 100);
             } else {
-                logger.info(`msb_pts: Closing Live long position at ${ltp} (Target/SL hit, lastBuyPrice: ${prevData.lastBuyPrice})`);
+                targetHit = ltp >= position.entryPrice + target_pts;
+                slHit = ltp <= position.entryPrice - sl_pts;
             }
+        } else if (position.direction === "SHORT") {
+            if (target_type === "PERCENTAGE") {
+                targetHit = ltp <= position.entryPrice * (1 - target_pct / 100);
+                slHit = ltp >= position.entryPrice * (1 + sl_pct / 100);
+            } else {
+                targetHit = ltp <= position.entryPrice - target_pts;
+                slHit = ltp >= position.entryPrice + sl_pts;
+            }
+        }
+    }
 
+    if (targetHit || slHit) {
+        if (position.direction === "LONG") {
+            if (isTest) {
+                logger.info(`msb_pts Test: Closing Test LONG position at ${ltp} via ${targetHit ? 'Target' : 'SL'} hit (entry: ${position.entryPrice})`);
+            } else {
+                logger.info(`msb_pts: Closing Live LONG position at ${ltp} via ${targetHit ? 'Target' : 'SL'} hit (entry: ${position.entryPrice})`);
+            }
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
                 await triggerOrder(requestBody);
-            } else {
-                logger.warn(`msb_pts: Skipping SELL order due to zero/negative quantity: ${requestBody?.quantity}`);
             }
+            await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+        } else if (position.direction === "SHORT") {
+            if (isTest) {
+                logger.info(`msb_pts Test: Closing Test SHORT position at ${ltp} via ${targetHit ? 'Target' : 'SL'} hit (entry: ${position.entryPrice})`);
+            } else {
+                logger.info(`msb_pts: Closing Live SHORT position at ${ltp} via ${targetHit ? 'Target' : 'SL'} hit (entry: ${position.entryPrice})`);
+            }
+            let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+            if (requestBody && requestBody.quantity > 0) {
+                await triggerOrder(requestBody);
+            }
+            await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+        }
+
+        position = null;
+        lastBuyPrice = null;
+        lastSellPrice = null;
+        closedByTargetOrSl = true;
+    }
+
+    // 2. Trend breakout logic
+    if (isUp === null) {
+        // Trend is not established yet
+        if (prevLow.high < high) {
+            isUp = true;
+            logger.info(`msb_pts: Established initial trend UP at ${high}. Opening LONG position.`);
+            let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+            if (requestBody && requestBody.quantity > 0) {
+                await triggerOrder(requestBody);
+                await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                position = { direction: "LONG", entryPrice: ltp };
+                lastBuyPrice = ltp;
+                closedByTargetOrSl = false;
+            }
+            prevHigh.high = high;
+            prevHigh.low = low;
+        } else if (prevHigh.low > low) {
+            isUp = false;
+            logger.info(`msb_pts: Established initial trend DOWN at ${low}. Opening SHORT position.`);
+            let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
+            if (requestBody && requestBody.quantity > 0) {
+                await triggerOrder(requestBody);
+                await setShortQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                position = { direction: "SHORT", entryPrice: ltp };
+                lastSellPrice = ltp;
+                closedByTargetOrSl = false;
+            }
+            prevLow.high = high;
+            prevLow.low = low;
         } else {
-            // trend continuation
+            // Update both trackers in range
+            if (prevHigh.high < high) {
+                prevHigh.high = high;
+                prevHigh.low = low;
+            }
+            if (prevLow.low > low) {
+                prevLow.high = high;
+                prevLow.low = low;
+            }
+        }
+    } else if (isUp) {
+        // Up trend
+        if (prevHigh.low > low) {
+            // Trend broke down
+            isUp = false;
+
+            // Handle LONG exit
+            if (position && position.direction === "LONG") {
+                if (closedByTargetOrSl) {
+                    logger.info(`msb_pts: Skip duplicate exit order for LONG. Position already closed by Target/SL.`);
+                    closedByTargetOrSl = false;
+                } else {
+                    logger.info(`msb_pts: Closing LONG position at ${ltp} on trend break DOWN`);
+                    let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
+                    if (requestBody && requestBody.quantity > 0) {
+                        await triggerOrder(requestBody);
+                    }
+                    await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                }
+                position = null;
+                lastBuyPrice = null;
+            }
+
+            // Open SHORT position (entry signal)
+            logger.info(`msb_pts: Opening SHORT position at ${ltp} on trend break DOWN`);
+            let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
+            if (requestBody && requestBody.quantity > 0) {
+                await triggerOrder(requestBody);
+                await setShortQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                position = { direction: "SHORT", entryPrice: ltp };
+                lastSellPrice = ltp;
+                closedByTargetOrSl = false;
+            }
+
+            prevLow.high = high;
+            prevLow.low = low;
+        } else {
+            // Trend continuation
             if (prevHigh.high < high) {
                 prevHigh.high = high;
                 prevHigh.low = low;
             }
         }
     } else {
-        // check for break
+        // Down trend
         if (prevLow.high < high) {
-            prevHigh.high = high;
-            prevHigh.low = low;
+            // Trend broke up
             isUp = true;
-            lastBuyPrice = ltp;
 
-            if (isTest) {
-                logger.info(`msb_pts Test: Opening Test long position at ${high}, lastBuyPrice: ${ltp}`);
-            } else {
-                logger.info(`msb_pts: Opening Live long position at ${high}, lastBuyPrice: ${ltp}`);
+            // Handle SHORT exit
+            if (position && position.direction === "SHORT") {
+                if (closedByTargetOrSl) {
+                    logger.info(`msb_pts: Skip duplicate exit order for SHORT. Position already closed by Target/SL.`);
+                    closedByTargetOrSl = false;
+                } else {
+                    logger.info(`msb_pts: Closing SHORT position at ${ltp} on trend break UP`);
+                    let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+                    if (requestBody && requestBody.quantity > 0) {
+                        await triggerOrder(requestBody);
+                    }
+                    await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                }
+                position = null;
+                lastSellPrice = null;
             }
 
+            // Open LONG position (entry signal)
+            logger.info(`msb_pts: Opening LONG position at ${ltp} on trend break UP`);
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
                 await triggerOrder(requestBody);
                 await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-            } else {
-                logger.warn(`msb_pts: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
+                position = { direction: "LONG", entryPrice: ltp };
+                lastBuyPrice = ltp;
+                closedByTargetOrSl = false;
             }
+
+            prevHigh.high = high;
+            prevHigh.low = low;
         } else {
-            // trend continuation
+            // Trend continuation
             if (prevLow.low > low) {
                 prevLow.high = high;
                 prevLow.low = low;
             }
         }
     }
-    return { isUp, prevHigh, prevLow, lastBuyPrice };
+
+    return { isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl };
 }
 
 export { MSB };
