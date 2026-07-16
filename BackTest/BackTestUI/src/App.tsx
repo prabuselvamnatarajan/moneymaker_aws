@@ -453,7 +453,10 @@ export default function App() {
     description: string,
     advanceTradeDecision?: boolean,
     targetPts?: number,
-    slPts?: number
+    slPts?: number,
+    targetType?: string,
+    targetPct?: number,
+    slPct?: number
   ) => {
     try {
       await api.strategies.create({
@@ -462,6 +465,9 @@ export default function App() {
         advance_trade_decision: advanceTradeDecision,
         target_pts: targetPts,
         sl_pts: slPts,
+        target_type: targetType,
+        target_pct: targetPct,
+        sl_pct: slPct,
       });
       await loadData();
     } catch (err: any) {
