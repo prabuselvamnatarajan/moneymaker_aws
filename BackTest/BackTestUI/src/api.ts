@@ -516,6 +516,9 @@ export const api = {
       advance_trade_decision?: boolean;
       target_pts?: number;
       sl_pts?: number;
+      target_type?: string;
+      target_pct?: number;
+      sl_pct?: number;
     }) {
       const res = await fetch(`${BASE_URL}/strategies`, {
         method: 'POST',
