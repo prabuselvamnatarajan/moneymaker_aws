@@ -252,21 +252,19 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp = false;
 
             // Handle LONG exit
-            if (position && position.direction === "LONG") {
-                if (closedByTargetOrSl) {
-                    logger.info(`msb_pts: Skip duplicate exit order for LONG. Position already closed by Target/SL.`);
-                    closedByTargetOrSl = false;
-                } else {
-                    logger.info(`msb_pts: Closing LONG position at ${ltp} on trend break DOWN`);
-                    let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
-                    if (requestBody && requestBody.quantity > 0) {
-                        await triggerOrder(requestBody);
-                    }
-                    await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+            if (closedByTargetOrSl) {
+                logger.info(`msb_pts: Skip duplicate exit order for LONG. Position already closed by Target/SL.`);
+                closedByTargetOrSl = false;
+            } else if (position && position.direction === "LONG") {
+                logger.info(`msb_pts: Closing LONG position at ${ltp} on trend break DOWN`);
+                let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
+                if (requestBody && requestBody.quantity > 0) {
+                    await triggerOrder(requestBody);
                 }
-                position = null;
-                lastBuyPrice = null;
+                await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
             }
+            position = null;
+            lastBuyPrice = null;
 
             prevLow.high = high;
             prevLow.low = low;
@@ -284,21 +282,19 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp = true;
 
             // Handle SHORT exit (if any short position was active)
-            if (position && position.direction === "SHORT") {
-                if (closedByTargetOrSl) {
-                    logger.info(`msb_pts: Skip duplicate exit order for SHORT. Position already closed by Target/SL.`);
-                    closedByTargetOrSl = false;
-                } else {
-                    logger.info(`msb_pts: Closing SHORT position at ${ltp} on trend break UP`);
-                    let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
-                    if (requestBody && requestBody.quantity > 0) {
-                        await triggerOrder(requestBody);
-                    }
-                    await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+            if (closedByTargetOrSl) {
+                logger.info(`msb_pts: Skip duplicate exit order for SHORT. Position already closed by Target/SL.`);
+                closedByTargetOrSl = false;
+            } else if (position && position.direction === "SHORT") {
+                logger.info(`msb_pts: Closing SHORT position at ${ltp} on trend break UP`);
+                let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+                if (requestBody && requestBody.quantity > 0) {
+                    await triggerOrder(requestBody);
                 }
-                position = null;
-                lastSellPrice = null;
+                await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
             }
+            position = null;
+            lastSellPrice = null;
 
             // Open LONG position (entry signal)
             logger.info(`msb_pts: Opening LONG position at ${ltp} on trend break UP`);
