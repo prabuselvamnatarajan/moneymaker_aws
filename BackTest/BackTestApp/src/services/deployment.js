@@ -679,6 +679,10 @@ export const syncAllDeploymentsToRedis = async () => {
         commission_rate: dep.account_id.commission_rate || 0,
         target_pts: dep.strategy_id.target_pts !== undefined ? dep.strategy_id.target_pts : 500,
         sl_pts: dep.strategy_id.sl_pts !== undefined ? dep.strategy_id.sl_pts : 500,
+        target_type: dep.strategy_id.target_type || "POINTS",
+        target_pct: dep.strategy_id.target_pct !== undefined ? dep.strategy_id.target_pct : 2,
+        sl_pct: dep.strategy_id.sl_pct !== undefined ? dep.strategy_id.sl_pct : 2,
+        advance_trade_decision: dep.strategy_id.advance_trade_decision || false,
         params: dep.strategy_id.params || {},
         backtest_run_id: dep.backtest_run_id || "",
       });
