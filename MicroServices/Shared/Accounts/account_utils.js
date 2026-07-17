@@ -12,7 +12,7 @@ async function getAccountBalanceFromRedis(account_id) {
     }
     try {
         const response = await redisJson.getJson(redisKey);
-        return response.balance || 0;
+        return (response && response.balance) || 0;
     } catch (error) {
         console.error(`Error fetching account balance for account ID ${account_id} from Redis:`, error.message);
         return 0;
@@ -42,7 +42,7 @@ async function getBoughtQuantityWithTagFromRedis(tag, deploymentId) {
     }
     try {
         const response = await redisJson.getJson(redisKey);
-        return response.quantity || 0;
+        return (response && response.quantity) || 0;
     } catch (error) {
         console.error(`Error fetching bought quantity for tag ${tag} from Redis (key: ${redisKey}):`, error.message);
         return 0;
@@ -70,7 +70,7 @@ async function getShortQuantityWithTagFromRedis(tag, deploymentId) {
     }
     try {
         const response = await redisJson.getJson(redisKey);
-        return response.quantity || 0;
+        return (response && response.quantity) || 0;
     } catch (error) {
         console.error(`Error fetching short quantity for tag ${tag} from Redis (key: ${redisKey}):`, error.message);
         return 0;
