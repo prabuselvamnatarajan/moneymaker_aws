@@ -307,6 +307,7 @@ export const transitionDeployment = async (userId, id, action) => {
 
   if (action === "start" || action === "restart") {
     deployment.start_time = new Date();
+    deployment.end_time = null;
     await resetBacktestDeployment(deployment);
     if (deployment.strategy_mode !== "BACKTEST") {
       await resetLiquiditySweepRuntimeState(deployment);
