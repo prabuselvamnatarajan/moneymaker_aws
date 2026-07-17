@@ -27,6 +27,19 @@ const strategySchema = new mongoose.Schema({
     type: Number,
     default: 500,
   },
+  target_type: {
+    type: String,
+    enum: ["POINTS", "PERCENTAGE"],
+    default: "POINTS",
+  },
+  target_pct: {
+    type: Number,
+    default: 2,
+  },
+  sl_pct: {
+    type: Number,
+    default: 2,
+  },
   advance_trade_decision: {
     type: Boolean,
     default: false,

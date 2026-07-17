@@ -23,6 +23,7 @@ docker build -t get-funds-and-margin:latest ./MicroServices/Users/FundsAndMargin
 build_kafka_service ./kafka/services/wsDataSplitterConsumer wsdatasplitterconsumer:latest
 build_kafka_service ./kafka/services/storerConsumer storer-consumer:latest
 build_kafka_service ./kafka/services/StrategyChooserConsumer strategy-chooser-consumer:latest
+build_kafka_service ./kafka/services/positionTrackerConsumer position-tracker-consumer:latest
 
 # BackTest Services
 docker build -t backteststreamer:latest ./BackTest/BacktestStreamer

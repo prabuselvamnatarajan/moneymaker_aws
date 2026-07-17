@@ -11,6 +11,11 @@ const tradeSchema = new mongoose.Schema({
     ref: "Deployment",
     required: true,
   },
+  position_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Position",
+    default: null,
+  },
   user_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
@@ -78,6 +83,7 @@ const tradeSchema = new mongoose.Schema({
 
 // Indexes
 tradeSchema.index({ deployment_id: 1 });
+tradeSchema.index({ position_id: 1 });
 tradeSchema.index({ account_id: 1 });
 tradeSchema.index({ user_symbol_id: 1 });
 tradeSchema.index({ user_id: 1 });

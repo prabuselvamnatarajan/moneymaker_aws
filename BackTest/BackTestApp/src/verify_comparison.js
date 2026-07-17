@@ -41,11 +41,11 @@ const run = async () => {
   await redisClient.connect();
   console.log("Connected to Redis for completion monitoring.");
   
-  const userId = new mongoose.Types.ObjectId("6a49daf9ef7613c949152530"); // user 'meow'
-  const strategyId = new mongoose.Types.ObjectId("6a49db5aef7613c9491525b3"); // strategy 'msb'
+  const userId = new mongoose.Types.ObjectId("6a55a062656bf951fc6c03e5"); // user 'standarduser'
+  const strategyId = new mongoose.Types.ObjectId("6a55a09acabae6b56a82056e"); // strategy 'msb'
   const symbol = "NSE_INDEX|Nifty 50";
   const instrumentToken = "NSE_INDEX|Nifty 50";
-  const userSymbolId = new mongoose.Types.ObjectId("6a49db36ef7613c9491525a1");
+  const userSymbolId = new mongoose.Types.ObjectId("6a55a062656bf951fc6c040e");
 
   // 1. Setup two accounts
   let accountA = await Account.findOne({ account_name: "DET_ACCOUNT_A" });

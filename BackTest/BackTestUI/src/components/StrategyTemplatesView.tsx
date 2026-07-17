@@ -8,7 +8,10 @@ interface StrategyTemplatesViewProps {
     description: string,
     advanceTradeDecision?: boolean,
     targetPts?: number,
-    slPts?: number
+    slPts?: number,
+    targetType?: string,
+    targetPct?: number,
+    slPct?: number
   ) => Promise<void>;
 }
 
@@ -20,8 +23,11 @@ export default function StrategyTemplatesView({
   const [newStrategyName, setNewStrategyName] = useState('');
   const [newStrategyDescription, setNewStrategyDescription] = useState('');
   const [advanceTradeDecision, setAdvanceTradeDecision] = useState(false);
+  const [targetType, setTargetType] = useState<'POINTS' | 'PERCENTAGE'>('POINTS');
   const [targetPts, setTargetPts] = useState<number>(500);
   const [slPts, setSlPts] = useState<number>(500);
+  const [targetPct, setTargetPct] = useState<number>(2);
+  const [slPct, setSlPct] = useState<number>(2);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -39,13 +45,19 @@ export default function StrategyTemplatesView({
         newStrategyDescription.trim(),
         advanceTradeDecision,
         advanceTradeDecision ? targetPts : 500,
-        advanceTradeDecision ? slPts : 500
+        advanceTradeDecision ? slPts : 500,
+        advanceTradeDecision ? targetType : 'POINTS',
+        advanceTradeDecision ? targetPct : 2,
+        advanceTradeDecision ? slPct : 2
       );
       setNewStrategyName('');
       setNewStrategyDescription('');
       setAdvanceTradeDecision(false);
+      setTargetType('POINTS');
       setTargetPts(500);
       setSlPts(500);
+      setTargetPct(2);
+      setSlPct(2);
       setSuccessMsg('Strategy Template created successfully!');
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err: any) {
@@ -182,35 +194,79 @@ export default function StrategyTemplatesView({
                   className="w-4 h-4 rounded-sm bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                 />
                 <label htmlFor="chk-advance-trade-decision" className="text-[11px] text-slate-350 select-none cursor-pointer font-bold font-sans">
-                  Enable Advanced Trade Decisions (Target & Stop Loss Points)
+                  Enable Advanced Trade Decisions (Target & Stop Loss)
                 </label>
               </div>
 
               {advanceTradeDecision && (
-                <div className="grid grid-cols-2 gap-4 border border-indigo-950 bg-indigo-950/20 p-3 rounded-xl animate-in slide-in-from-top-1 duration-200">
+                <div className="space-y-4 border border-indigo-950 bg-indigo-950/20 p-4 rounded-xl animate-in slide-in-from-top-1 duration-200">
                   <div className="space-y-1">
-                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Target Points (pts)</label>
-                    <input
-                      type="number"
-                      required
-                      min={1}
-                      value={targetPts}
-                      onChange={(e) => setTargetPts(Number(e.target.value))}
+                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Target & Stop Loss System</label>
+                    <select
+                      value={targetType}
+                      onChange={(e) => setTargetType(e.target.value as 'POINTS' | 'PERCENTAGE')}
                       className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
-                    />
+                    >
+                      <option value="POINTS">Points-based</option>
+                      <option value="PERCENTAGE">Percentage-based</option>
+                    </select>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Stop Loss Points (pts)</label>
-                    <input
-                      type="number"
-                      required
-                      min={1}
-                      value={slPts}
-                      onChange={(e) => setSlPts(Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
-                    />
-                  </div>
+                  {targetType === 'POINTS' ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Target Points (pts)</label>
+                        <input
+                          type="number"
+                          required
+                          min={1}
+                          value={targetPts}
+                          onChange={(e) => setTargetPts(Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Stop Loss Points (pts)</label>
+                        <input
+                          type="number"
+                          required
+                          min={1}
+                          value={slPts}
+                          onChange={(e) => setSlPts(Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Target Percentage (%)</label>
+                        <input
+                          type="number"
+                          required
+                          step="0.01"
+                          min={0.01}
+                          value={targetPct}
+                          onChange={(e) => setTargetPct(Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Stop Loss Percentage (%)</label>
+                        <input
+                          type="number"
+                          required
+                          step="0.01"
+                          min={0.01}
+                          value={slPct}
+                          onChange={(e) => setSlPct(Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

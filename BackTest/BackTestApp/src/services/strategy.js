@@ -2,7 +2,7 @@ import Strategy from "../models/strategy.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 
-const USER_UPDATABLE_FIELDS = ["strategy_name", "strategy_description", "is_active", "target_pts", "sl_pts", "advance_trade_decision"];
+const USER_UPDATABLE_FIELDS = ["strategy_name", "strategy_description", "is_active", "target_pts", "sl_pts", "advance_trade_decision", "target_type", "target_pct", "sl_pct"];
 const ADMIN_UPDATABLE_FIELDS = [...USER_UPDATABLE_FIELDS];
 
 export const createStrategy = async (userId, strategyData) => {
@@ -10,6 +10,9 @@ export const createStrategy = async (userId, strategyData) => {
   if (!data.advance_trade_decision) {
     data.target_pts = 500;
     data.sl_pts = 500;
+    data.target_type = "POINTS";
+    data.target_pct = 2;
+    data.sl_pct = 2;
     data.advance_trade_decision = false;
   }
   const strategy = new Strategy({ ...data, user_id: userId });
@@ -66,6 +69,9 @@ export const updateStrategy = async (userId, id, updateData, isAdmin = false) =>
   if (sanitizedUpdate.hasOwnProperty("advance_trade_decision") && !sanitizedUpdate.advance_trade_decision) {
     sanitizedUpdate.target_pts = 500;
     sanitizedUpdate.sl_pts = 500;
+    sanitizedUpdate.target_type = "POINTS";
+    sanitizedUpdate.target_pct = 2;
+    sanitizedUpdate.sl_pct = 2;
   }
 
   return await Strategy.findOneAndUpdate(query, sanitizedUpdate, {

@@ -1,0 +1,19 @@
+{
+  "name": "positiontrackerconsumer",
+  "version": "1.0.0",
+  "description": "Tracks unrealised P&L and max_up/max_down for open Positions",
+  "main": "positionTrackerConsumer.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "async-retry": "^1.3.3",
+    "kafkajs": "^2.2.4",
+    "mongodb": "^6.16.0",
+    "redis": "^5.10.0",
+    "winston": "^3.11.0"
+  }
+}

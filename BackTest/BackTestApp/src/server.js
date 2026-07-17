@@ -7,11 +7,27 @@ connectDB().then(async () => {
   try {
     const Strategy = (await import("./models/strategy.js")).default;
     const result = await Strategy.updateMany(
-      { $or: [ { target_pts: { $exists: false } }, { sl_pts: { $exists: false } } ] },
-      { $set: { target_pts: 500, sl_pts: 500 } }
+      {
+        $or: [
+          { target_pts: { $exists: false } },
+          { sl_pts: { $exists: false } },
+          { target_type: { $exists: false } },
+          { target_pct: { $exists: false } },
+          { sl_pct: { $exists: false } }
+        ]
+      },
+      {
+        $set: {
+          target_pts: 500,
+          sl_pts: 500,
+          target_type: "POINTS",
+          target_pct: 2,
+          sl_pct: 2
+        }
+      }
     );
     if (result.modifiedCount > 0) {
-      console.log(`✅ Migrated ${result.modifiedCount} existing strategies to default target_pts/sl_pts = 500`);
+      console.log(`✅ Migrated ${result.modifiedCount} existing strategies to default advanced settings`);
     }
   } catch (err) {
     console.error("⚠️ Failed to migrate existing strategies:", err.message);

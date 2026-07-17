@@ -39,7 +39,7 @@ async function triggerOrder(requestBody) {
     }
 }
 
-async function computeOrderPayload(strategy_details, transaction_type, ltp, tag, quantityOverride) {
+async function computeOrderPayload(strategy_details, transaction_type, ltp, tag, quantityOverride, timestamp) {
     let {
         account_id,
         use_full_amount = false,
@@ -85,6 +85,10 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         if (quantity <= 0) {
             quantity = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
         }
+    }
+
+    if (timestamp) {
+        strategy_details.execution_time = new Date(timestamp).toISOString();
     }
 
     const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
@@ -142,7 +146,8 @@ async function tryExecuteEntry(signal, state, symbol, strategy_details, params, 
         transactionType,
         levels.entry,
         symbol,
-        qty
+        qty,
+        openedAt
     );
 
     if (!requestBody?.quantity || requestBody.quantity <= 0) {
@@ -200,7 +205,7 @@ async function openPosition(signal, state, symbol, strategy_details, params, ope
     return result.position;
 }
 
-async function closePosition(position, ltp, symbol, strategy_details, reason, qtyOverride) {
+async function closePosition(position, ltp, symbol, strategy_details, reason, qtyOverride, timestamp) {
     const isLong = position.direction === 'long';
     const closeQty = qtyOverride ?? position.remainingQty ?? position.qty;
     const transactionType = isLong ? 'SELL' : 'BUY';
@@ -210,7 +215,8 @@ async function closePosition(position, ltp, symbol, strategy_details, reason, qt
         transactionType,
         ltp,
         symbol,
-        closeQty
+        closeQty,
+        timestamp
     );
 
     if (!requestBody?.quantity || requestBody.quantity <= 0) {
@@ -255,7 +261,7 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
             ? (ltp - position.entry) / position.riskDistance
             : (position.entry - ltp) / position.riskDistance;
         if (profitR < params.breakevenAtR) {
-            const closed = await closePosition(position, ltp, symbol, strategy_details, 'time_stop');
+            const closed = await closePosition(position, ltp, symbol, strategy_details, 'time_stop', null, tick.timestamp);
             if (closed) {
                 return finalizeClose(state, tick, symbol, strategy_details, params);
             }
@@ -287,7 +293,9 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
             ltp,
             symbol,
             strategy_details,
-            position.partialTaken ? 'trail_stop' : 'stop_loss'
+            position.partialTaken ? 'trail_stop' : 'stop_loss',
+            null,
+            tick.timestamp
         );
         if (closed) {
             return finalizeClose(state, tick, symbol, strategy_details, params);
@@ -303,7 +311,7 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
                 partialQty = 1;
             }
             if (partialQty > 0) {
-                const closed = await closePosition(position, ltp, symbol, strategy_details, 'partial_target1', partialQty);
+                const closed = await closePosition(position, ltp, symbol, strategy_details, 'partial_target1', partialQty, tick.timestamp);
                 if (closed) {
                     position.remainingQty -= partialQty;
                     position.partialTaken = true;
@@ -316,7 +324,7 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
 
     const targetHit = isLong ? ltp >= position.target : ltp <= position.target;
     if (targetHit && position.remainingQty > 0) {
-        const closed = await closePosition(position, ltp, symbol, strategy_details, 'target', position.remainingQty);
+        const closed = await closePosition(position, ltp, symbol, strategy_details, 'target', position.remainingQty, tick.timestamp);
         if (closed) {
             return finalizeClose(state, tick, symbol, strategy_details, params);
         }
