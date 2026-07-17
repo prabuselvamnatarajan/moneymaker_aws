@@ -128,7 +128,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
 }
 
 async function MSB(prevData, currentData, symbol, strategy_details) {
-    if (!prevData || Object.keys(prevData).length === 0) {
+    if (!prevData || Object.keys(prevData).length === 0 || !prevData.prevHigh || prevData.prevHigh.high === null || prevData.prevHigh.high === undefined || !prevData.prevLow || prevData.prevLow.high === null || prevData.prevLow.high === undefined) {
         // initialize
         let initialState = {
             isUp: null,

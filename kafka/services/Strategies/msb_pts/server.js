@@ -81,6 +81,11 @@ async function createConsumer() {
                 let data = getLatestOHLCByInterval(msg, 'I1');
                 let ltp = getLTP(msg);
 
+                if (!data || data.interval !== 'I1' || data.high === undefined || data.low === undefined || ltp === null) {
+                    logger.debug(`Skipping processing for symbol ${symbol}: incomplete or fallback I1 data`);
+                    return;
+                }
+
                 logger.debug(`Processing data for symbol ${symbol}:`, data);
                 logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
                 data.ltp = ltp;
