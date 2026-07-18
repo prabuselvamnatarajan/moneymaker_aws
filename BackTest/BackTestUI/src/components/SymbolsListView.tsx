@@ -6,7 +6,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   LineChart, Search, Plus, TrendingUp, TrendingDown, Activity, 
-  Globe, Coins, X, ChevronRight, Sparkles, RefreshCw, Power
+  Globe, Coins, X, ChevronRight, Sparkles, RefreshCw, Power,
+  Edit, Trash2, AlertTriangle
 } from 'lucide-react';
 import { SymbolData } from '../types';
 import { api } from '../api';
@@ -18,6 +19,8 @@ interface SymbolsListViewProps {
   onNavigateToEntity: (type: 'symbol', id: string) => void;
   onRefreshData?: () => Promise<void> | void;
   onToggleSymbolActive: (id: string, isActive: boolean) => void;
+  onEditSymbol?: (id: string, updateData: any) => Promise<void> | void;
+  onDeleteSymbol?: (id: string, ticker: string) => Promise<void> | void;
 }
 
 export default function SymbolsListView({
@@ -25,7 +28,9 @@ export default function SymbolsListView({
   onAddSymbol,
   onNavigateToEntity,
   onRefreshData,
-  onToggleSymbolActive
+  onToggleSymbolActive,
+  onEditSymbol,
+  onDeleteSymbol
 }: SymbolsListViewProps) {
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -34,6 +39,65 @@ export default function SymbolsListView({
   const [refreshing, setRefreshing] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | 'crypto' | 'equity' | 'forex'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
+  // Edit / Delete State
+  const [editingSymbol, setEditingSymbol] = useState<SymbolData | null>(null);
+  const [deletingSymbol, setDeletingSymbol] = useState<SymbolData | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+
+  useEffect(() => {
+    if (!deletingSymbol) {
+      setDeleteConfirmInput('');
+    }
+  }, [deletingSymbol]);
+
+  // Edit Form Fields
+  const [editName, setEditName] = useState('');
+  const [editExchange, setEditExchange] = useState('NSE');
+  const [editInstrumentToken, setEditInstrumentToken] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editInstrumentClass, setEditInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
+  const [editIsActive, setEditIsActive] = useState(true);
+
+  const handleOpenEdit = (sym: SymbolData) => {
+    setEditingSymbol(sym);
+    setEditName(sym.name);
+    setEditExchange(sym.exchange);
+    setEditInstrumentToken(sym.instrumentToken);
+    setEditDescription(sym.description || '');
+    setEditInstrumentClass((sym.instrumentClass || 'EQUITY') as any);
+    setEditIsActive(sym.isActive);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSymbol || !onEditSymbol) return;
+    try {
+      await onEditSymbol(editingSymbol.id || editingSymbol.ticker, {
+        symbol_name: editName,
+        exchange: editExchange.toUpperCase(),
+        instrument_token: editInstrumentToken.trim(),
+        description: editDescription,
+        instrument_class: editInstrumentClass,
+        is_active: editIsActive
+      });
+      setEditingSymbol(null);
+      await fetchTableData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingSymbol || !onDeleteSymbol) return;
+    try {
+      await onDeleteSymbol(deletingSymbol.id || deletingSymbol.ticker, deletingSymbol.ticker);
+      setDeletingSymbol(null);
+      await fetchTableData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // --- Self-fetched table data (server-side filtering) ---
   const [tableSymbols, setTableSymbols] = useState<SymbolData[]>([]);
@@ -448,6 +512,30 @@ export default function SymbolsListView({
                       </td>
                       <td className="p-4 text-center">
                         <div className="flex items-center justify-center gap-2">
+                          {onEditSymbol && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEdit(sym);
+                              }}
+                              className="p-1.5 text-indigo-400 hover:text-indigo-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded-md transition-colors cursor-pointer"
+                              title="Edit Symbol"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {onDeleteSymbol && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingSymbol(sym);
+                              }}
+                              className="p-1.5 text-rose-450 hover:text-rose-400 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded-md transition-colors cursor-pointer"
+                              title="Delete Symbol"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             onClick={() => onNavigateToEntity('symbol', sym.ticker)}
                             className="px-2.5 py-1 text-slate-500 hover:text-slate-200 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded transition-all text-[11px] font-semibold cursor-pointer"
@@ -721,6 +809,186 @@ export default function SymbolsListView({
         </div>
       )}
 
+    {/* Edit Symbol Modal */}
+      {editingSymbol && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl animate-in fade-in duration-200">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                <Edit className="w-4 h-4 text-indigo-400" />
+                Edit Asset Feed
+              </h3>
+              <button 
+                onClick={() => setEditingSymbol(null)}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-sm cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 text-slate-200">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Friendly Asset Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Exchange Platform</label>
+                  <select
+                    value={editExchange}
+                    onChange={(e) => setEditExchange(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
+                  >
+                    <option value="NSE">NSE (National Stock Exchange)</option>
+                    <option value="BSE">BSE (Bombay Stock Exchange)</option>
+                    <option value="BINANCE">BINANCE (Crypto Exchange)</option>
+                    <option value="FOREX">FOREX (Foreign Exchange)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Class</label>
+                  <select
+                    value={editInstrumentClass}
+                    onChange={(e) => setEditInstrumentClass(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
+                  >
+                    <option value="EQUITY">Equity</option>
+                    <option value="CRYPTO">Crypto</option>
+                    <option value="FOREX">Forex</option>
+                    <option value="INDEX">Index</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Token / Ticker</label>
+                <input
+                  type="text"
+                  required
+                  value={editInstrumentToken}
+                  onChange={(e) => setEditInstrumentToken(e.target.value)}
+                  className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Notes / Description</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 h-20 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 py-1">
+                <input
+                  type="checkbox"
+                  id="edit-sym-is-active"
+                  checked={editIsActive}
+                  onChange={(e) => setEditIsActive(e.target.checked)}
+                  className="w-3.5 h-3.5 bg-slate-955 border-slate-800 rounded focus:ring-0 text-indigo-600 focus:ring-offset-0"
+                />
+                <label htmlFor="edit-sym-is-active" className="text-xs text-slate-350 select-none cursor-pointer">
+                  Activate Live Feed Subscription
+                </label>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setEditingSymbol(null)}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-md font-semibold text-slate-300 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-md transition-colors cursor-pointer"
+                >
+                  Update Asset
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Symbol Confirmation Warning */}
+      {deletingSymbol && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/90 backdrop-blur-sm font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-rose-955 rounded-xl overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+            <div className="p-6 bg-rose-950/20 border-b border-rose-900/30 flex items-center gap-3">
+              <div className="p-2 bg-rose-900/30 rounded-lg text-rose-455">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-rose-200 uppercase tracking-wider font-mono">
+                  Delete Asset Feed
+                </h3>
+                <p className="text-[10px] text-rose-400 font-medium">Critical Action Required</p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-xs text-slate-350 space-y-3 leading-relaxed">
+                <p>
+                  You are about to permanently delete asset subscription <strong className="text-white font-semibold font-mono">{deletingSymbol.ticker}</strong> ({deletingSymbol.name}).
+                </p>
+                <div className="p-3.5 bg-rose-950/30 border border-rose-900/30 rounded-lg text-rose-350 space-y-2">
+                  <p className="font-bold text-[10px] uppercase font-mono tracking-wider flex items-center gap-1 text-rose-300">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Permanent Cascading Impact
+                  </p>
+                  <p className="text-[11px] text-rose-350">
+                    Deleting this asset feed will permanently delete:
+                  </p>
+                  <ul className="list-disc pl-5 text-[11px] text-rose-300 space-y-1 font-medium">
+                    <li>This asset's subscription and telemetry history</li>
+                    <li>All deployments targetting this asset token</li>
+                    <li>All historical trades, transactions, and positions for those deployments</li>
+                  </ul>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Please type the symbol ticker <span className="font-mono text-white select-all bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">{deletingSymbol.ticker}</span> below to confirm.
+                </p>
+              </div>
+
+              <input
+                type="text"
+                placeholder="Type symbol ticker to confirm"
+                value={deleteConfirmInput}
+                className="w-full bg-slate-950 border border-rose-900/30 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-rose-500 font-mono"
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
+              />
+
+              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDeletingSymbol(null)}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-md font-semibold text-slate-300 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-confirm-delete-symbol"
+                  disabled={deleteConfirmInput !== deletingSymbol.ticker}
+                  onClick={handleDeleteConfirm}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-md transition-colors cursor-pointer"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

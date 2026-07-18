@@ -510,6 +510,106 @@ export default function App() {
     }
   };
 
+  const handleEditAccount = async (id: string, updateData: any) => {
+    try {
+      await api.accounts.update(id, updateData);
+      showSuccess("Account updated successfully");
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to update account: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleDeleteAccount = async (id: string) => {
+    try {
+      await api.accounts.delete(id);
+      showSuccess("Account and all associated deployments, trades, positions, and ledgers deleted successfully");
+      if (selectedEntityId === id) {
+        setSelectedEntityId(null);
+        setActiveScreen('accounts-list');
+      }
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to delete account: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleEditStrategy = async (id: string, updateData: any) => {
+    try {
+      await api.deployments.update(id, updateData);
+      showSuccess("Deployment updated successfully");
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to update deployment: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleDeleteStrategy = async (id: string) => {
+    try {
+      await api.deployments.delete(id);
+      showSuccess("Deployment and all associated trades, positions, and ledgers deleted successfully");
+      if (selectedEntityId === id) {
+        setSelectedEntityId(null);
+        setActiveScreen('strategies-list');
+      }
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to delete deployment: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleEditStrategyTemplate = async (id: string, updateData: any) => {
+    try {
+      await api.strategies.update(id, updateData);
+      showSuccess("Strategy template updated successfully");
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to update strategy template: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleDeleteStrategyTemplate = async (id: string) => {
+    try {
+      await api.strategies.delete(id);
+      showSuccess("Strategy template and all its associated deployments, trades, positions, and ledgers deleted successfully");
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to delete strategy template: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleEditSymbol = async (id: string, updateData: any) => {
+    try {
+      await api.symbols.update(id, updateData);
+      showSuccess("Tracked symbol updated successfully");
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to update tracked symbol: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const handleDeleteSymbol = async (id: string, ticker: string) => {
+    try {
+      await api.symbols.delete(id);
+      showSuccess("Tracked symbol and all associated deployments, trades, positions, and ledgers deleted successfully");
+      if (selectedEntityId === ticker) {
+        setSelectedEntityId(null);
+        setActiveScreen('symbols-list');
+      }
+      await loadData();
+    } catch (err: any) {
+      showError(`Failed to delete tracked symbol: ${err.message}`);
+      throw err;
+    }
+  };
+
   // --- Router & Entity Drilldown Navigation ---
   
   const handleNavigate = (screen: ViewScreen) => {
@@ -588,6 +688,8 @@ export default function App() {
             onToggleBrokerStatus={handleToggleBrokerStatus}
             onNavigateToEntity={handleSelectEntity}
             onRefreshData={loadData}
+            onEditAccount={handleEditAccount}
+            onDeleteAccount={handleDeleteAccount}
           />
         );
       case 'strategies-list':
@@ -601,6 +703,8 @@ export default function App() {
             onUpdateStrategyStatus={handleUpdateStrategyStatus}
             onNavigateToEntity={handleSelectEntity}
             onRefreshData={loadData}
+            onEditStrategy={handleEditStrategy}
+            onDeleteStrategy={handleDeleteStrategy}
           />
         );
       case 'strategy-templates':
@@ -608,6 +712,8 @@ export default function App() {
           <StrategyTemplatesView
             strategyDefinitions={strategyDefinitions}
             onCreateStrategy={handleCreateStrategyDefinition}
+            onEditStrategyTemplate={handleEditStrategyTemplate}
+            onDeleteStrategyTemplate={handleDeleteStrategyTemplate}
           />
         );
       case 'symbols-list':
@@ -618,6 +724,8 @@ export default function App() {
             onNavigateToEntity={handleSelectEntity}
             onRefreshData={loadData}
             onToggleSymbolActive={handleToggleSymbolActive}
+            onEditSymbol={handleEditSymbol}
+            onDeleteSymbol={handleDeleteSymbol}
           />
         );
       case 'strategy-detail':
@@ -634,6 +742,8 @@ export default function App() {
             timezone={timezone}
             onNavigateToScreen={setActiveScreen}
             onRefreshData={loadData}
+            onEditStrategy={handleEditStrategy}
+            onDeleteStrategy={handleDeleteStrategy}
           />
         );
       case 'account-detail':
@@ -650,6 +760,8 @@ export default function App() {
             timezone={timezone}
             onRefreshData={loadData}
             onNavigateToScreen={setActiveScreen}
+            onEditAccount={handleEditAccount}
+            onDeleteAccount={handleDeleteAccount}
           />
         );
       case 'symbol-detail':
@@ -666,6 +778,8 @@ export default function App() {
             onNavigateToScreen={setActiveScreen}
             onRefreshData={loadData}
             onToggleSymbolActive={handleToggleSymbolActive}
+            onEditSymbol={handleEditSymbol}
+            onDeleteSymbol={handleDeleteSymbol}
           />
         );
       case 'profile':

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Strategy from "../models/strategy.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
@@ -85,5 +86,48 @@ export const deleteStrategy = async (userId, id, isAdmin = false) => {
   if (!isAdmin) {
     query.user_id = userId;
   }
-  return await Strategy.findOneAndDelete(query);
+  const strategy = await Strategy.findOne(query);
+  if (!strategy) return null;
+
+  const Deployment = mongoose.model("Deployment");
+  const Position = mongoose.model("Position");
+  const Trade = mongoose.model("Trade");
+  const Ledger = mongoose.model("Ledger");
+
+  // Step 1: Find all deployments linked to this strategy (scoped to user for non-admin)
+  const deploymentQuery = { strategy_id: strategy._id };
+  if (!isAdmin) deploymentQuery.user_id = userId;
+  const deployments = await Deployment.find(deploymentQuery, { _id: 1 });
+  const deploymentIds = deployments.map(d => d._id);
+
+  // Step 2: Cascade-delete all child records by deployment_id first
+  if (deploymentIds.length > 0) {
+    await Trade.deleteMany({ deployment_id: { $in: deploymentIds } });
+    await Position.deleteMany({ deployment_id: { $in: deploymentIds } });
+    await Ledger.deleteMany({ deployment_id: { $in: deploymentIds } });
+  }
+
+  // Step 3: Delete any orphaned records that reference the strategy directly (no deployment)
+  const orphanQuery = { strategy_id: strategy._id };
+  if (!isAdmin) orphanQuery.user_id = userId;
+  await Trade.deleteMany(orphanQuery);
+  await Position.deleteMany(orphanQuery);
+  await Ledger.deleteMany(orphanQuery);
+
+  // Step 4: Delete all deployments for this strategy
+  await Deployment.deleteMany(deploymentQuery);
+
+  // Step 5: Delete the strategy template itself
+  await Strategy.deleteOne({ _id: strategy._id });
+
+  console.log(`[Strategy Service] Cascading delete complete for strategy ${strategy.strategy_name}: removed ${deploymentIds.length} deployments and all associated trades/positions/ledgers.`);
+
+  try {
+    const { syncAllDeploymentsToRedis } = await import("./deployment.js");
+    await syncAllDeploymentsToRedis();
+  } catch (err) {
+    console.error("Failed to sync deployments to Redis after strategy deletion:", err.message);
+  }
+
+  return strategy;
 };

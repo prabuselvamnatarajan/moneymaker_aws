@@ -146,8 +146,39 @@ export const deleteSymbol = async (userId, id) => {
       { user_symbol_id: id }
     ]
   };
-  const result = await UserSymbol.findOneAndDelete(query);
-  if (result && result.is_active) {
+  const result = await UserSymbol.findOne(query);
+  if (!result) return null;
+
+  const Deployment = mongoose.model("Deployment");
+  const Position = mongoose.model("Position");
+  const Trade = mongoose.model("Trade");
+  const Ledger = mongoose.model("Ledger");
+
+  // Step 1: Find all deployments linked to this symbol (owned by this user)
+  const deployments = await Deployment.find({ user_symbol_id: result._id, user_id: userId }, { _id: 1 });
+  const deploymentIds = deployments.map(d => d._id);
+
+  // Step 2: Cascade-delete all child records by deployment_id (most records only reference deployment)
+  if (deploymentIds.length > 0) {
+    await Trade.deleteMany({ deployment_id: { $in: deploymentIds }, user_id: userId });
+    await Position.deleteMany({ deployment_id: { $in: deploymentIds }, user_id: userId });
+    await Ledger.deleteMany({ deployment_id: { $in: deploymentIds }, user_id: userId });
+  }
+
+  // Step 3: Delete any orphaned records that reference the symbol directly (without a deployment)
+  await Trade.deleteMany({ user_symbol_id: result._id, user_id: userId });
+  await Position.deleteMany({ user_symbol_id: result._id, user_id: userId });
+  await Ledger.deleteMany({ user_symbol_id: result._id, user_id: userId });
+
+  // Step 4: Delete all deployments for this symbol
+  await Deployment.deleteMany({ user_symbol_id: result._id, user_id: userId });
+
+  // Step 5: Delete the symbol itself
+  await UserSymbol.deleteOne({ _id: result._id });
+
+  console.log(`[Symbol Service] Cascading delete complete for symbol ${result.symbol}: removed ${deploymentIds.length} deployments and all associated trades/positions/ledgers.`);
+
+  if (result.is_active) {
     await publishSymbolUpdate({
       action: "unsubscribe",
       instrument_token: result.instrument_token,
@@ -155,6 +186,14 @@ export const deleteSymbol = async (userId, id) => {
     });
   }
   await syncAllActiveSymbolsToRedis();
+
+  try {
+    const { syncAllDeploymentsToRedis } = await import("./deployment.js");
+    await syncAllDeploymentsToRedis();
+  } catch (err) {
+    console.error("Failed to sync deployments to Redis after symbol deletion:", err.message);
+  }
+
   return result;
 };
 

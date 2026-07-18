@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Cpu, Search, Plus, Play, Pause, Square, Activity, TrendingUp, 
-  BarChart2, DollarSign, Globe, X, ChevronRight, AlertTriangle, RefreshCw 
+  BarChart2, DollarSign, Globe, X, ChevronRight, AlertTriangle, RefreshCw,
+  Edit, Trash2
 } from 'lucide-react';
 import { Strategy, SymbolData, Account } from '../types';
 
@@ -19,6 +20,8 @@ interface StrategiesListViewProps {
   onUpdateStrategyStatus: (id: string, status: 'active' | 'paused' | 'stopped') => void;
   onNavigateToEntity: (type: 'strategy', id: string) => void;
   onRefreshData?: () => Promise<void> | void;
+  onEditStrategy?: (id: string, updateData: any) => Promise<void> | void;
+  onDeleteStrategy?: (id: string) => Promise<void> | void;
 }
 
 export default function StrategiesListView({
@@ -29,11 +32,66 @@ export default function StrategiesListView({
   onAddStrategy,
   onUpdateStrategyStatus,
   onNavigateToEntity,
-  onRefreshData
+  onRefreshData,
+  onEditStrategy,
+  onDeleteStrategy
 }: StrategiesListViewProps) {
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Edit / Delete state
+  const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
+  const [deletingStrategy, setDeletingStrategy] = useState<Strategy | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+
+  useEffect(() => {
+    if (!deletingStrategy) {
+      setDeleteConfirmInput('');
+    }
+  }, [deletingStrategy]);
+
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editBacktestDate, setEditBacktestDate] = useState('');
+  const [editBacktestSpeed, setEditBacktestSpeed] = useState<number>(1000);
+  const [editUseFullAmount, setEditUseFullAmount] = useState(false);
+
+  const handleOpenEdit = (strat: Strategy) => {
+    setEditingStrategy(strat);
+    setEditName(strat.name);
+    setEditDescription(strat.description || '');
+    setEditBacktestDate(strat.backtestDate || '');
+    setEditBacktestSpeed(strat.backtestSpeed || 1000);
+    setEditUseFullAmount(strat.useFullAmount || false);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStrategy || !onEditStrategy) return;
+    try {
+      await onEditStrategy(editingStrategy.id, {
+        deployment_name: editName,
+        notes: editDescription,
+        backtest_date: editingStrategy.mode === 'backtest' ? editBacktestDate : undefined,
+        backtest_speed: editingStrategy.mode === 'backtest' ? editBacktestSpeed : undefined,
+        use_full_amount: editUseFullAmount,
+      });
+      setEditingStrategy(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingStrategy || !onDeleteStrategy) return;
+    try {
+      await onDeleteStrategy(deletingStrategy.id);
+      setDeletingStrategy(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleRefresh = async () => {
     if (onRefreshData) {
@@ -315,7 +373,31 @@ export default function StrategiesListView({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end">
+                  <div className="flex items-center justify-end gap-1.5">
+                    {onEditStrategy && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEdit(strat);
+                        }}
+                        className="p-1.5 text-indigo-400 hover:text-indigo-300 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded-md transition-colors cursor-pointer"
+                        title="Edit Deployment"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onDeleteStrategy && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingStrategy(strat);
+                        }}
+                        className="p-1.5 text-rose-400 hover:text-rose-350 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded-md transition-colors cursor-pointer"
+                        title="Delete Deployment"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={() => onNavigateToEntity('strategy', strat.id)}
                       className="p-2 text-slate-500 hover:text-slate-200 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded-lg transition-all flex items-center gap-1 text-xs cursor-pointer group-hover:translate-x-0.5"
@@ -525,6 +607,173 @@ export default function StrategiesListView({
 
             </form>
 
+          </div>
+        </div>
+      )}
+      {/* Edit Deployment Modal */}
+      {editingStrategy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl animate-in fade-in duration-200">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                <Edit className="w-4 h-4 text-indigo-400" />
+                Edit Deployment
+              </h3>
+              <button 
+                onClick={() => setEditingStrategy(null)}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-sm cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Deployment Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Notes / Description</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 h-20 resize-none"
+                />
+              </div>
+
+              {editingStrategy.mode === 'backtest' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Backtest Date</label>
+                    <input
+                      type="date"
+                      required
+                      value={editBacktestDate}
+                      onChange={(e) => setEditBacktestDate(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-105 focus:outline-hidden focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Ticks Pace (ms)</label>
+                    <input
+                      type="number"
+                      required
+                      min="50"
+                      max="10000"
+                      value={editBacktestSpeed}
+                      onChange={(e) => setEditBacktestSpeed(parseInt(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-105 focus:outline-hidden focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 py-1">
+                <input
+                  type="checkbox"
+                  id="edit-use-full-amount"
+                  checked={editUseFullAmount}
+                  onChange={(e) => setEditUseFullAmount(e.target.checked)}
+                  className="w-3.5 h-3.5 bg-slate-955 border-slate-800 rounded focus:ring-0 text-indigo-600 focus:ring-offset-0"
+                />
+                <label htmlFor="edit-use-full-amount" className="text-xs text-slate-300 select-none">
+                  Allocate Full Account Buying Power
+                </label>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setEditingStrategy(null)}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-md font-semibold text-slate-300 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-md transition-colors cursor-pointer"
+                >
+                  Update Deployment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Deployment Confirmation warning */}
+      {deletingStrategy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-rose-955 rounded-xl overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+            <div className="p-6 bg-rose-950/20 border-b border-rose-900/30 flex items-center gap-3">
+              <div className="p-2 bg-rose-900/30 rounded-lg text-rose-455">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-rose-200 uppercase tracking-wider font-mono">
+                  Delete Deployment Bot
+                </h3>
+                <p className="text-[10px] text-rose-400 font-medium">Critical Action Required</p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-xs text-slate-300 space-y-3 leading-relaxed">
+                <p>
+                  You are about to permanently delete deployment bot workload <strong className="text-white font-semibold font-mono">{deletingStrategy.name}</strong> ({deletingStrategy.id}).
+                </p>
+                <div className="p-3.5 bg-rose-950/30 border border-rose-900/30 rounded-lg text-rose-350 space-y-2">
+                  <p className="font-bold text-[10px] uppercase font-mono tracking-wider flex items-center gap-1 text-rose-300">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Permanent Cascading Impact
+                  </p>
+                  <p className="text-[11px] text-rose-300">
+                    Deleting this deployment bot will permanently delete:
+                  </p>
+                  <ul className="list-disc pl-5 text-[11px] text-rose-300 space-y-1 font-medium">
+                    <li>This deployment bot container settings</li>
+                    <li>All historical trades/transactions executed by this bot instance</li>
+                    <li>All positions, ledgers, and Redis stats tracking this workload</li>
+                  </ul>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Please type the deployment name <span className="font-mono text-white select-all bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">{deletingStrategy.name}</span> below to confirm.
+                </p>
+              </div>
+
+              <input
+                type="text"
+                placeholder="Type deployment name to confirm"
+                value={deleteConfirmInput}
+                className="w-full bg-slate-950 border border-rose-900/30 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-rose-500 font-mono"
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
+              />
+
+              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDeletingStrategy(null)}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-md font-semibold text-slate-300 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-confirm-delete-dep"
+                  disabled={deleteConfirmInput !== deletingStrategy.name}
+                  onClick={handleDeleteConfirm}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-md transition-colors cursor-pointer"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
