@@ -121,13 +121,33 @@ export const deleteAccount = async (userId, id, isAdmin = false) => {
   const Trade = mongoose.model("Trade");
   const Ledger = mongoose.model("Ledger");
 
-  // Cascade delete all associated entities: deployments, positions, trades, ledgers
-  await Deployment.deleteMany({ account_id: account._id, user_id: userId });
-  await Position.deleteMany({ account_id: account._id, user_id: userId });
-  await Trade.deleteMany({ account_id: account._id, user_id: userId });
-  await Ledger.deleteMany({ account_id: account._id, user_id: userId });
+  // Step 1: Find all deployments linked to this account (scoped to user for non-admin)
+  const deploymentQuery = { account_id: account._id };
+  if (!isAdmin) deploymentQuery.user_id = userId;
+  const deployments = await Deployment.find(deploymentQuery, { _id: 1 });
+  const deploymentIds = deployments.map(d => d._id);
 
+  // Step 2: Cascade-delete all child records by deployment_id first
+  if (deploymentIds.length > 0) {
+    await Trade.deleteMany({ deployment_id: { $in: deploymentIds } });
+    await Position.deleteMany({ deployment_id: { $in: deploymentIds } });
+    await Ledger.deleteMany({ deployment_id: { $in: deploymentIds } });
+  }
+
+  // Step 3: Delete any orphaned records that reference the account directly (no deployment)
+  const orphanQuery = { account_id: account._id };
+  if (!isAdmin) orphanQuery.user_id = userId;
+  await Trade.deleteMany(orphanQuery);
+  await Position.deleteMany(orphanQuery);
+  await Ledger.deleteMany(orphanQuery);
+
+  // Step 4: Delete all deployments for this account
+  await Deployment.deleteMany(deploymentQuery);
+
+  // Step 5: Delete the account itself
   await Account.deleteOne({ _id: account._id });
+
+  console.log(`[Account Service] Cascading delete complete for account ${account.account_name}: removed ${deploymentIds.length} deployments and all associated trades/positions/ledgers.`);
 
   try {
     const { syncAllDeploymentsToRedis } = await import("./deployment.js");

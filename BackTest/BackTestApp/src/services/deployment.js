@@ -274,12 +274,14 @@ export const deleteDeployment = async (userId, id) => {
   const deployment = await Deployment.findOne({ _id: id, user_id: userId });
   if (!deployment) return null;
 
-  // Cascade delete all associated entities: positions, trades, ledgers
-  await Position.deleteMany({ deployment_id: deployment._id, user_id: userId });
-  await Trade.deleteMany({ deployment_id: deployment._id, user_id: userId });
-  await Ledger.deleteMany({ deployment_id: deployment._id, user_id: userId });
+  // Cascade delete all child records: positions, trades, ledgers (all linked via deployment_id)
+  const deletedPositions = await Position.deleteMany({ deployment_id: deployment._id, user_id: userId });
+  const deletedTrades    = await Trade.deleteMany({ deployment_id: deployment._id, user_id: userId });
+  const deletedLedger    = await Ledger.deleteMany({ deployment_id: deployment._id, user_id: userId });
 
   await Deployment.deleteOne({ _id: deployment._id });
+
+  console.log(`[Deployment Service] Cascading delete complete for deployment ${deployment.deployment_name || deployment._id}: removed ${deletedTrades.deletedCount} trades, ${deletedPositions.deletedCount} positions, ${deletedLedger.deletedCount} ledger entries.`);
 
   await syncAllDeploymentsToRedis();
   return deployment;

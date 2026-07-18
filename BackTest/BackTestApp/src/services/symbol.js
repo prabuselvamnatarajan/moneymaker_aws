@@ -154,13 +154,29 @@ export const deleteSymbol = async (userId, id) => {
   const Trade = mongoose.model("Trade");
   const Ledger = mongoose.model("Ledger");
 
-  // Cascade delete all associated entities: deployments, positions, trades, ledgers
-  await Deployment.deleteMany({ user_symbol_id: result._id, user_id: userId });
-  await Position.deleteMany({ user_symbol_id: result._id, user_id: userId });
+  // Step 1: Find all deployments linked to this symbol (owned by this user)
+  const deployments = await Deployment.find({ user_symbol_id: result._id, user_id: userId }, { _id: 1 });
+  const deploymentIds = deployments.map(d => d._id);
+
+  // Step 2: Cascade-delete all child records by deployment_id (most records only reference deployment)
+  if (deploymentIds.length > 0) {
+    await Trade.deleteMany({ deployment_id: { $in: deploymentIds }, user_id: userId });
+    await Position.deleteMany({ deployment_id: { $in: deploymentIds }, user_id: userId });
+    await Ledger.deleteMany({ deployment_id: { $in: deploymentIds }, user_id: userId });
+  }
+
+  // Step 3: Delete any orphaned records that reference the symbol directly (without a deployment)
   await Trade.deleteMany({ user_symbol_id: result._id, user_id: userId });
+  await Position.deleteMany({ user_symbol_id: result._id, user_id: userId });
   await Ledger.deleteMany({ user_symbol_id: result._id, user_id: userId });
 
+  // Step 4: Delete all deployments for this symbol
+  await Deployment.deleteMany({ user_symbol_id: result._id, user_id: userId });
+
+  // Step 5: Delete the symbol itself
   await UserSymbol.deleteOne({ _id: result._id });
+
+  console.log(`[Symbol Service] Cascading delete complete for symbol ${result.symbol}: removed ${deploymentIds.length} deployments and all associated trades/positions/ledgers.`);
 
   if (result.is_active) {
     await publishSymbolUpdate({
