@@ -267,6 +267,29 @@ export default function StrategyDetailsView({
             </span>
           </div>
           <p className="text-xs text-slate-400 max-w-xl font-sans leading-relaxed">{strategy.description}</p>
+          {strategy.symbolControl?.enabled && (
+            <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-mono">
+              <span className="px-2 py-0.5 rounded-sm bg-indigo-950/80 text-indigo-300 border border-indigo-900">
+                DYNAMIC {strategy.symbolControl.moneyness}-{strategy.symbolControl.offset} {strategy.symbolControl.optionType}
+              </span>
+              <span className="px-2 py-0.5 rounded-sm bg-slate-900 text-slate-300 border border-slate-800">
+                Underlying: {strategy.symbolControl.underlyingInstrumentToken || '—'}
+              </span>
+              <span className="px-2 py-0.5 rounded-sm bg-slate-900 text-slate-300 border border-slate-800">
+                Last strike: {strategy.symbolControl.lastResolvedStrike ?? '—'}
+              </span>
+              {strategy.symbolControl.pendingResolve && (
+                <span className="px-2 py-0.5 rounded-sm bg-amber-950 text-amber-400 border border-amber-900">
+                  Pending resolve (open position)
+                </span>
+              )}
+              {strategy.symbolControl.lastResolveError && (
+                <span className="px-2 py-0.5 rounded-sm bg-rose-950 text-rose-400 border border-rose-900">
+                  {strategy.symbolControl.lastResolveError}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Operational state controllers */}

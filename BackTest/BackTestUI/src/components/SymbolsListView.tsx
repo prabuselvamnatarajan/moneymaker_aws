@@ -58,6 +58,7 @@ export default function SymbolsListView({
   const [editDescription, setEditDescription] = useState('');
   const [editInstrumentClass, setEditInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
   const [editIsActive, setEditIsActive] = useState(true);
+  const [editStrikePriceDiff, setEditStrikePriceDiff] = useState<number>(50);
 
   const handleOpenEdit = (sym: SymbolData) => {
     setEditingSymbol(sym);
@@ -67,6 +68,7 @@ export default function SymbolsListView({
     setEditDescription(sym.description || '');
     setEditInstrumentClass((sym.instrumentClass || 'EQUITY') as any);
     setEditIsActive(sym.isActive);
+    setEditStrikePriceDiff(sym.strikePriceDiff || 50);
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -79,7 +81,8 @@ export default function SymbolsListView({
         instrument_token: editInstrumentToken.trim(),
         description: editDescription,
         instrument_class: editInstrumentClass,
-        is_active: editIsActive
+        is_active: editIsActive,
+        ...(editInstrumentClass === 'INDEX' ? { strike_price_diff: editStrikePriceDiff } : {}),
       });
       setEditingSymbol(null);
       await fetchTableData();
@@ -111,6 +114,7 @@ export default function SymbolsListView({
   const [instrumentToken, setInstrumentToken] = useState('');
   const [description, setDescription] = useState('');
   const [instrumentClass, setInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
+  const [strikePriceDiff, setStrikePriceDiff] = useState<number>(50);
 
   // Bulk addition form fields
   const [bulkSymbol, setBulkSymbol] = useState('');
@@ -192,6 +196,7 @@ export default function SymbolsListView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!instrumentToken || !name || !exchange) return;
+    if (instrumentClass === 'INDEX' && !(strikePriceDiff > 0)) return;
 
     const newSym: SymbolData = {
       ticker: instrumentToken.trim(),
@@ -204,6 +209,7 @@ export default function SymbolsListView({
       instrumentToken: instrumentToken.trim(),
       description,
       instrumentClass,
+      strikePriceDiff: instrumentClass === 'INDEX' ? strikePriceDiff : null,
     };
 
     onAddSymbol(newSym);
@@ -214,6 +220,7 @@ export default function SymbolsListView({
     setInstrumentToken('');
     setDescription('');
     setInstrumentClass('EQUITY');
+    setStrikePriceDiff(50);
     setShowAddForm(false);
     // Re-fetch table after adding
     setTimeout(() => fetchTableData(), 500);
@@ -645,6 +652,22 @@ export default function SymbolsListView({
                 </select>
               </div>
 
+              {instrumentClass === 'INDEX' && (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strike Price Diff</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={strikePriceDiff}
+                    onChange={(e) => setStrikePriceDiff(parseInt(e.target.value, 10) || 0)}
+                    placeholder="e.g. 50 for Nifty, 100 for Bank Nifty"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-500">Strike spacing used for dynamic option symbol control (Nifty=50, Bank Nifty=100).</p>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Description (Optional)</label>
                 <textarea
@@ -867,6 +890,20 @@ export default function SymbolsListView({
                   </select>
                 </div>
               </div>
+
+              {editInstrumentClass === 'INDEX' && (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strike Price Diff</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={editStrikePriceDiff}
+                    onChange={(e) => setEditStrikePriceDiff(parseInt(e.target.value, 10) || 0)}
+                    className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Token / Ticker</label>

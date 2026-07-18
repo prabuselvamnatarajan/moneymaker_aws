@@ -36,6 +36,11 @@ const userSymbolSchema = new mongoose.Schema({
     type: String,
     default: "EQUITY",
   },
+  /** Strike grid step for INDEX underlyings (e.g. 50 for Nifty, 100 for Bank Nifty). */
+  strike_price_diff: {
+    type: Number,
+    default: null,
+  },
   added_at: {
     type: Date,
     default: Date.now,
@@ -44,6 +49,16 @@ const userSymbolSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+});
+
+userSymbolSchema.pre("validate", function (next) {
+  const cls = String(this.instrument_class || "").toUpperCase();
+  if (cls === "INDEX") {
+    if (this.strike_price_diff == null || !(Number(this.strike_price_diff) > 0)) {
+      return next(new Error("strike_price_diff is required for INDEX symbols and must be > 0"));
+    }
+  }
+  next();
 });
 
 // Compound unique indexes

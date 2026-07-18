@@ -24,6 +24,7 @@ build_kafka_service ./kafka/services/wsDataSplitterConsumer wsdatasplitterconsum
 build_kafka_service ./kafka/services/storerConsumer storer-consumer:latest
 build_kafka_service ./kafka/services/StrategyChooserConsumer strategy-chooser-consumer:latest
 build_kafka_service ./kafka/services/positionTrackerConsumer position-tracker-consumer:latest
+build_kafka_service ./kafka/services/deploymentSymbolResolverConsumer deployment-symbol-resolver-consumer:latest
 
 # BackTest Services
 docker build -t backteststreamer:latest ./BackTest/BacktestStreamer

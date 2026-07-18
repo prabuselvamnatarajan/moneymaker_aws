@@ -52,6 +52,8 @@ export function mapSymbol(backendSym: any): SymbolData {
     description: backendSym.description || '',
     instrumentClass: instClass,
     isActive: backendSym.is_active !== false,
+    strikePriceDiff:
+      backendSym.strike_price_diff != null ? Number(backendSym.strike_price_diff) : null,
   };
 }
 
@@ -173,6 +175,8 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     mappedStatus = 'paused';
   }
 
+  const sc = backendDeployment.symbol_control;
+
   return {
     id: backendDeployment._id || backendDeployment.deployment_id,
     name: backendDeployment.deployment_name || 'Algorithmic Strategy',
@@ -191,6 +195,23 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     description: backendDeployment.notes || 'Algorithmic deployment workload.',
     accountId: backendDeployment.account_id ? String(backendDeployment.account_id) : undefined,
     useFullAmount: !!backendDeployment.use_full_amount,
+    symbolControl: sc
+      ? {
+          enabled: !!sc.enabled,
+          underlyingUserSymbolId: sc.underlying_user_symbol_id
+            ? String(sc.underlying_user_symbol_id)
+            : undefined,
+          underlyingInstrumentToken: sc.underlying_instrument_token || undefined,
+          moneyness: sc.moneyness,
+          offset: sc.offset,
+          optionType: sc.option_type,
+          expiry: sc.expiry,
+          lastResolvedStrike: sc.last_resolved_strike ?? null,
+          lastResolvedAt: sc.last_resolved_at || null,
+          pendingResolve: !!sc.pending_resolve,
+          lastResolveError: sc.last_resolve_error || null,
+        }
+      : undefined,
   };
 }
 

@@ -64,6 +64,7 @@ export default function SymbolDetailsView({
   const [editDescription, setEditDescription] = useState('');
   const [editInstrumentClass, setEditInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
   const [editIsActive, setEditIsActive] = useState(true);
+  const [editStrikePriceDiff, setEditStrikePriceDiff] = useState<number>(50);
 
   const handleOpenEdit = (sym: SymbolData) => {
     setEditingSymbol(sym);
@@ -73,6 +74,7 @@ export default function SymbolDetailsView({
     setEditDescription(sym.description || '');
     setEditInstrumentClass((sym.instrumentClass || 'EQUITY') as any);
     setEditIsActive(sym.isActive);
+    setEditStrikePriceDiff(sym.strikePriceDiff || 50);
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -85,7 +87,8 @@ export default function SymbolDetailsView({
         instrument_token: editInstrumentToken.trim(),
         description: editDescription,
         instrument_class: editInstrumentClass,
-        is_active: editIsActive
+        is_active: editIsActive,
+        ...(editInstrumentClass === 'INDEX' ? { strike_price_diff: editStrikePriceDiff } : {}),
       });
       setEditingSymbol(null);
       if (onRefreshData) await onRefreshData();
@@ -727,6 +730,20 @@ export default function SymbolDetailsView({
                   </select>
                 </div>
               </div>
+
+              {editInstrumentClass === 'INDEX' && (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strike Price Diff</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={editStrikePriceDiff}
+                    onChange={(e) => setEditStrikePriceDiff(parseInt(e.target.value, 10) || 0)}
+                    className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Instrument Token / Ticker</label>

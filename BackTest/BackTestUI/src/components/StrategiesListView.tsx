@@ -16,7 +16,20 @@ interface StrategiesListViewProps {
   symbols: SymbolData[];
   accounts: Account[];
   strategyDefinitions?: any[];
-  onAddStrategy: (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId: string) => void;
+  onAddStrategy: (
+    newStrat: Strategy,
+    accountId: string,
+    symbol: string,
+    existingStrategyId: string,
+    symbolControl?: {
+      enabled: boolean;
+      underlyingUserSymbolId: string;
+      moneyness: 'ITM' | 'ATM' | 'OTM';
+      offset: number;
+      optionType: 'CE' | 'PE';
+      expiry: string;
+    }
+  ) => void;
   onUpdateStrategyStatus: (id: string, status: 'active' | 'paused' | 'stopped') => void;
   onNavigateToEntity: (type: 'strategy', id: string) => void;
   onRefreshData?: () => Promise<void> | void;
@@ -115,6 +128,16 @@ export default function StrategiesListView({
   const [backtestDate, setBacktestDate] = useState(new Date().toISOString().slice(0, 10));
   const [backtestSpeed, setBacktestSpeed] = useState(1000);
   const [useFullAmount, setUseFullAmount] = useState(false);
+  const [dynamicSymbol, setDynamicSymbol] = useState(false);
+  const [underlyingSymbolId, setUnderlyingSymbolId] = useState('');
+  const [moneyness, setMoneyness] = useState<'ITM' | 'ATM' | 'OTM'>('ITM');
+  const [offset, setOffset] = useState(1);
+  const [optionType, setOptionType] = useState<'CE' | 'PE'>('CE');
+  const [optionExpiry, setOptionExpiry] = useState('current_week');
+
+  const indexSymbols = symbols.filter(
+    (s) => s.isActive && String(s.instrumentClass || '').toUpperCase() === 'INDEX' && (s.strikePriceDiff || 0) > 0
+  );
 
   // Computed metrics
   const visibleStrategies = strategies.filter(s => s.name.toLowerCase() !== 'manual');
@@ -144,9 +167,12 @@ export default function StrategiesListView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!deploymentName || !selectedAccountId || !selectedStrategyId) return;
+    if (dynamicSymbol && !underlyingSymbolId) return;
+    if (!dynamicSymbol && selectedSymbols.length === 0) return;
 
     const found = strategyDefinitions.find(s => s._id === selectedStrategyId);
     const targetStrategyName = found ? found.strategy_name : 'Algorithmic Strategy';
+    const underlying = indexSymbols.find((s) => s.id === underlyingSymbolId);
 
     const newStrat: Strategy = {
       id: `STRAT-0${strategies.length + 1}`,
@@ -158,7 +184,11 @@ export default function StrategiesListView({
       winRate: 50.0,
       lastDeployTime: new Date().toISOString(),
       openPositions: 0,
-      symbols: selectedSymbols.length > 0 ? selectedSymbols : ['NSE_INDEX|Nifty 50'],
+      symbols: dynamicSymbol
+        ? [underlying?.ticker || 'DYNAMIC']
+        : selectedSymbols.length > 0
+          ? selectedSymbols
+          : ['NSE_INDEX|Nifty 50'],
       description: description || `Deployed ${targetStrategyName} bot workload.`,
       backtestDate: mode === 'backtest' ? backtestDate : undefined,
       backtestSpeed: mode === 'backtest' ? backtestSpeed : undefined,
@@ -166,7 +196,22 @@ export default function StrategiesListView({
     };
 
     const targetSymbol = selectedSymbols.length > 0 ? selectedSymbols[0] : 'NSE_INDEX|Nifty 50';
-    onAddStrategy(newStrat, selectedAccountId, targetSymbol, selectedStrategyId);
+    onAddStrategy(
+      newStrat,
+      selectedAccountId,
+      targetSymbol,
+      selectedStrategyId,
+      dynamicSymbol
+        ? {
+            enabled: true,
+            underlyingUserSymbolId: underlyingSymbolId,
+            moneyness,
+            offset: moneyness === 'ATM' ? 1 : offset,
+            optionType,
+            expiry: optionExpiry || 'current_week',
+          }
+        : undefined
+    );
     
     // Reset Form
     setDeploymentName('');
@@ -177,6 +222,12 @@ export default function StrategiesListView({
     setSelectedAccountId('');
     setSelectedStrategyId('');
     setUseFullAmount(false);
+    setDynamicSymbol(false);
+    setUnderlyingSymbolId('');
+    setMoneyness('ITM');
+    setOffset(1);
+    setOptionType('CE');
+    setOptionExpiry('current_week');
     setShowAddForm(false);
   };
 
@@ -303,6 +354,14 @@ export default function StrategiesListView({
                         }`}>
                           {strat.mode} deployment
                         </span>
+                        {strat.symbolControl?.enabled && (
+                          <span className="text-[9px] font-black tracking-wider uppercase px-2 py-0.5 rounded-sm font-mono border bg-violet-950/40 text-violet-300 border-violet-900/30">
+                            {strat.symbolControl.moneyness}-{strat.symbolControl.offset} {strat.symbolControl.optionType}
+                            {strat.symbolControl.lastResolvedStrike != null
+                              ? ` @${strat.symbolControl.lastResolvedStrike}`
+                              : ''}
+                          </span>
+                        )}
 
                         <span className={`w-1.5 h-1.5 rounded-full ${
                           strat.status === 'active' ? 'bg-emerald-500 animate-pulse' :
@@ -420,9 +479,9 @@ export default function StrategiesListView({
       {/* Deploy strategy popup overlay */}
       {showAddForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl animate-in fade-in duration-200">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-xl shadow-2xl animate-in fade-in duration-200">
             
-            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center sticky top-0 bg-slate-900 z-10">
               <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
                 <Cpu className="w-4 h-4 text-indigo-400" />
                 Deploy Strategy template
@@ -565,7 +624,90 @@ export default function StrategiesListView({
                 </label>
               </div>
 
-              {/* Targeted Market Symbols */}
+              <div className="flex items-center gap-2 py-1">
+                <input
+                  id="chk-dynamic-symbol"
+                  type="checkbox"
+                  checked={dynamicSymbol}
+                  onChange={(e) => setDynamicSymbol(e.target.checked)}
+                  className="w-4 h-4 rounded-sm bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="chk-dynamic-symbol" className="text-[11px] text-slate-350 select-none cursor-pointer font-bold font-sans">
+                  Dynamic option symbol (track underlying strike grid)
+                </label>
+              </div>
+
+              {dynamicSymbol ? (
+                <div className="space-y-3 border border-indigo-950 bg-indigo-950/20 p-3 rounded-lg">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Underlying INDEX</label>
+                    <select
+                      required
+                      value={underlyingSymbolId}
+                      onChange={(e) => setUnderlyingSymbolId(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                    >
+                      <option value="">Select INDEX with strike_price_diff...</option>
+                      {indexSymbols.map((sym) => (
+                        <option key={sym.id || sym.ticker} value={sym.id}>
+                          {sym.ticker} (diff={sym.strikePriceDiff})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Moneyness</label>
+                      <select
+                        value={moneyness}
+                        onChange={(e) => setMoneyness(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200"
+                      >
+                        <option value="ITM">ITM</option>
+                        <option value="ATM">ATM</option>
+                        <option value="OTM">OTM</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Offset</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        disabled={moneyness === 'ATM'}
+                        value={offset}
+                        onChange={(e) => setOffset(parseInt(e.target.value, 10) || 1)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono disabled:opacity-50"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Option Type</label>
+                      <select
+                        value={optionType}
+                        onChange={(e) => setOptionType(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200"
+                      >
+                        <option value="CE">CE (Call)</option>
+                        <option value="PE">PE (Put)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Expiry</label>
+                      <input
+                        type="text"
+                        value={optionExpiry}
+                        onChange={(e) => setOptionExpiry(e.target.value)}
+                        placeholder="current_week or YYYY-MM-DD"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Option symbol is resolved from the chain (e.g. ITM-1 CE) and remapped when the underlying LTP crosses a strike grid level—only while the position is flat.
+                  </p>
+                </div>
+              ) : (
+              /* Targeted Market Symbols */
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Targeted Market Symbols</label>
                 <div className="flex flex-wrap gap-1.5 p-2 bg-slate-950 rounded border border-slate-800 max-h-24 overflow-y-auto font-sans">
@@ -588,6 +730,7 @@ export default function StrategiesListView({
                   })}
                 </div>
               </div>
+              )}
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
                 <button

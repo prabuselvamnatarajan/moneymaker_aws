@@ -694,6 +694,18 @@ export const createTrade = async (tradeData) => {
       }
     }
 
+    // After a full flat close, flush any deferred symbol_control re-resolve
+    if (isFullClose && deployment?._id) {
+      try {
+        const { flushPendingSymbolResolve } = await import("./deployment.js");
+        await flushPendingSymbolResolve(deployment._id);
+      } catch (err) {
+        console.error(
+          `[createTrade] Failed to flush pending symbol resolve for ${deployment._id}: ${err.message}`
+        );
+      }
+    }
+
     return { trade, account, closing_balance };
   } catch (error) {
     await session.abortTransaction();
