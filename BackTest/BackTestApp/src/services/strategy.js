@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Strategy from "../models/strategy.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
@@ -85,5 +86,28 @@ export const deleteStrategy = async (userId, id, isAdmin = false) => {
   if (!isAdmin) {
     query.user_id = userId;
   }
-  return await Strategy.findOneAndDelete(query);
+  const strategy = await Strategy.findOne(query);
+  if (!strategy) return null;
+
+  const Deployment = mongoose.model("Deployment");
+  const Position = mongoose.model("Position");
+  const Trade = mongoose.model("Trade");
+  const Ledger = mongoose.model("Ledger");
+
+  // Cascade delete all associated entities: deployments, positions, trades, ledgers
+  await Deployment.deleteMany({ strategy_id: strategy._id, user_id: userId });
+  await Position.deleteMany({ strategy_id: strategy._id, user_id: userId });
+  await Trade.deleteMany({ strategy_id: strategy._id, user_id: userId });
+  await Ledger.deleteMany({ strategy_id: strategy._id, user_id: userId });
+
+  await Strategy.deleteOne({ _id: strategy._id });
+
+  try {
+    const { syncAllDeploymentsToRedis } = await import("./deployment.js");
+    await syncAllDeploymentsToRedis();
+  } catch (err) {
+    console.error("Failed to sync deployments to Redis after strategy deletion:", err.message);
+  }
+
+  return strategy;
 };

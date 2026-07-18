@@ -146,8 +146,23 @@ export const deleteSymbol = async (userId, id) => {
       { user_symbol_id: id }
     ]
   };
-  const result = await UserSymbol.findOneAndDelete(query);
-  if (result && result.is_active) {
+  const result = await UserSymbol.findOne(query);
+  if (!result) return null;
+
+  const Deployment = mongoose.model("Deployment");
+  const Position = mongoose.model("Position");
+  const Trade = mongoose.model("Trade");
+  const Ledger = mongoose.model("Ledger");
+
+  // Cascade delete all associated entities: deployments, positions, trades, ledgers
+  await Deployment.deleteMany({ user_symbol_id: result._id, user_id: userId });
+  await Position.deleteMany({ user_symbol_id: result._id, user_id: userId });
+  await Trade.deleteMany({ user_symbol_id: result._id, user_id: userId });
+  await Ledger.deleteMany({ user_symbol_id: result._id, user_id: userId });
+
+  await UserSymbol.deleteOne({ _id: result._id });
+
+  if (result.is_active) {
     await publishSymbolUpdate({
       action: "unsubscribe",
       instrument_token: result.instrument_token,
@@ -155,6 +170,14 @@ export const deleteSymbol = async (userId, id) => {
     });
   }
   await syncAllActiveSymbolsToRedis();
+
+  try {
+    const { syncAllDeploymentsToRedis } = await import("./deployment.js");
+    await syncAllDeploymentsToRedis();
+  } catch (err) {
+    console.error("Failed to sync deployments to Redis after symbol deletion:", err.message);
+  }
+
   return result;
 };
 

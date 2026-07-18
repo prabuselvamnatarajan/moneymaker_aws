@@ -113,5 +113,28 @@ export const deleteAccount = async (userId, id, isAdmin = false) => {
   if (!isAdmin) {
     query.user_id = userId;
   }
-  return await Account.findOneAndDelete(query);
+  const account = await Account.findOne(query);
+  if (!account) return null;
+
+  const Deployment = mongoose.model("Deployment");
+  const Position = mongoose.model("Position");
+  const Trade = mongoose.model("Trade");
+  const Ledger = mongoose.model("Ledger");
+
+  // Cascade delete all associated entities: deployments, positions, trades, ledgers
+  await Deployment.deleteMany({ account_id: account._id, user_id: userId });
+  await Position.deleteMany({ account_id: account._id, user_id: userId });
+  await Trade.deleteMany({ account_id: account._id, user_id: userId });
+  await Ledger.deleteMany({ account_id: account._id, user_id: userId });
+
+  await Account.deleteOne({ _id: account._id });
+
+  try {
+    const { syncAllDeploymentsToRedis } = await import("./deployment.js");
+    await syncAllDeploymentsToRedis();
+  } catch (err) {
+    console.error("Failed to sync deployments to Redis after account deletion:", err.message);
+  }
+
+  return account;
 };

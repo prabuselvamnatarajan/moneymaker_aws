@@ -271,9 +271,18 @@ export const updateDeployment = async (userId, id, updateData) => {
 };
 
 export const deleteDeployment = async (userId, id) => {
-  const result = await Deployment.findOneAndDelete({ _id: id, user_id: userId });
+  const deployment = await Deployment.findOne({ _id: id, user_id: userId });
+  if (!deployment) return null;
+
+  // Cascade delete all associated entities: positions, trades, ledgers
+  await Position.deleteMany({ deployment_id: deployment._id, user_id: userId });
+  await Trade.deleteMany({ deployment_id: deployment._id, user_id: userId });
+  await Ledger.deleteMany({ deployment_id: deployment._id, user_id: userId });
+
+  await Deployment.deleteOne({ _id: deployment._id });
+
   await syncAllDeploymentsToRedis();
-  return result;
+  return deployment;
 };
 
 // --- Lifecycle Actions ---
