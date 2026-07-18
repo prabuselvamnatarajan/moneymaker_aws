@@ -128,6 +128,15 @@ async function callResolveApi(deploymentId, ltp, referenceStrike) {
   return body;
 }
 
+async function refreshDepFromRedis(symbol, dep) {
+  const payload = await getJson(`symbol_control:deps:${symbol}`);
+  const fresh = payload?.deployments?.find((d) => d.deployment_id === dep.deployment_id);
+  if (fresh) {
+    dep.pending_resolve = !!fresh.pending_resolve;
+    dep.last_resolved_strike = fresh.last_resolved_strike ?? dep.last_resolved_strike;
+  }
+}
+
 async function handleTick(symbol, data) {
   const deps = interestMap.get(symbol);
   if (!deps || deps.length === 0) {
@@ -149,7 +158,10 @@ async function handleTick(symbol, data) {
 
         // Already waiting for flat — flush happens in BackTestApp on position close
         if (dep.pending_resolve) {
-          return;
+          await refreshDepFromRedis(symbol, dep);
+          if (dep.pending_resolve) {
+            return;
+          }
         }
 
         const referenceStrike = computeReferenceStrike(ltp, strikeDiff);
@@ -169,13 +181,13 @@ async function handleTick(symbol, data) {
         if (now - last < RESOLVE_THROTTLE_MS) {
           return;
         }
-        lastResolveAt.set(dep.deployment_id, now);
 
         logger.info(
           `Strike grid change for ${symbol}: LTP=${ltp} ref=${referenceStrike} last=${dep.last_resolved_strike} → resolve deployment ${dep.deployment_id}`
         );
 
         const result = await callResolveApi(dep.deployment_id, ltp, referenceStrike);
+        lastResolveAt.set(dep.deployment_id, Date.now());
         if (result?.data?.deferred) {
           dep.pending_resolve = true;
           logger.info(

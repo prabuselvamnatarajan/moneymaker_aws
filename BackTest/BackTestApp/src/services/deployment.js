@@ -128,6 +128,7 @@ export const syncControlledDeploymentsIndex = async () => {
     const controlled = await Deployment.find({
       current_status: "RUNNING",
       "symbol_control.enabled": true,
+      strategy_mode: { $ne: "BACKTEST" },
     }).lean();
 
     const byUnderlying = {};
@@ -391,6 +392,28 @@ const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
     await underlying.save();
   }
   await subscribeSymbolToken(underlying.instrument_token, userId);
+
+  if (deploymentData.strategy_mode === "BACKTEST") {
+    return {
+      ...deploymentData,
+      user_symbol_id: underlying._id,
+      instrument_token: underlying.instrument_token,
+      symbol: underlying.instrument_token,
+      symbol_control: {
+        enabled: true,
+        underlying_user_symbol_id: underlying._id,
+        underlying_instrument_token: underlying.instrument_token,
+        moneyness: String(sc.moneyness).toUpperCase(),
+        offset: sc.offset || 1,
+        option_type: String(sc.option_type).toUpperCase(),
+        expiry: expiryDate,
+        last_resolved_strike: null,
+        last_resolved_at: null,
+        pending_resolve: false,
+        last_resolve_error: null,
+      },
+    };
+  }
 
   const resolved = await resolveOptionSymbol({
     userId,
@@ -786,7 +809,8 @@ export const transitionDeployment = async (userId, id, action) => {
   // Re-resolve option on start/resume for controlled deployments (if flat)
   if (
     (action === "start" || action === "restart" || action === "resume") &&
-    deployment.symbol_control?.enabled
+    deployment.symbol_control?.enabled &&
+    deployment.strategy_mode !== "BACKTEST"
   ) {
     await deployment.save();
     try {

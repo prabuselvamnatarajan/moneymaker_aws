@@ -368,7 +368,7 @@ export const resolveBulkOptionSelections = async ({
   const chainItems = await fetchOptionChain(
     underlyingSymbol,
     userId,
-    expiry || new Date().toISOString().slice(0, 10)
+    expiry || "current_week"
   );
   const { selectedStrikesCE, selectedStrikesPE, atmStrike } = selectStrikesByMoneyness(
     chainItems,

@@ -430,7 +430,7 @@ export default function App() {
           moneyness: symbolControl.moneyness,
           offset: symbolControl.offset,
           option_type: symbolControl.optionType,
-          expiry: symbolControl.expiry || 'current_week',
+          expiry: symbolControl.expiry || new Date().toISOString().slice(0, 10),
         };
       } else {
         // 2. Resolve UserSymbol for static target symbol
@@ -454,6 +454,7 @@ export default function App() {
             symbol_name: symbol,
             description: `Auto-generated symbol for strategy deployment`,
             instrument_class: 'EQUITY',
+            strike_price_diff: 1,
           });
           userSymbolId = symRes.data._id;
           instrumentToken = symRes.data.instrument_token;
