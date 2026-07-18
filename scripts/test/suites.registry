@@ -1,0 +1,30 @@
+# MoneyMaker test suite registry
+# Format: suite_id|script|enabled|description
+# enabled: 1 = run via run_all_test_cases.sh by default; 0 = future / disabled
+# Scripts live under scripts/test/ relative to the script column.
+#
+# Required Docker Swarm services for BackTest suites:
+#   mongo1, mongo2, mongo3, redis, backtest-app, backtest-ui, reverse-proxy
+
+backtest-app|run_backtest_app_test_cases.sh|1|BackTestApp API Playwright (project=api)
+backtest-ui|run_backtest_ui_test_cases.sh|1|BackTestUI browser Playwright (project=ui)
+kafka-wsdatasplitter|run_kafka_wsdatasplitter_test_cases.sh|0|Future: wsDataSplitter consumer
+kafka-strategy-chooser|run_kafka_strategy_chooser_test_cases.sh|0|Future: StrategyChooser consumer
+kafka-storer|run_kafka_storer_test_cases.sh|0|Future: price/order storer consumers
+kafka-position-tracker|run_kafka_position_tracker_test_cases.sh|0|Future: position tracker consumer
+kafka-deployment-symbol-resolver|run_kafka_deployment_symbol_resolver_test_cases.sh|0|Future: deployment-symbol-resolver
+kafka-stream-to-client|run_kafka_stream_to_client_test_cases.sh|0|Future: stream-to-client WS fan-out
+strategy-msb|run_strategy_msb_test_cases.sh|0|Future: MSB live/backtest strategy
+strategy-msb-pts|run_strategy_msb_pts_test_cases.sh|0|Future: msb_pts strategy
+strategy-liquidity-sweep|run_strategy_liquidity_sweep_test_cases.sh|0|Future: liquidity_sweep strategy
+backtest-streamer-client|run_backtest_streamer_client_test_cases.sh|0|Future: BacktestStreamer/Client
+backtest-data-export|run_backtest_data_export_test_cases.sh|0|Future: ExportToFile / backtest data export
+microservice-placeorder|run_microservice_placeorder_test_cases.sh|0|Future: placeorder gateway
+microservice-upstox-auth|run_microservice_upstox_auth_test_cases.sh|0|Future: Upstox OAuth/tokens
+microservice-market-data|run_microservice_market_data_test_cases.sh|0|Future: getLTP/OHLC/fullMarketQuote
+microservice-orders-options|run_microservice_orders_options_test_cases.sh|0|Future: orderbook/funds/options
+microservice-connectws-upstox|run_microservice_connectws_upstox_test_cases.sh|0|Future: ConnectWS-Upstox
+infrastructure-docker-compose|run_infrastructure_docker_compose_test_cases.sh|0|Future: Docker/Kafka/network infra
+infrastructure-nginx|run_infrastructure_nginx_test_cases.sh|0|Future: reverse-proxy / nginx
+infrastructure-mongo-redis|run_infrastructure_mongo_redis_test_cases.sh|0|Future: Mongo/Redis infra
+appinit-scheduled|run_appinit_scheduled_test_cases.sh|0|Future: appInit / scheduled services

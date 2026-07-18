@@ -2,22 +2,58 @@
 
 Playwright-based end-to-end coverage for **BackTestApp** (API) and **BackTestUI** (browser), mapped to all test cases in `test_case_plans/BackTest*.md`.
 
-## Prerequisites
+## Preferred: shell runners (repo root)
 
-1. Start the docker-compose stack (minimal):
+Modular scripts under `scripts/test/` wrap this Playwright package. Orchestrator:
+
+```bash
+# List registered suites (enabled + future)
+./run_all_test_cases.sh --list
+
+# All enabled suites (backtest-app + backtest-ui)
+./run_all_test_cases.sh --coverage
+
+# BackTestApp API only
+./run_all_test_cases.sh --suite backtest-app
+
+# BackTestUI browser only
+./run_all_test_cases.sh --suite backtest-ui
+
+# UI headed / single test
+./run_all_test_cases.sh --suite backtest-ui -- --headed
+./run_all_test_cases.sh --suite backtest-app -- --grep TC-ACC-001
+
+# Rebuild images + deploy Swarm stack, then test
+./run_all_test_cases.sh --build --coverage
+```
+
+Direct suite scripts:
+
+```bash
+./scripts/test/run_backtest_app_test_cases.sh
+./scripts/test/run_backtest_app_test_cases.sh backtest-app/iam-auth.spec.ts
+./scripts/test/run_backtest_ui_test_cases.sh --headed
+./scripts/test/run_backtest_ui_test_cases.sh --grep TC-UI-024
+```
+
+Future docker-service suites are listed in `scripts/test/suites.registry` with `enabled=0`. Copy `_template_run_service_test_cases.sh` when adding automation.
+
+## Prerequisites (Docker Swarm)
+
+This repo deploys via **Docker Swarm** (`./build-all.sh` → `docker stack deploy ... moneymaker`), not plain `docker compose up`.
+
+Required services for BackTest E2E:
+
+- `mongo1`, `mongo2`, `mongo3`, `redis`
+- `backtest-app`, `backtest-ui`
+- `reverse-proxy` (nginx image; hosts `/backtestapp` and `/backtest-ui/`)
 
 ```bash
 ./build-all.sh
-docker compose up -d mongo1 mongo2 mongo3 redis backtest-app backtest-ui nginx
-```
-
-2. Wait for health:
-
-```bash
 curl -sf http://localhost/backtestapp/health
 ```
 
-## Install & run
+## Install & run (npm / Playwright directly)
 
 ```bash
 cd e2e
@@ -44,7 +80,7 @@ npm run test:e2e:report
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `API_BASE_URL` | `http://localhost/backtestapp` | BackTestApp API (nginx proxy) |
+| `API_BASE_URL` | `http://localhost/backtestapp` | BackTestApp API (via reverse-proxy) |
 | `UI_BASE_URL` | `http://localhost/backtest-ui/` | BackTestUI SPA |
 | `BACKTEST_SERVICE_TOKEN` | `backtest-internal-service-token` | Service-token endpoints |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin@moneymaker.com` / `adminpassword123` | Seed admin (falls back to `@cobratrades.com`) |
@@ -77,16 +113,17 @@ No `.gitlab-ci.yml` exists in this repo. Add a job like:
 e2e-backtest:
   stage: test
   script:
-    - docker compose up -d mongo1 mongo2 mongo3 redis backtest-app backtest-ui nginx
+    - ./build-all.sh
     - curl -sf --retry 60 --retry-delay 3 http://localhost/backtestapp/health
-    - cd e2e && npm ci && npx playwright install --with-deps
-    - npm run test:e2e
-    - npm run check-coverage
+    - ./run_all_test_cases.sh --no-install --coverage
+    # or: cd e2e && npm ci && npx playwright install --with-deps && npm run test:e2e
   artifacts:
     when: always
     paths:
       - e2e/playwright-report/
 ```
+
+Note: `run_all_test_cases.sh` installs e2e deps unless `--no-install` is set; for CI prefer installing once then `--no-install`, or let the orchestrator install.
 
 ## Coverage tracking
 
