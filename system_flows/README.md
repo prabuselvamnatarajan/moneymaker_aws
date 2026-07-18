@@ -53,3 +53,4 @@ Please refer to the specific files below for detailed deep dives:
 4. **[Microservices & REST APIs](microservices_and_api.md)**: Describes all Express endpoints, controllers, and utility classes, including database collections and authentication.
 5. **[Docker & Infrastructure](docker_and_stack.md)**: Summarizes the container definitions in `docker-compose.yml`, overlay networks, configurations, and volumes.
 6. **[Identified Issues Audit](../issues.md)**: A detailed log of bugs, race conditions, naming inconsistencies, and architectural concerns discovered during this code review.
+7. **[Test Case Plans](../test_case_plans/README.md)**: Master index of 678+ test cases across 26 plans covering every docker-compose service, BackTestApp/UI flows, and regression tests for all open issues.
