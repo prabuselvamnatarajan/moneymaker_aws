@@ -5,7 +5,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { 
-  Landmark, ShieldCheck, ShieldAlert, ArrowLeft, RefreshCw
+  Landmark, ShieldCheck, ShieldAlert, ArrowLeft, RefreshCw,
+  Edit, Trash2, AlertTriangle, X
 } from 'lucide-react';
 import { Account, Transaction, Strategy } from '../types';
 import TransactionList from './TransactionList';
@@ -23,6 +24,8 @@ interface AccountDetailsViewProps {
   timezone: string;
   onRefreshData?: () => void;
   onNavigateToScreen?: (screen: any) => void;
+  onEditAccount?: (id: string, updateData: any) => Promise<void> | void;
+  onDeleteAccount?: (id: string) => Promise<void> | void;
 }
 
 export default function AccountDetailsView({
@@ -36,7 +39,58 @@ export default function AccountDetailsView({
   timezone,
   onRefreshData,
   onNavigateToScreen,
+  onEditAccount,
+  onDeleteAccount,
 }: AccountDetailsViewProps) {
+
+  // Edit / Delete State
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState<Account | null>(null);
+
+  const [editName, setEditName] = useState('');
+  const [editCommissionType, setEditCommissionType] = useState<'PERCENTAGE' | 'FLAT'>('PERCENTAGE');
+  const [editCommissionRate, setEditCommissionRate] = useState('');
+  const [editStatus, setEditStatus] = useState<'connected' | 'disconnected'>('connected');
+  const [editDescription, setEditDescription] = useState('');
+  const [editBrokerId, setEditBrokerId] = useState('');
+
+  const handleOpenEdit = (acc: Account) => {
+    setEditingAccount(acc);
+    setEditName(acc.name);
+    setEditCommissionType(acc.commissionType || 'PERCENTAGE');
+    setEditCommissionRate(acc.commissionRate?.toString() || '');
+    setEditStatus(acc.status);
+    setEditDescription(acc.description || '');
+    setEditBrokerId(acc.brokerId || '');
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAccount || !onEditAccount) return;
+    try {
+      await onEditAccount(editingAccount.id, {
+        account_name: editName,
+        commission_type: editCommissionType,
+        commission_rate: editCommissionRate ? parseFloat(editCommissionRate) : 0,
+        is_active: editStatus === 'connected',
+        description: editDescription,
+        broker_id: editBrokerId || undefined,
+      });
+      setEditingAccount(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingAccount || !onDeleteAccount) return;
+    try {
+      await onDeleteAccount(deletingAccount.id);
+      setDeletingAccount(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // --- Self-fetched transactions for this account ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -246,9 +300,7 @@ export default function AccountDetailsView({
               <p className="text-xs text-slate-500 font-mono">{account.broker} • System Link ID: {account.id}</p>
             </div>
           </div>
-        </div>
-
-        {/* Connection Switcher */}
+              {/* Connection Switcher */}
         <div className="flex flex-wrap items-center gap-3 bg-slate-900 p-3 rounded-lg border border-slate-800">
           <div className="flex items-center gap-2">
             {isConnected ? (
@@ -266,13 +318,33 @@ export default function AccountDetailsView({
             onClick={() => onToggleBrokerStatus(account.id)}
             className={`px-3 py-1.5 rounded text-xs font-mono font-bold border transition-colors cursor-pointer ${
               isConnected 
-                ? 'bg-rose-950/40 text-rose-400 border-rose-900 hover:bg-rose-950' 
+                ? 'bg-rose-950/40 text-rose-400 border-rose-900 hover:bg-rose-955' 
                 : 'bg-emerald-600 text-white border-transparent hover:bg-emerald-500'
             }`}
           >
             {isConnected ? 'Revoke API' : 'Authorize API'}
           </button>
-        </div>
+
+          {onEditAccount && (
+            <button
+              onClick={() => handleOpenEdit(account)}
+              className="p-1.5 text-indigo-400 hover:text-indigo-300 hover:bg-slate-800 border border-slate-800 rounded-md transition-colors cursor-pointer"
+              title="Edit Account Details"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
+
+          {onDeleteAccount && (
+            <button
+              onClick={() => setDeletingAccount(account)}
+              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-slate-800 border border-slate-800 rounded-md transition-colors cursor-pointer"
+              title="Delete Account"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>    </div>
       </div>
 
       {/* Valuation Metrics Grid */}
@@ -517,6 +589,178 @@ export default function AccountDetailsView({
         )}
       </div>
 
+      {/* Edit Account Modal */}
+      {editingAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl animate-in fade-in duration-200">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                <Edit className="w-4 h-4 text-indigo-400" />
+                Edit Brokerage Account
+              </h3>
+              <button 
+                onClick={() => setEditingAccount(null)}
+                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-sm cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Account Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Description / Notes</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Additional context or references"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 h-20 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Commission Type</label>
+                  <select
+                    value={editCommissionType}
+                    onChange={(e) => setEditCommissionType(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-205 focus:outline-hidden focus:border-indigo-500"
+                  >
+                    <option value="PERCENTAGE">Percentage (%)</option>
+                    <option value="FLAT">Flat Rate (₹)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">
+                    Commission Rate ({editCommissionType === 'PERCENTAGE' ? '%' : '₹'})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editCommissionRate}
+                    onChange={(e) => setEditCommissionRate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Account Status</label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-205 focus:outline-hidden focus:border-indigo-500"
+                >
+                  <option value="connected">Connected (Active)</option>
+                  <option value="disconnected">Disconnected (Standby)</option>
+                </select>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setEditingAccount(null)}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-md font-semibold text-slate-300 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-md transition-colors cursor-pointer"
+                >
+                  Update Account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Warning Modal */}
+      {deletingAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-rose-950 rounded-xl overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+            <div className="p-6 bg-rose-950/20 border-b border-rose-900/30 flex items-center gap-3">
+              <div className="p-2 bg-rose-900/30 rounded-lg text-rose-455">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-rose-200 uppercase tracking-wider font-mono">
+                  Confirm Cascading Deletion
+                </h3>
+                <p className="text-[10px] text-rose-400 font-medium">Critical Security Warning</p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-xs text-slate-300 space-y-3 leading-relaxed">
+                <p>
+                  You are about to permanently delete account <strong className="text-white font-semibold font-mono">{deletingAccount.name}</strong> ({deletingAccount.id}).
+                </p>
+                <div className="p-3.5 bg-rose-950/30 border border-rose-900/30 rounded-lg text-rose-300 space-y-2">
+                  <p className="font-bold text-[10px] uppercase font-mono tracking-wider flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Permanent Cascading Impact
+                  </p>
+                  <p className="text-[11px]">
+                    This action is destructive and irreversible. The system will permanently delete:
+                  </p>
+                  <ul className="list-disc pl-5 text-[11px] space-y-1 mt-1 font-medium">
+                    <li>This account record</li>
+                    <li>All deployments created using this account</li>
+                    <li>All historical trades, execution reports, and ledger details for these deployments</li>
+                    <li>All related active positions and Redis caching states</li>
+                  </ul>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Please type the account name <span className="font-mono text-white select-all bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">{deletingAccount.name}</span> below to confirm.
+                </p>
+              </div>
+
+              <input
+                type="text"
+                placeholder="Type account name to confirm"
+                className="w-full bg-slate-950 border border-rose-900/30 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-rose-500 font-mono"
+                onChange={(e) => {
+                  const submitBtn = document.getElementById('btn-confirm-delete-acc-details');
+                  if (submitBtn) {
+                    (submitBtn as HTMLButtonElement).disabled = e.target.value !== deletingAccount.name;
+                  }
+                }}
+              />
+
+              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDeletingAccount(null)}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-md font-semibold text-slate-300 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-confirm-delete-acc-details"
+                  disabled
+                  onClick={handleDeleteConfirm}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-md transition-colors cursor-pointer"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

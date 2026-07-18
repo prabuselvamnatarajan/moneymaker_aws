@@ -18,6 +18,8 @@ export interface Account {
   brokerObj?: Broker;
   accountType?: 'LIVE' | 'PAPER' | 'SIMULATION';
   brokerId?: string;
+  description?: string;
+  isActive?: boolean;
 }
 
 export interface Strategy {

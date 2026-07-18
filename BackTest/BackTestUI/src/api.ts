@@ -457,7 +457,15 @@ export const api = {
       return handleResponse<{ data: any }>(res);
     },
 
-    async update(id: string, updateData: { is_active?: boolean }) {
+    async update(id: string, updateData: { 
+      symbol?: string;
+      exchange?: string;
+      instrument_token?: string;
+      symbol_name?: string;
+      description?: string;
+      instrument_class?: string;
+      is_active?: boolean;
+    }) {
       const res = await fetch(`${BASE_URL}/symbols/${id}`, {
         method: 'PATCH',
         headers: getHeaders(),
@@ -527,6 +535,41 @@ export const api = {
       });
       return handleResponse<{ data: any }>(res);
     },
+
+    async get(id: string) {
+      const res = await fetch(`${BASE_URL}/strategies/${id}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ data: any }>(res);
+    },
+
+    async update(id: string, updateData: {
+      strategy_name?: string;
+      strategy_description?: string;
+      advance_trade_decision?: boolean;
+      target_pts?: number;
+      sl_pts?: number;
+      target_type?: string;
+      target_pct?: number;
+      sl_pct?: number;
+      is_active?: boolean;
+    }) {
+      const res = await fetch(`${BASE_URL}/strategies/${id}`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(updateData),
+      });
+      return handleResponse<{ data: any }>(res);
+    },
+
+    async delete(id: string) {
+      const res = await fetch(`${BASE_URL}/strategies/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ data: any }>(res);
+    },
   },
 
   // Deployments API
@@ -566,6 +609,21 @@ export const api = {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(deploymentData),
+      });
+      return handleResponse<{ data: any }>(res);
+    },
+
+    async update(id: string, updateData: {
+      deployment_name?: string;
+      notes?: string;
+      backtest_date?: string;
+      backtest_speed?: number;
+      use_full_amount?: boolean;
+    }) {
+      const res = await fetch(`${BASE_URL}/deployments/${id}`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(updateData),
       });
       return handleResponse<{ data: any }>(res);
     },
