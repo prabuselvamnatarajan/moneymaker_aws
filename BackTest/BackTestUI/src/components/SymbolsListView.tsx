@@ -43,6 +43,13 @@ export default function SymbolsListView({
   // Edit / Delete State
   const [editingSymbol, setEditingSymbol] = useState<SymbolData | null>(null);
   const [deletingSymbol, setDeletingSymbol] = useState<SymbolData | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+
+  useEffect(() => {
+    if (!deletingSymbol) {
+      setDeleteConfirmInput('');
+    }
+  }, [deletingSymbol]);
 
   // Edit Form Fields
   const [editName, setEditName] = useState('');
@@ -956,13 +963,9 @@ export default function SymbolsListView({
               <input
                 type="text"
                 placeholder="Type symbol ticker to confirm"
+                value={deleteConfirmInput}
                 className="w-full bg-slate-950 border border-rose-900/30 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-rose-500 font-mono"
-                onChange={(e) => {
-                  const submitBtn = document.getElementById('btn-confirm-delete-symbol');
-                  if (submitBtn) {
-                    (submitBtn as HTMLButtonElement).disabled = e.target.value !== deletingSymbol.ticker;
-                  }
-                }}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
               />
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
@@ -975,7 +978,7 @@ export default function SymbolsListView({
                 </button>
                 <button
                   id="btn-confirm-delete-symbol"
-                  disabled
+                  disabled={deleteConfirmInput !== deletingSymbol.ticker}
                   onClick={handleDeleteConfirm}
                   className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-md transition-colors cursor-pointer"
                 >

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Cpu, Plus, Loader2, CheckCircle2, ShieldAlert, BookOpen, Edit, Trash2, AlertTriangle, X } from 'lucide-react';
 
 interface StrategyTemplatesViewProps {
@@ -28,6 +28,13 @@ export default function StrategyTemplatesView({
   // Edit / Delete state
   const [editingTemplate, setEditingTemplate] = useState<any | null>(null);
   const [deletingTemplate, setDeletingTemplate] = useState<any | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+
+  useEffect(() => {
+    if (!deletingTemplate) {
+      setDeleteConfirmInput('');
+    }
+  }, [deletingTemplate]);
 
   // Edit fields
   const [editName, setEditName] = useState('');
@@ -553,13 +560,9 @@ export default function StrategyTemplatesView({
               <input
                 type="text"
                 placeholder="Type strategy template name to confirm"
+                value={deleteConfirmInput}
                 className="w-full bg-slate-950 border border-rose-900/30 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-rose-500 font-mono"
-                onChange={(e) => {
-                  const submitBtn = document.getElementById('btn-confirm-delete-template');
-                  if (submitBtn) {
-                    (submitBtn as HTMLButtonElement).disabled = e.target.value !== deletingTemplate.strategy_name;
-                  }
-                }}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
               />
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
@@ -572,7 +575,7 @@ export default function StrategyTemplatesView({
                 </button>
                 <button
                   id="btn-confirm-delete-template"
-                  disabled
+                  disabled={deleteConfirmInput !== deletingTemplate.strategy_name}
                   onClick={handleDeleteConfirm}
                   className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold rounded-md transition-colors cursor-pointer"
                 >
