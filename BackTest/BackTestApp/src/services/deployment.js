@@ -10,9 +10,428 @@ import Strategy from "../models/strategy.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
-import { getSymbolCandles } from "./symbol.js";
+import { getSymbolCandles, publishSymbolUpdate } from "./symbol.js";
+import {
+  resolveOptionSymbol,
+  computeReferenceStrike,
+} from "./optionSymbolResolver.js";
 
 const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount"];
+
+const hasOpenPosition = async (deploymentId) => {
+  const openPos = await Position.findOne({
+    deployment_id: deploymentId,
+    status: "OPEN",
+    open_size: { $ne: 0 },
+  });
+  if (openPos) return true;
+  const dep = await Deployment.findById(deploymentId).select("position_size");
+  return !!(dep && dep.position_size !== 0);
+};
+
+const subscribeSymbolToken = async (instrumentToken, userId) => {
+  if (!instrumentToken) return;
+  try {
+    await publishSymbolUpdate({
+      action: "subscribe",
+      instrument_token: instrumentToken,
+      userId,
+    });
+  } catch (err) {
+    console.error("[Deployment Service] Failed to publish symbol subscription:", err.message);
+  }
+};
+
+const unsubscribeSymbolTokenIfUnused = async (instrumentToken, userId, excludeDeploymentId) => {
+  if (!instrumentToken) return;
+  const stillUsed = await Deployment.exists({
+    _id: { $ne: excludeDeploymentId },
+    instrument_token: instrumentToken,
+    current_status: { $in: ["RUNNING", "SCHEDULED", "PAUSED"] },
+  });
+  if (stillUsed) return;
+
+  try {
+    await publishSymbolUpdate({
+      action: "unsubscribe",
+      instrument_token: instrumentToken,
+      userId,
+    });
+  } catch (err) {
+    console.error("[Deployment Service] Failed to publish symbol unsubscribe:", err.message);
+  }
+};
+
+/**
+ * Rename deployment-scoped Redis keys that embed the old option symbol so strategy
+ * runtime state follows the remap (avoids cold start for per-deployment keys).
+ */
+const migrateDeploymentScopedRedisKeys = async (deploymentId, oldSymbol, newSymbol) => {
+  if (!oldSymbol || !newSymbol || oldSymbol === newSymbol) return;
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) return;
+
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    await client.connect();
+    const deploymentIdStr = deploymentId.toString();
+    let cursor = 0;
+    const renamed = [];
+    do {
+      const reply = await client.scan(cursor, { MATCH: `*${deploymentIdStr}*`, COUNT: 100 });
+      cursor = reply.cursor;
+      for (const key of reply.keys || []) {
+        if (!key.includes(oldSymbol)) continue;
+        const newKey = key.split(oldSymbol).join(newSymbol);
+        if (newKey === key) continue;
+        try {
+          await client.rename(key, newKey);
+          renamed.push({ from: key, to: newKey });
+        } catch (err) {
+          // Key may vanish between SCAN and RENAME
+          console.warn(`[SymbolControl] Redis rename skipped ${key}: ${err.message}`);
+        }
+      }
+    } while (cursor !== 0);
+
+    if (renamed.length > 0) {
+      console.log(
+        `[SymbolControl] Migrated ${renamed.length} Redis keys for deployment ${deploymentIdStr}`
+      );
+    }
+  } catch (err) {
+    console.error(`[SymbolControl] Redis state migration failed: ${err.message}`);
+  } finally {
+    if (client) await client.disconnect();
+  }
+};
+
+/**
+ * Redis index for the symbol-control Kafka consumer.
+ * Keys:
+ *  - symbol_control:underlyings (SET of underlying instrument tokens)
+ *  - symbol_control:deps:{token} (JSON array of controlled RUNNING deployments)
+ */
+export const syncControlledDeploymentsIndex = async () => {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    console.warn("⚠️ REDIS_URL not set, skipping symbol_control index sync");
+    return;
+  }
+
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    await client.connect();
+
+    const controlled = await Deployment.find({
+      current_status: "RUNNING",
+      "symbol_control.enabled": true,
+    }).lean();
+
+    const byUnderlying = {};
+    for (const dep of controlled) {
+      const token = dep.symbol_control?.underlying_instrument_token;
+      if (!token) continue;
+
+      let strikeDiff = null;
+      if (dep.symbol_control.underlying_user_symbol_id) {
+        const underlying = await UserSymbol.findById(dep.symbol_control.underlying_user_symbol_id)
+          .select("strike_price_diff")
+          .lean();
+        strikeDiff = underlying?.strike_price_diff ?? null;
+      }
+
+      if (!byUnderlying[token]) byUnderlying[token] = [];
+      byUnderlying[token].push({
+        deployment_id: dep._id.toString(),
+        last_resolved_strike: dep.symbol_control.last_resolved_strike ?? null,
+        strike_price_diff: strikeDiff,
+        pending_resolve: !!dep.symbol_control.pending_resolve,
+        strategy_mode: dep.strategy_mode,
+      });
+    }
+
+    // SCAN (not KEYS) to avoid blocking Redis under load
+    const staleKeys = [];
+    let cursor = 0;
+    do {
+      const reply = await client.scan(cursor, { MATCH: "symbol_control:deps:*", COUNT: 100 });
+      cursor = reply.cursor;
+      for (const key of reply.keys || []) {
+        const token = key.replace("symbol_control:deps:", "");
+        if (!byUnderlying[token]) staleKeys.push(key);
+      }
+    } while (cursor !== 0);
+    if (staleKeys.length > 0) {
+      await client.del(staleKeys);
+    }
+
+    await client.del("symbol_control:underlyings");
+    const tokens = Object.keys(byUnderlying);
+    if (tokens.length > 0) {
+      await client.sAdd("symbol_control:underlyings", tokens);
+    }
+
+    for (const [token, deps] of Object.entries(byUnderlying)) {
+      const key = `symbol_control:deps:${token}`;
+      const payload = { deployments: deps };
+      if (typeof client.json?.set === "function") {
+        await client.json.set(key, ".", payload);
+      } else {
+        await client.set(key, JSON.stringify(payload));
+      }
+    }
+
+    console.log(
+      `[SymbolControl] Synced index for ${tokens.length} underlyings / ${controlled.length} deployments`
+    );
+  } catch (err) {
+    console.error("[SymbolControl] Failed to sync controlled deployments index:", err.message);
+  } finally {
+    if (client) {
+      await client.disconnect();
+    }
+  }
+};
+
+const applyResolvedOptionToDeployment = async (deployment, resolved, referenceStrike) => {
+  const oldToken = deployment.instrument_token;
+  const oldSymbol = deployment.symbol;
+  deployment.user_symbol_id = resolved.user_symbol_id;
+  deployment.instrument_token = resolved.instrument_token;
+  deployment.symbol = resolved.symbol;
+  deployment.symbol_control.last_resolved_strike =
+    referenceStrike != null ? referenceStrike : resolved.atm_strike;
+  deployment.symbol_control.last_resolved_at = new Date();
+  deployment.symbol_control.pending_resolve = false;
+  deployment.symbol_control.last_resolve_error = null;
+  await deployment.save();
+
+  // Primary + adjacent options are ensured by resolveOptionSymbol; re-subscribe primary
+  await subscribeSymbolToken(resolved.instrument_token, deployment.user_id);
+  if (Array.isArray(resolved.adjacent)) {
+    for (const adj of resolved.adjacent) {
+      await subscribeSymbolToken(adj.instrument_token, deployment.user_id);
+    }
+  }
+
+  if (oldToken && oldToken !== resolved.instrument_token) {
+    await migrateDeploymentScopedRedisKeys(deployment._id, oldSymbol, resolved.symbol);
+    await unsubscribeSymbolTokenIfUnused(oldToken, deployment.user_id, deployment._id);
+  }
+
+  try {
+    const { syncAllActiveSymbolsToRedis } = await import("./symbol.js");
+    await syncAllActiveSymbolsToRedis();
+  } catch (err) {
+    console.error("[SymbolControl] Failed to sync active symbols after remap:", err.message);
+  }
+
+  // syncAllDeploymentsToRedis also refreshes the symbol_control Redis index
+  await syncAllDeploymentsToRedis();
+  return deployment;
+};
+
+/**
+ * Resolve (or re-resolve) the option symbol for a controlled deployment.
+ * Honors the open-position gate: if open, sets pending_resolve and skips remap.
+ */
+export const resolveDeploymentSymbol = async (deploymentId, options = {}) => {
+  const deployment = await Deployment.findById(deploymentId);
+  if (!deployment) {
+    throw new Error("Deployment not found");
+  }
+  if (!deployment.symbol_control?.enabled) {
+    throw new Error("Deployment does not have symbol_control enabled");
+  }
+
+  const sc = deployment.symbol_control;
+  const underlyingToken = sc.underlying_instrument_token;
+  if (!underlyingToken) {
+    throw new Error("symbol_control.underlying_instrument_token is missing");
+  }
+
+  const force = !!options.force;
+  if (!force && (await hasOpenPosition(deployment._id))) {
+    deployment.symbol_control.pending_resolve = true;
+    if (options.reference_strike != null) {
+      // Keep last_resolved_strike as-is; pending flag means grid moved while flat wait
+    }
+    await deployment.save();
+    await syncControlledDeploymentsIndex();
+    return {
+      deferred: true,
+      reason: "open_position",
+      deployment,
+    };
+  }
+
+  try {
+    // Accept tick LTP only when finite and positive; otherwise resolver fetches server-side
+    const tickLtp = Number(options.ltp);
+    const safeLtp = Number.isFinite(tickLtp) && tickLtp > 0 ? tickLtp : undefined;
+
+    const resolved = await resolveOptionSymbol({
+      userId: deployment.user_id.toString(),
+      underlyingSymbol: underlyingToken,
+      moneyness: sc.moneyness || "ITM",
+      offset: sc.offset || 1,
+      optionType: sc.option_type || "CE",
+      expiry: sc.expiry,
+      ltp: safeLtp,
+      ensureAdjacent: true,
+    });
+
+    // Conflict check: another RUNNING/SCHEDULED deployment on same strategy+account+new token
+    const conflict = await Deployment.findOne({
+      _id: { $ne: deployment._id },
+      strategy_id: deployment.strategy_id,
+      account_id: deployment.account_id,
+      instrument_token: resolved.instrument_token,
+      current_status: { $in: ["RUNNING", "SCHEDULED"] },
+    });
+    if (conflict) {
+      throw new Error(
+        `Cannot remap: active deployment ${conflict._id} already uses ${resolved.instrument_token}`
+      );
+    }
+
+    const underlying = await UserSymbol.findById(sc.underlying_user_symbol_id);
+    const strikeDiff = underlying?.strike_price_diff;
+    let referenceStrike = options.reference_strike;
+    if (referenceStrike == null && strikeDiff && resolved.ltp) {
+      referenceStrike = computeReferenceStrike(resolved.ltp, strikeDiff);
+    }
+    if (referenceStrike == null) {
+      referenceStrike = resolved.atm_strike;
+    }
+
+    // No-op if already on this option and strike (adjacent watch still refreshed above)
+    if (
+      deployment.instrument_token === resolved.instrument_token &&
+      deployment.symbol_control.last_resolved_strike === referenceStrike
+    ) {
+      deployment.symbol_control.pending_resolve = false;
+      deployment.symbol_control.last_resolve_error = null;
+      deployment.symbol_control.last_resolved_at = new Date();
+      await deployment.save();
+      try {
+        const { syncAllActiveSymbolsToRedis } = await import("./symbol.js");
+        await syncAllActiveSymbolsToRedis();
+      } catch (err) {
+        console.error("[SymbolControl] Failed to sync active symbols:", err.message);
+      }
+      await syncControlledDeploymentsIndex();
+      return { deferred: false, unchanged: true, deployment };
+    }
+
+    await applyResolvedOptionToDeployment(deployment, resolved, referenceStrike);
+    return { deferred: false, unchanged: false, deployment, resolved };
+  } catch (err) {
+    deployment.symbol_control.last_resolve_error = err.message;
+    await deployment.save();
+    throw err;
+  }
+};
+
+/**
+ * Called when a deployment position goes flat; flushes pending_resolve if set.
+ */
+export const flushPendingSymbolResolve = async (deploymentId) => {
+  const deployment = await Deployment.findById(deploymentId);
+  if (!deployment?.symbol_control?.enabled || !deployment.symbol_control.pending_resolve) {
+    return null;
+  }
+  if (await hasOpenPosition(deploymentId)) {
+    return null;
+  }
+  console.log(`[SymbolControl] Flushing pending resolve for deployment ${deploymentId}`);
+  return resolveDeploymentSymbol(deploymentId, { force: false });
+};
+
+const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
+  const sc = deploymentData.symbol_control;
+  if (!sc || !sc.enabled) {
+    return deploymentData;
+  }
+
+  const underlyingId = sc.underlying_user_symbol_id;
+  if (!underlyingId) {
+    throw new Error("symbol_control.underlying_user_symbol_id is required when enabled");
+  }
+  if (!sc.moneyness || !sc.option_type) {
+    throw new Error("symbol_control.moneyness and option_type are required when enabled");
+  }
+
+  const underlying = await UserSymbol.findOne({ _id: underlyingId, user_id: userId });
+  if (!underlying) {
+    throw new Error("Underlying symbol not found");
+  }
+  const underlyingClass = String(underlying.instrument_class || "").toUpperCase();
+  if (underlyingClass === "OPTION") {
+    throw new Error("symbol_control underlying cannot be an OPTION UserSymbol");
+  }
+  if (!(Number(underlying.strike_price_diff) > 0)) {
+    throw new Error("Underlying symbol must have strike_price_diff > 0");
+  }
+
+  const expiryDate = String(sc.expiry || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+    throw new Error("symbol_control.expiry must be a date in YYYY-MM-DD format");
+  }
+  const parsedExpiry = new Date(`${expiryDate}T00:00:00.000Z`);
+  if (Number.isNaN(parsedExpiry.getTime()) || parsedExpiry.toISOString().slice(0, 10) !== expiryDate) {
+    throw new Error("symbol_control.expiry is not a valid calendar date");
+  }
+
+  if (!underlying.is_active) {
+    underlying.is_active = true;
+    await underlying.save();
+  }
+  await subscribeSymbolToken(underlying.instrument_token, userId);
+
+  const resolved = await resolveOptionSymbol({
+    userId,
+    underlyingSymbol: underlying.instrument_token,
+    moneyness: sc.moneyness,
+    offset: sc.offset || 1,
+    optionType: sc.option_type,
+    expiry: expiryDate,
+    ensureAdjacent: true,
+  });
+
+  // Adjacent options are created/activated by resolveOptionSymbol; keep Redis watch set current
+  try {
+    const { syncAllActiveSymbolsToRedis } = await import("./symbol.js");
+    await syncAllActiveSymbolsToRedis();
+  } catch (err) {
+    console.error("[SymbolControl] Failed to sync active symbols after create resolve:", err.message);
+  }
+
+  const referenceStrike = computeReferenceStrike(resolved.ltp, underlying.strike_price_diff);
+
+  return {
+    ...deploymentData,
+    user_symbol_id: resolved.user_symbol_id,
+    instrument_token: resolved.instrument_token,
+    symbol: resolved.symbol,
+    symbol_control: {
+      enabled: true,
+      underlying_user_symbol_id: underlying._id,
+      underlying_instrument_token: underlying.instrument_token,
+      moneyness: String(sc.moneyness).toUpperCase(),
+      offset: sc.offset || 1,
+      option_type: String(sc.option_type).toUpperCase(),
+      expiry: expiryDate,
+      last_resolved_strike: referenceStrike,
+      last_resolved_at: new Date(),
+      pending_resolve: false,
+      last_resolve_error: null,
+    },
+  };
+};
 
 const triggerBacktestIfNeeded = async (deployment) => {
   if (deployment.strategy_mode === "BACKTEST" && deployment.current_status === "RUNNING") {
@@ -200,9 +619,11 @@ const resetLiquiditySweepRuntimeState = async (deployment) => {
 };
 
 export const createDeployment = async (userId, deploymentData) => {
-  if (deploymentData.user_symbol_id) {
+  const prepared = await prepareSymbolControlOnCreate(userId, deploymentData);
+
+  if (prepared.user_symbol_id) {
     const symbol = await UserSymbol.findOne({
-      _id: deploymentData.user_symbol_id,
+      _id: prepared.user_symbol_id,
       user_id: userId,
     });
     if (!symbol) {
@@ -211,13 +632,16 @@ export const createDeployment = async (userId, deploymentData) => {
     if (!symbol.is_active) {
       throw new Error("Cannot associate an inactive symbol to deployment");
     }
+  } else {
+    throw new Error("user_symbol_id is required (or enable symbol_control to auto-resolve)");
   }
 
-  const deployment = new Deployment({ ...deploymentData, user_id: userId });
+  const deployment = new Deployment({ ...prepared, user_id: userId });
   const result = await deployment.save();
   await resetBacktestDeployment(result);
   await triggerBacktestIfNeeded(result);
   await syncAllDeploymentsToRedis();
+  await syncControlledDeploymentsIndex();
   return result;
 };
 
@@ -284,6 +708,7 @@ export const deleteDeployment = async (userId, id) => {
   console.log(`[Deployment Service] Cascading delete complete for deployment ${deployment.deployment_name || deployment._id}: removed ${deletedTrades.deletedCount} trades, ${deletedPositions.deletedCount} positions, ${deletedLedger.deletedCount} ledger entries.`);
 
   await syncAllDeploymentsToRedis();
+  await syncControlledDeploymentsIndex();
   return deployment;
 };
 
@@ -338,16 +763,47 @@ export const transitionDeployment = async (userId, id, action) => {
           await symbolObj.save();
           console.log(`[Deployment Service] Auto-activated symbol ${symbolObj.symbol} for running deployment ${deployment._id}`);
         }
-        try {
-          const { publishSymbolUpdate } = await import("./symbol.js");
-          await publishSymbolUpdate({
-            action: "subscribe",
-            instrument_token: symbolObj.instrument_token
-          });
-        } catch (err) {
-          console.error("[Deployment Service] Failed to publish symbol subscription:", err.message);
-        }
+        await subscribeSymbolToken(symbolObj.instrument_token, userId);
       }
+    }
+
+    // Subscribe underlying for controlled deployments so LTP ticks reach the resolver
+    if (deployment.symbol_control?.enabled && deployment.symbol_control.underlying_user_symbol_id) {
+      const underlying = await UserSymbol.findOne({
+        _id: deployment.symbol_control.underlying_user_symbol_id,
+        user_id: userId,
+      });
+      if (underlying) {
+        if (!underlying.is_active) {
+          underlying.is_active = true;
+          await underlying.save();
+        }
+        await subscribeSymbolToken(underlying.instrument_token, userId);
+      }
+    }
+  }
+
+  // Re-resolve option on start/resume for controlled deployments (if flat)
+  if (
+    (action === "start" || action === "restart" || action === "resume") &&
+    deployment.symbol_control?.enabled
+  ) {
+    await deployment.save();
+    try {
+      await resolveDeploymentSymbol(deployment._id, { force: false });
+    } catch (err) {
+      console.error(`[SymbolControl] Resolve on ${action} failed:`, err.message);
+      await Deployment.updateOne(
+        { _id: deployment._id },
+        { $set: { "symbol_control.last_resolve_error": err.message } }
+      );
+    }
+    // Reload clean Mongoose document after resolve (avoid Object.assign of plain objects)
+    const refreshed = await Deployment.findById(deployment._id);
+    if (refreshed) {
+      await triggerBacktestIfNeeded(refreshed);
+      await syncAllDeploymentsToRedis();
+      return refreshed;
     }
   }
 
@@ -743,6 +1199,13 @@ export const syncAllDeploymentsToRedis = async () => {
     if (client) {
       await client.disconnect();
     }
+  }
+
+  // Keep symbol_control consumer index in sync whenever strategy routing is refreshed
+  try {
+    await syncControlledDeploymentsIndex();
+  } catch (err) {
+    console.error("[SymbolControl] Index sync after deployment Redis sync failed:", err.message);
   }
 };
 

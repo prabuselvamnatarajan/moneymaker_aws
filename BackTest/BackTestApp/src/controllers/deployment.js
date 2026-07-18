@@ -10,6 +10,7 @@ import {
   getDeploymentMetrics,
   getDeploymentAnalysis,
   getDeploymentCandles,
+  resolveDeploymentSymbol,
 } from "../services/deployment.js";
 import {
   createSweepSignalLog,
@@ -229,6 +230,53 @@ export const createSweepSignalLogController = async (req, res, next) => {
   } catch (err) {
     if (err.message === "Deployment not found") {
       return res.status(404).json({ message: err.message });
+    }
+    next(err);
+  }
+};
+
+/**
+ * Internal-only: re-resolve controlled deployment option symbol from stream tick.
+ * Requires X-Service-Token. Body: { ltp?, reference_strike? }
+ * Does not accept force (position gate cannot be bypassed over HTTP).
+ */
+export const resolveDeploymentSymbolController = async (req, res, next) => {
+  try {
+    if (!req.serviceAuth) {
+      return res.status(403).json({
+        message: "resolve-symbol is restricted to internal service callers",
+      });
+    }
+
+    if (req.body?.force === true) {
+      return res.status(400).json({
+        message: "force is not allowed on resolve-symbol",
+      });
+    }
+
+    const result = await resolveDeploymentSymbol(req.params.id, {
+      ltp: req.body?.ltp,
+      reference_strike: req.body?.reference_strike,
+      force: false,
+    });
+
+    res.status(200).json({
+      message: result.deferred
+        ? "Symbol resolve deferred (open position)"
+        : result.unchanged
+          ? "Symbol already current"
+          : "Deployment symbol resolved",
+      data: result,
+    });
+  } catch (err) {
+    if (err.message === "Deployment not found") {
+      return res.status(404).json({ message: err.message });
+    }
+    if (
+      err.message.includes("symbol_control") ||
+      err.message.includes("Cannot remap")
+    ) {
+      return res.status(400).json({ message: err.message });
     }
     next(err);
   }

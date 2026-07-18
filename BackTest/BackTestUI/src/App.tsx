@@ -389,7 +389,20 @@ export default function App() {
     }
   };
 
-  const handleAddStrategy = async (newStrat: Strategy, accountId: string, symbol: string, existingStrategyId: string) => {
+  const handleAddStrategy = async (
+    newStrat: Strategy,
+    accountId: string,
+    symbol: string,
+    existingStrategyId: string,
+    symbolControl?: {
+      enabled: boolean;
+      underlyingUserSymbolId: string;
+      moneyness: 'ITM' | 'ATM' | 'OTM';
+      offset: number;
+      optionType: 'CE' | 'PE';
+      expiry: string;
+    }
+  ) => {
     try {
       // 1. Resolve strategy definition
       const strategyId = existingStrategyId;
@@ -397,39 +410,9 @@ export default function App() {
         throw new Error("Strategy template is required for deployment");
       }
 
-      // 2. Resolve UserSymbol for target symbol
-      let userSymbolId = '';
-      let instrumentToken = '';
-      const existingSymbol = symbols.find(s => s.ticker === symbol);
-      if (existingSymbol) {
-        const rawSymbols = await api.symbols.list();
-        const found = rawSymbols.items.find(s => s.symbol === symbol);
-        if (found) {
-          userSymbolId = found._id;
-          instrumentToken = found.instrument_token;
-        }
-      }
-
-      if (!userSymbolId) {
-        const symRes = await api.symbols.create({
-          symbol,
-          exchange: 'NSE',
-          instrument_token: symbol,
-          symbol_name: symbol,
-          description: `Auto-generated symbol for strategy deployment`,
-          instrument_class: 'EQUITY',
-        });
-        userSymbolId = symRes.data._id;
-        instrumentToken = symRes.data.instrument_token;
-      }
-
-      // 3. Deploy
-      const depRes = await api.deployments.create({
+      const payload: Parameters<typeof api.deployments.create>[0] = {
         strategy_id: strategyId,
         account_id: accountId,
-        user_symbol_id: userSymbolId,
-        instrument_token: instrumentToken,
-        symbol: symbol,
         start_time: new Date().toISOString(),
         current_status: newStrat.status === 'active' ? 'RUNNING' : newStrat.status === 'paused' ? 'PAUSED' : 'SCHEDULED',
         strategy_mode: newStrat.mode === 'live' ? 'LIVE' : newStrat.mode === 'paper' ? 'PAPER' : 'BACKTEST',
@@ -438,7 +421,51 @@ export default function App() {
         backtest_date: newStrat.backtestDate,
         backtest_speed: newStrat.backtestSpeed,
         use_full_amount: newStrat.useFullAmount,
-      });
+      };
+
+      if (symbolControl?.enabled) {
+        payload.symbol_control = {
+          enabled: true,
+          underlying_user_symbol_id: symbolControl.underlyingUserSymbolId,
+          moneyness: symbolControl.moneyness,
+          offset: symbolControl.offset,
+          option_type: symbolControl.optionType,
+          expiry: symbolControl.expiry || 'current_week',
+        };
+      } else {
+        // 2. Resolve UserSymbol for static target symbol
+        let userSymbolId = '';
+        let instrumentToken = '';
+        const existingSymbol = symbols.find(s => s.ticker === symbol);
+        if (existingSymbol) {
+          const rawSymbols = await api.symbols.list();
+          const found = rawSymbols.items.find(s => s.symbol === symbol);
+          if (found) {
+            userSymbolId = found._id;
+            instrumentToken = found.instrument_token;
+          }
+        }
+
+        if (!userSymbolId) {
+          const symRes = await api.symbols.create({
+            symbol,
+            exchange: 'NSE',
+            instrument_token: symbol,
+            symbol_name: symbol,
+            description: `Auto-generated symbol for strategy deployment`,
+            instrument_class: 'EQUITY',
+          });
+          userSymbolId = symRes.data._id;
+          instrumentToken = symRes.data.instrument_token;
+        }
+
+        payload.user_symbol_id = userSymbolId;
+        payload.instrument_token = instrumentToken;
+        payload.symbol = symbol;
+      }
+
+      // 3. Deploy
+      const depRes = await api.deployments.create(payload);
 
       const mappedStrat = mapDeployment(depRes.data);
       setStrategies(prev => [...prev, mappedStrat]);
@@ -485,6 +512,10 @@ export default function App() {
         symbol_name: newSym.name,
         description: newSym.description || '',
         instrument_class: newSym.instrumentClass || 'EQUITY',
+        ...((newSym.instrumentClass === 'INDEX' || newSym.instrumentClass === 'EQUITY') &&
+        newSym.strikePriceDiff
+          ? { strike_price_diff: newSym.strikePriceDiff }
+          : {}),
       });
       const mapped = mapSymbol(res.data);
       setSymbols(prev => [...prev, mapped]);

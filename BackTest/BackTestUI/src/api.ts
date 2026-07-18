@@ -425,6 +425,7 @@ export const api = {
       symbol_name: string;
       description?: string;
       instrument_class?: string;
+      strike_price_diff?: number;
     }) {
       const res = await fetch(`${BASE_URL}/symbols`, {
         method: 'POST',
@@ -465,6 +466,7 @@ export const api = {
       description?: string;
       instrument_class?: string;
       is_active?: boolean;
+      strike_price_diff?: number | null;
     }) {
       const res = await fetch(`${BASE_URL}/symbols/${id}`, {
         method: 'PATCH',
@@ -593,9 +595,9 @@ export const api = {
     async create(deploymentData: {
       strategy_id: string;
       account_id: string;
-      user_symbol_id: string;
-      instrument_token: string;
-      symbol: string;
+      user_symbol_id?: string;
+      instrument_token?: string;
+      symbol?: string;
       start_time: string;
       current_status: string;
       strategy_mode: string;
@@ -604,6 +606,14 @@ export const api = {
       backtest_date?: string;
       backtest_speed?: number;
       use_full_amount?: boolean;
+      symbol_control?: {
+        enabled: boolean;
+        underlying_user_symbol_id?: string;
+        moneyness?: 'ITM' | 'ATM' | 'OTM';
+        offset?: number;
+        option_type?: 'CE' | 'PE';
+        expiry?: string;
+      };
     }) {
       const res = await fetch(`${BASE_URL}/deployments`, {
         method: 'POST',

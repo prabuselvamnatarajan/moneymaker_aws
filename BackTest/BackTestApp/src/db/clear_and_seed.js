@@ -269,10 +269,10 @@ export const clearAndSeedDB = async () => {
 
     // 6. Create watchlisted user symbols
     const symbolsData = [
-      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", symbol_name: "Nifty 50", exchange: "NSE", is_active: true, description: "Nifty 50 Index", instrument_class: "INDEX" },
-      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", symbol_name: "Nifty Bank", exchange: "NSE", is_active: true, description: "Nifty Bank Index", instrument_class: "INDEX" },
-      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", symbol_name: "Nifty 50", exchange: "NSE", is_active: true, description: "Nifty 50 Index", instrument_class: "INDEX" },
-      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", symbol_name: "Nifty Bank", exchange: "NSE", is_active: true, description: "Nifty Bank Index", instrument_class: "INDEX" }
+      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", symbol_name: "Nifty 50", exchange: "NSE", is_active: true, description: "Nifty 50 Index", instrument_class: "INDEX", strike_price_diff: 50 },
+      { user_id: standardUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", symbol_name: "Nifty Bank", exchange: "NSE", is_active: true, description: "Nifty Bank Index", instrument_class: "INDEX", strike_price_diff: 100 },
+      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty 50", symbol: "NSE_INDEX|Nifty 50", symbol_name: "Nifty 50", exchange: "NSE", is_active: true, description: "Nifty 50 Index", instrument_class: "INDEX", strike_price_diff: 50 },
+      { user_id: adminUser._id, instrument_token: "NSE_INDEX|Nifty Bank", symbol: "NSE_INDEX|Nifty Bank", symbol_name: "Nifty Bank", exchange: "NSE", is_active: true, description: "Nifty Bank Index", instrument_class: "INDEX", strike_price_diff: 100 }
     ];
     const seededSymbols = await UserSymbol.insertMany(symbolsData);
     console.log(`Created ${seededSymbols.length} user symbols.`);

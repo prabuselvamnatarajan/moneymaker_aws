@@ -87,6 +87,61 @@ const deploymentSchema = new mongoose.Schema({
   backtest_run_id: {
     type: String,
   },
+  /**
+   * Optional dynamic option-symbol policy.
+   * When enabled, user_symbol_id / instrument_token / symbol hold the currently
+   * resolved option; the policy drives stream-based re-resolution.
+   */
+  symbol_control: {
+    enabled: {
+      type: Boolean,
+      default: false,
+    },
+    underlying_user_symbol_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "UserSymbol",
+      default: null,
+    },
+    underlying_instrument_token: {
+      type: String,
+      default: null,
+    },
+    moneyness: {
+      type: String,
+      enum: ["ITM", "ATM", "OTM"],
+      default: "ITM",
+    },
+    offset: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+    option_type: {
+      type: String,
+      enum: ["CE", "PE"],
+      default: "CE",
+    },
+    expiry: {
+      type: String,
+      default: null,
+    },
+    last_resolved_strike: {
+      type: Number,
+      default: null,
+    },
+    last_resolved_at: {
+      type: Date,
+      default: null,
+    },
+    pending_resolve: {
+      type: Boolean,
+      default: false,
+    },
+    last_resolve_error: {
+      type: String,
+      default: null,
+    },
+  },
 });
 
 // Update timestamp on save

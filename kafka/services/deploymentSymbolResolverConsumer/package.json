@@ -1,0 +1,17 @@
+{
+  "name": "deploymentsymbolresolverconsumer",
+  "version": "1.0.0",
+  "description": "Re-resolves controlled deployment option symbols when underlying strike grid level changes",
+  "main": "deploymentSymbolResolverConsumer.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "redis": "^5.10.0",
+    "winston": "^3.11.0"
+  }
+}

@@ -38,6 +38,7 @@ export interface Strategy {
   backtestDate?: string;
   backtestSpeed?: number;
   useFullAmount?: boolean;
+  symbolControl?: SymbolControlConfig;
 }
 
 export interface SymbolData {
@@ -48,11 +49,27 @@ export interface SymbolData {
   lastPrice: number;
   change24h: number; // percentage
   volume24h: number;
-  instrumentType: 'crypto' | 'equity' | 'forex' | 'index';
+  instrumentType: 'equity' | 'index' | 'option';
   instrumentToken?: string;
   description?: string;
   instrumentClass?: string;
   isActive?: boolean;
+  /** Strike grid step for INDEX underlyings (e.g. 50 Nifty, 100 Bank Nifty). */
+  strikePriceDiff?: number | null;
+}
+
+export interface SymbolControlConfig {
+  enabled: boolean;
+  underlyingUserSymbolId?: string;
+  underlyingInstrumentToken?: string;
+  moneyness?: 'ITM' | 'ATM' | 'OTM';
+  offset?: number;
+  optionType?: 'CE' | 'PE';
+  expiry?: string;
+  lastResolvedStrike?: number | null;
+  lastResolvedAt?: string | null;
+  pendingResolve?: boolean;
+  lastResolveError?: string | null;
 }
 
 export interface AuditTrailEvent {

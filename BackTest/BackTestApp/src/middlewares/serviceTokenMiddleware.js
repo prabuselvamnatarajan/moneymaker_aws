@@ -12,3 +12,16 @@ export function authenticateOrServiceToken(req, res, next) {
   }
   return authenticate(req, res, next);
 }
+
+/** Require X-Service-Token only (no JWT fallback). For privileged internal mutations. */
+export function requireServiceToken(req, res, next) {
+  if (!SERVICE_TOKEN) {
+    return res.status(503).json({ message: "Service token auth is not configured" });
+  }
+  const headerToken = req.headers["x-service-token"];
+  if (headerToken === SERVICE_TOKEN) {
+    req.serviceAuth = true;
+    return next();
+  }
+  return res.status(403).json({ message: "Valid X-Service-Token required" });
+}
