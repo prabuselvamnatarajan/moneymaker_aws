@@ -236,22 +236,28 @@ export const createSweepSignalLogController = async (req, res, next) => {
 };
 
 /**
- * Service/internal: re-resolve controlled deployment option symbol from stream tick.
- * Body: { ltp?, reference_strike?, force? }
+ * Internal-only: re-resolve controlled deployment option symbol from stream tick.
+ * Requires X-Service-Token. Body: { ltp?, reference_strike? }
+ * Does not accept force (position gate cannot be bypassed over HTTP).
  */
 export const resolveDeploymentSymbolController = async (req, res, next) => {
   try {
-    if (!req.serviceAuth && req.auth?.userId) {
-      const owned = await getDeploymentById(req.auth.userId, req.params.id);
-      if (!owned) {
-        return res.status(404).json({ message: "Deployment not found" });
-      }
+    if (!req.serviceAuth) {
+      return res.status(403).json({
+        message: "resolve-symbol is restricted to internal service callers",
+      });
+    }
+
+    if (req.body?.force === true) {
+      return res.status(400).json({
+        message: "force is not allowed on resolve-symbol",
+      });
     }
 
     const result = await resolveDeploymentSymbol(req.params.id, {
       ltp: req.body?.ltp,
       reference_strike: req.body?.reference_strike,
-      force: !!req.body?.force,
+      force: false,
     });
 
     res.status(200).json({

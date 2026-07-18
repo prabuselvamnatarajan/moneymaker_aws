@@ -14,6 +14,6 @@ ENV KAFKA_BROKERS=localhost:9092
 ENV TARGET_TOPIC=splited-live-data,backtest-stream-data
 ENV TARGET_GROUP_ID=deployment_symbol_resolver_group
 ENV BACKTEST_APP_URL=http://backtest-app:80
-ENV BACKTEST_SERVICE_TOKEN=backtest-internal-service-token
+# BACKTEST_SERVICE_TOKEN must be provided at deploy time (see docker-compose)
 
 CMD ["node", "deploymentSymbolResolverConsumer.js"]

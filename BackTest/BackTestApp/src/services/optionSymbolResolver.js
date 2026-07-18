@@ -153,7 +153,7 @@ export const selectStrikesByMoneyness = (chainItems, ltp, rangeOption, rangeCoun
     throw new Error(`Unsupported range_option: ${rangeOption}`);
   }
 
-  return { selectedStrikesCE, selectedStrikesPE, atmStrike };
+  return { selectedStrikesCE, selectedStrikesPE, atmStrike, sortedItems };
 };
 
 const formatSymbolName = (underlying, strike, type, expiry) => {
@@ -222,15 +222,53 @@ export const ensureOptionUserSymbol = async (
 };
 
 /**
+ * Ensure the strike neighbors of the selected contract are watched so a remap
+ * does not start cold (market data already subscribed).
+ * Adjacent = previous and next strike in the chain for the same CE/PE side.
+ */
+export const ensureAdjacentOptionSymbols = async ({
+  userId,
+  underlyingSymbol,
+  chainItems,
+  selectedStrike,
+  optionType,
+}) => {
+  const side = String(optionType).toUpperCase();
+  const sorted = [...chainItems].sort((a, b) => a.strike_price - b.strike_price);
+  const idx = sorted.findIndex((item) => item.strike_price === selectedStrike);
+  if (idx < 0) return [];
+
+  const neighborItems = [];
+  if (idx > 0) neighborItems.push(sorted[idx - 1]);
+  if (idx < sorted.length - 1) neighborItems.push(sorted[idx + 1]);
+
+  const adjacent = [];
+  for (const item of neighborItems) {
+    const optionData = side === "CE" ? item.call_options : item.put_options;
+    if (!optionData?.instrument_key) continue;
+    try {
+      const ensured = await ensureOptionUserSymbol(
+        userId,
+        underlyingSymbol,
+        optionData,
+        item.strike_price,
+        item.expiry,
+        side
+      );
+      adjacent.push(ensured);
+    } catch (err) {
+      console.error(
+        `[OptionResolver] Failed to ensure adjacent ${side} ${item.strike_price}:`,
+        err.message
+      );
+    }
+  }
+  return adjacent;
+};
+
+/**
  * Resolve a single option contract for a controlled deployment.
- * @param {object} opts
- * @param {string} opts.userId
- * @param {string} opts.underlyingSymbol - instrument token / key of underlying
- * @param {"ITM"|"ATM"|"OTM"} opts.moneyness
- * @param {number} opts.offset - 1 = nearest ITM/OTM
- * @param {"CE"|"PE"} opts.optionType
- * @param {string} [opts.expiry]
- * @param {number} [opts.ltp] - optional tick LTP; otherwise fetched via LTP service
+ * Also ensures adjacent strikes are watched so remaps are not cold-started.
  */
 export const resolveOptionSymbol = async ({
   userId,
@@ -240,6 +278,7 @@ export const resolveOptionSymbol = async ({
   optionType,
   expiry = "current_week",
   ltp: providedLtp,
+  ensureAdjacent = true,
 }) => {
   if (!underlyingSymbol || !moneyness || !optionType) {
     throw new Error("underlyingSymbol, moneyness, and optionType are required");
@@ -284,17 +323,28 @@ export const resolveOptionSymbol = async ({
     side
   );
 
+  let adjacent = [];
+  if (ensureAdjacent) {
+    adjacent = await ensureAdjacentOptionSymbols({
+      userId,
+      underlyingSymbol,
+      chainItems,
+      selectedStrike: selected.strike_price,
+      optionType: side,
+    });
+  }
+
   return {
     ...ensured,
     atm_strike: atmStrike,
     ltp,
     reference_strike: atmStrike,
+    adjacent,
   };
 };
 
 /**
  * Bulk-select option contracts (used by bulkCreateSymbols).
- * Returns chain selection only; persistence is handled by caller via ensureOptionUserSymbol.
  */
 export const resolveBulkOptionSelections = async ({
   userId,
