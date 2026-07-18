@@ -49,7 +49,7 @@ export interface SymbolData {
   lastPrice: number;
   change24h: number; // percentage
   volume24h: number;
-  instrumentType: 'crypto' | 'equity' | 'forex' | 'index';
+  instrumentType: 'equity' | 'index' | 'option';
   instrumentToken?: string;
   description?: string;
   instrumentClass?: string;

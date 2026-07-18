@@ -123,7 +123,7 @@ const deploymentSchema = new mongoose.Schema({
     },
     expiry: {
       type: String,
-      default: "current_week",
+      default: null,
     },
     last_resolved_strike: {
       type: Number,

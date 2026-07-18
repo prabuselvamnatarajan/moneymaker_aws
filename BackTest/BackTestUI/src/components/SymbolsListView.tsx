@@ -37,7 +37,7 @@ export default function SymbolsListView({
   const [showDropdown, setShowDropdown] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<'all' | 'crypto' | 'equity' | 'forex'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'equity' | 'index' | 'option'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Edit / Delete State
@@ -56,7 +56,7 @@ export default function SymbolsListView({
   const [editExchange, setEditExchange] = useState('NSE');
   const [editInstrumentToken, setEditInstrumentToken] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editInstrumentClass, setEditInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
+  const [editInstrumentClass, setEditInstrumentClass] = useState<'EQUITY' | 'INDEX' | 'OPTION'>('EQUITY');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editStrikePriceDiff, setEditStrikePriceDiff] = useState<number>(50);
 
@@ -82,7 +82,9 @@ export default function SymbolsListView({
         description: editDescription,
         instrument_class: editInstrumentClass,
         is_active: editIsActive,
-        ...(editInstrumentClass === 'INDEX' ? { strike_price_diff: editStrikePriceDiff } : {}),
+        ...((editInstrumentClass === 'INDEX' || editInstrumentClass === 'EQUITY')
+          ? { strike_price_diff: editStrikePriceDiff }
+          : {}),
       });
       setEditingSymbol(null);
       await fetchTableData();
@@ -113,7 +115,7 @@ export default function SymbolsListView({
   const [exchange, setExchange] = useState('NSE');
   const [instrumentToken, setInstrumentToken] = useState('');
   const [description, setDescription] = useState('');
-  const [instrumentClass, setInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
+  const [instrumentClass, setInstrumentClass] = useState<'EQUITY' | 'INDEX' | 'OPTION'>('EQUITY');
   const [strikePriceDiff, setStrikePriceDiff] = useState<number>(50);
 
   // Bulk addition form fields
@@ -196,7 +198,7 @@ export default function SymbolsListView({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!instrumentToken || !name || !exchange) return;
-    if (instrumentClass === 'INDEX' && !(strikePriceDiff > 0)) return;
+    if ((instrumentClass === 'INDEX' || instrumentClass === 'EQUITY') && !(strikePriceDiff > 0)) return;
 
     const newSym: SymbolData = {
       ticker: instrumentToken.trim(),
@@ -205,11 +207,12 @@ export default function SymbolsListView({
       lastPrice: 100.0,
       change24h: 0.0,
       volume24h: 100000,
-      instrumentType: (instrumentClass.toLowerCase() === 'equity' || instrumentClass.toLowerCase() === 'index' ? 'equity' : instrumentClass.toLowerCase()) as any,
+      instrumentType: instrumentClass.toLowerCase() as 'equity' | 'index' | 'option',
       instrumentToken: instrumentToken.trim(),
       description,
       instrumentClass,
-      strikePriceDiff: instrumentClass === 'INDEX' ? strikePriceDiff : null,
+      strikePriceDiff:
+        instrumentClass === 'INDEX' || instrumentClass === 'EQUITY' ? strikePriceDiff : null,
     };
 
     onAddSymbol(newSym);
@@ -397,7 +400,7 @@ export default function SymbolsListView({
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-bold px-2">Type:</span>
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg border border-slate-850">
-            {(['all', 'crypto', 'equity', 'forex'] as const).map(type => (
+            {(['all', 'equity', 'index', 'option'] as const).map(type => (
               <button
                 key={type}
                 onClick={() => setTypeFilter(type)}
@@ -488,7 +491,7 @@ export default function SymbolsListView({
                       <td className="p-4 text-slate-400 font-mono font-medium">{sym.exchange}</td>
                       <td className="p-4">
                         <span className={`px-2 py-0.5 rounded-sm text-[9px] font-mono tracking-wider font-bold uppercase border ${
-                          sym.instrumentType === 'crypto' ? 'bg-amber-950/40 text-amber-400 border-amber-900/30' :
+                          sym.instrumentType === 'option' ? 'bg-amber-950/40 text-amber-400 border-amber-900/30' :
                           sym.instrumentType === 'equity' ? 'bg-indigo-950/40 text-indigo-400 border-indigo-900/30' :
                           'bg-emerald-950/40 text-emerald-400 border-emerald-900/30'
                         }`}>
@@ -645,14 +648,13 @@ export default function SymbolsListView({
                   onChange={(e) => setInstrumentClass(e.target.value as any)}
                   className="w-full bg-slate-950 border border-slate-805 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                 >
-                  <option value="EQUITY">Equity (Stock Share)</option>
-                  <option value="CRYPTO">Cryptocurrency Pair</option>
-                  <option value="FOREX">Forex Spot Contract</option>
+                  <option value="EQUITY">Equity</option>
                   <option value="INDEX">Index</option>
+                  <option value="OPTION">Option</option>
                 </select>
               </div>
 
-              {instrumentClass === 'INDEX' && (
+              {(instrumentClass === 'INDEX' || instrumentClass === 'EQUITY') && (
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strike Price Diff</label>
                   <input
@@ -884,14 +886,13 @@ export default function SymbolsListView({
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
                   >
                     <option value="EQUITY">Equity</option>
-                    <option value="CRYPTO">Crypto</option>
-                    <option value="FOREX">Forex</option>
                     <option value="INDEX">Index</option>
+                    <option value="OPTION">Option</option>
                   </select>
                 </div>
               </div>
 
-              {editInstrumentClass === 'INDEX' && (
+              {(editInstrumentClass === 'INDEX' || editInstrumentClass === 'EQUITY') && (
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strike Price Diff</label>
                   <input

@@ -133,10 +133,11 @@ export default function StrategiesListView({
   const [moneyness, setMoneyness] = useState<'ITM' | 'ATM' | 'OTM'>('ITM');
   const [offset, setOffset] = useState(1);
   const [optionType, setOptionType] = useState<'CE' | 'PE'>('CE');
-  const [optionExpiry, setOptionExpiry] = useState('current_week');
+  const [optionExpiry, setOptionExpiry] = useState(new Date().toISOString().slice(0, 10));
 
-  const indexSymbols = symbols.filter(
-    (s) => s.isActive && String(s.instrumentClass || '').toUpperCase() === 'INDEX' && (s.strikePriceDiff || 0) > 0
+  /** Active underlyings for dynamic symbol control — all non-OPTION symbols. */
+  const underlyingCandidates = symbols.filter(
+    (s) => s.isActive && String(s.instrumentClass || '').toUpperCase() !== 'OPTION'
   );
 
   // Computed metrics
@@ -168,11 +169,12 @@ export default function StrategiesListView({
     e.preventDefault();
     if (!deploymentName || !selectedAccountId || !selectedStrategyId) return;
     if (dynamicSymbol && !underlyingSymbolId) return;
+    if (dynamicSymbol && !/^\d{4}-\d{2}-\d{2}$/.test(optionExpiry)) return;
     if (!dynamicSymbol && selectedSymbols.length === 0) return;
 
     const found = strategyDefinitions.find(s => s._id === selectedStrategyId);
     const targetStrategyName = found ? found.strategy_name : 'Algorithmic Strategy';
-    const underlying = indexSymbols.find((s) => s.id === underlyingSymbolId);
+    const underlying = underlyingCandidates.find((s) => s.id === underlyingSymbolId);
 
     const newStrat: Strategy = {
       id: `STRAT-0${strategies.length + 1}`,
@@ -208,7 +210,7 @@ export default function StrategiesListView({
             moneyness,
             offset: moneyness === 'ATM' ? 1 : offset,
             optionType,
-            expiry: optionExpiry || 'current_week',
+            expiry: optionExpiry,
           }
         : undefined
     );
@@ -227,7 +229,7 @@ export default function StrategiesListView({
     setMoneyness('ITM');
     setOffset(1);
     setOptionType('CE');
-    setOptionExpiry('current_week');
+    setOptionExpiry(new Date().toISOString().slice(0, 10));
     setShowAddForm(false);
   };
 
@@ -640,17 +642,19 @@ export default function StrategiesListView({
               {dynamicSymbol ? (
                 <div className="space-y-3 border border-indigo-950 bg-indigo-950/20 p-3 rounded-lg">
                   <div className="space-y-1">
-                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Underlying INDEX</label>
+                    <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Underlying symbol</label>
                     <select
                       required
                       value={underlyingSymbolId}
                       onChange={(e) => setUnderlyingSymbolId(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                     >
-                      <option value="">Select INDEX with strike_price_diff...</option>
-                      {indexSymbols.map((sym) => (
+                      <option value="">Select active non-OPTION symbol...</option>
+                      {underlyingCandidates.map((sym) => (
                         <option key={sym.id || sym.ticker} value={sym.id}>
-                          {sym.ticker} (diff={sym.strikePriceDiff})
+                          {sym.ticker}
+                          {sym.instrumentClass ? ` [${sym.instrumentClass}]` : ''}
+                          {sym.strikePriceDiff != null ? ` (diff=${sym.strikePriceDiff})` : ''}
                         </option>
                       ))}
                     </select>
@@ -694,10 +698,10 @@ export default function StrategiesListView({
                     <div className="space-y-1">
                       <label className="text-[10px] text-indigo-400 uppercase font-mono tracking-wider font-bold">Expiry</label>
                       <input
-                        type="text"
+                        type="date"
+                        required
                         value={optionExpiry}
                         onChange={(e) => setOptionExpiry(e.target.value)}
-                        placeholder="current_week or YYYY-MM-DD"
                         className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono"
                       />
                     </div>

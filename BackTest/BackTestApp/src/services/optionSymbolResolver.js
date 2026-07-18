@@ -69,11 +69,14 @@ export const fetchUnderlyingLtp = async (underlyingSymbol, userId) => {
   return ltp;
 };
 
-export const fetchOptionChain = async (underlyingSymbol, userId, expiry = "current_week") => {
+export const fetchOptionChain = async (underlyingSymbol, userId, expiry) => {
+  if (!expiry) {
+    throw new Error("expiry is required (YYYY-MM-DD)");
+  }
   const optionChainServiceUrl =
     process.env.GET_OPTION_CHAIN_SERVICE_URL || "http://get-put-call-option-chain:80";
   const optionChainResponse = await fetch(
-    `${optionChainServiceUrl}/?symbol=${encodeURIComponent(underlyingSymbol)}&expiry=${encodeURIComponent(expiry || "current_week")}&userId=${userId}`
+    `${optionChainServiceUrl}/?symbol=${encodeURIComponent(underlyingSymbol)}&expiry=${encodeURIComponent(expiry)}&userId=${userId}`
   );
   if (!optionChainResponse.ok) {
     throw new Error(`Option chain service returned status ${optionChainResponse.status}`);
@@ -276,12 +279,15 @@ export const resolveOptionSymbol = async ({
   moneyness,
   offset = 1,
   optionType,
-  expiry = "current_week",
+  expiry,
   ltp: providedLtp,
   ensureAdjacent = true,
 }) => {
   if (!underlyingSymbol || !moneyness || !optionType) {
     throw new Error("underlyingSymbol, moneyness, and optionType are required");
+  }
+  if (!expiry) {
+    throw new Error("expiry is required (YYYY-MM-DD)");
   }
   const side = String(optionType).toUpperCase();
   if (side !== "CE" && side !== "PE") {
@@ -359,7 +365,11 @@ export const resolveBulkOptionSelections = async ({
   }
 
   const ltp = await fetchUnderlyingLtp(underlyingSymbol, userId);
-  const chainItems = await fetchOptionChain(underlyingSymbol, userId, expiry || "current_week");
+  const chainItems = await fetchOptionChain(
+    underlyingSymbol,
+    userId,
+    expiry || new Date().toISOString().slice(0, 10)
+  );
   const { selectedStrikesCE, selectedStrikesPE, atmStrike } = selectStrikesByMoneyness(
     chainItems,
     ltp,

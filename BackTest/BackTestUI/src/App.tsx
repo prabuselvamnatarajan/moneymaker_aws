@@ -512,7 +512,8 @@ export default function App() {
         symbol_name: newSym.name,
         description: newSym.description || '',
         instrument_class: newSym.instrumentClass || 'EQUITY',
-        ...(newSym.instrumentClass === 'INDEX' && newSym.strikePriceDiff
+        ...((newSym.instrumentClass === 'INDEX' || newSym.instrumentClass === 'EQUITY') &&
+        newSym.strikePriceDiff
           ? { strike_price_diff: newSym.strikePriceDiff }
           : {}),
       });

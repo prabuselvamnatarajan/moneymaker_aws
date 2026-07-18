@@ -279,7 +279,7 @@ export const resolveDeploymentSymbol = async (deploymentId, options = {}) => {
       moneyness: sc.moneyness || "ITM",
       offset: sc.offset || 1,
       optionType: sc.option_type || "CE",
-      expiry: sc.expiry || "current_week",
+      expiry: sc.expiry,
       ltp: safeLtp,
       ensureAdjacent: true,
     });
@@ -369,11 +369,21 @@ const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
   if (!underlying) {
     throw new Error("Underlying symbol not found");
   }
-  if (String(underlying.instrument_class || "").toUpperCase() !== "INDEX") {
-    throw new Error("symbol_control underlying must be an INDEX UserSymbol");
+  const underlyingClass = String(underlying.instrument_class || "").toUpperCase();
+  if (underlyingClass === "OPTION") {
+    throw new Error("symbol_control underlying cannot be an OPTION UserSymbol");
   }
   if (!(Number(underlying.strike_price_diff) > 0)) {
-    throw new Error("Underlying INDEX symbol must have strike_price_diff > 0");
+    throw new Error("Underlying symbol must have strike_price_diff > 0");
+  }
+
+  const expiryDate = String(sc.expiry || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+    throw new Error("symbol_control.expiry must be a date in YYYY-MM-DD format");
+  }
+  const parsedExpiry = new Date(`${expiryDate}T00:00:00.000Z`);
+  if (Number.isNaN(parsedExpiry.getTime()) || parsedExpiry.toISOString().slice(0, 10) !== expiryDate) {
+    throw new Error("symbol_control.expiry is not a valid calendar date");
   }
 
   if (!underlying.is_active) {
@@ -388,7 +398,7 @@ const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
     moneyness: sc.moneyness,
     offset: sc.offset || 1,
     optionType: sc.option_type,
-    expiry: sc.expiry || "current_week",
+    expiry: expiryDate,
     ensureAdjacent: true,
   });
 
@@ -414,7 +424,7 @@ const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
       moneyness: String(sc.moneyness).toUpperCase(),
       offset: sc.offset || 1,
       option_type: String(sc.option_type).toUpperCase(),
-      expiry: sc.expiry || "current_week",
+      expiry: expiryDate,
       last_resolved_strike: referenceStrike,
       last_resolved_at: new Date(),
       pending_resolve: false,

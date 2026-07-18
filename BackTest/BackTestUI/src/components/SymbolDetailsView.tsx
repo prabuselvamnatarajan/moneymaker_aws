@@ -62,7 +62,7 @@ export default function SymbolDetailsView({
   const [editExchange, setEditExchange] = useState('NSE');
   const [editInstrumentToken, setEditInstrumentToken] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [editInstrumentClass, setEditInstrumentClass] = useState<'EQUITY' | 'CRYPTO' | 'FOREX' | 'INDEX'>('EQUITY');
+  const [editInstrumentClass, setEditInstrumentClass] = useState<'EQUITY' | 'INDEX' | 'OPTION'>('EQUITY');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editStrikePriceDiff, setEditStrikePriceDiff] = useState<number>(50);
 
@@ -88,7 +88,9 @@ export default function SymbolDetailsView({
         description: editDescription,
         instrument_class: editInstrumentClass,
         is_active: editIsActive,
-        ...(editInstrumentClass === 'INDEX' ? { strike_price_diff: editStrikePriceDiff } : {}),
+        ...((editInstrumentClass === 'INDEX' || editInstrumentClass === 'EQUITY')
+          ? { strike_price_diff: editStrikePriceDiff }
+          : {}),
       });
       setEditingSymbol(null);
       if (onRefreshData) await onRefreshData();
@@ -724,14 +726,13 @@ export default function SymbolDetailsView({
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-sans"
                   >
                     <option value="EQUITY">Equity</option>
-                    <option value="CRYPTO">Crypto</option>
-                    <option value="FOREX">Forex</option>
                     <option value="INDEX">Index</option>
+                    <option value="OPTION">Option</option>
                   </select>
                 </div>
               </div>
 
-              {editInstrumentClass === 'INDEX' && (
+              {(editInstrumentClass === 'INDEX' || editInstrumentClass === 'EQUITY') && (
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Strike Price Diff</label>
                   <input

@@ -27,12 +27,17 @@ export const publishSymbolUpdate = async (payload) => {
   }
 };
 
+const ALLOWED_INSTRUMENT_CLASSES = new Set(["EQUITY", "INDEX", "OPTION"]);
+
 export const createSymbol = async (userId, symbolData) => {
   const instrumentClass = String(symbolData.instrument_class || "EQUITY").toUpperCase();
-  if (instrumentClass === "INDEX") {
+  if (!ALLOWED_INSTRUMENT_CLASSES.has(instrumentClass)) {
+    throw new Error("instrument_class must be EQUITY, INDEX, or OPTION");
+  }
+  if (instrumentClass === "EQUITY" || instrumentClass === "INDEX") {
     const diff = Number(symbolData.strike_price_diff);
     if (!(diff > 0)) {
-      throw new Error("strike_price_diff is required for INDEX symbols and must be > 0");
+      throw new Error("strike_price_diff is required for EQUITY/INDEX symbols and must be > 0");
     }
   }
 
@@ -111,13 +116,16 @@ export const updateSymbol = async (userId, id, updateData) => {
   if (!oldSymbol) return null;
 
   const nextClass = String(updateData.instrument_class || oldSymbol.instrument_class || "EQUITY").toUpperCase();
-  if (nextClass === "INDEX") {
+  if (updateData.instrument_class !== undefined && !ALLOWED_INSTRUMENT_CLASSES.has(nextClass)) {
+    throw new Error("instrument_class must be EQUITY, INDEX, or OPTION");
+  }
+  if (nextClass === "EQUITY" || nextClass === "INDEX") {
     const diff =
       updateData.strike_price_diff !== undefined
         ? Number(updateData.strike_price_diff)
         : Number(oldSymbol.strike_price_diff);
     if (!(diff > 0)) {
-      throw new Error("strike_price_diff is required for INDEX symbols and must be > 0");
+      throw new Error("strike_price_diff is required for EQUITY/INDEX symbols and must be > 0");
     }
   }
 

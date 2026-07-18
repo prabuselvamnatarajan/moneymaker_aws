@@ -32,9 +32,8 @@ export function mapAccount(backendAcc: any): Account {
 export function mapSymbol(backendSym: any): SymbolData {
   const typeMap: Record<string, string> = {
     'EQUITY': 'equity',
-    'CRYPTO': 'crypto',
-    'FOREX': 'forex',
     'INDEX': 'index',
+    'OPTION': 'option',
   };
   const instClass = backendSym.instrument_class || 'EQUITY';
   const mappedType = typeMap[instClass.toUpperCase()] || 'equity';
