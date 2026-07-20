@@ -8,6 +8,7 @@ const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',')
 const TARGET_TOPICS = (process.env.TARGET_TOPIC || '').split(',').map(t => t.trim()).filter(Boolean);
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 const BACKTEST_TOPIC = process.env.BACKTEST_TOPIC || 'backtest-stream-data';
+const KAFKA_NUM_PARTITIONS = parseInt(process.env.KAFKA_NUM_PARTITIONS || '50', 10);
 
 const kafka = new Kafka({
   clientId: 'stock-app',
@@ -34,7 +35,7 @@ async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5
     throw new Error(`Failed to connect to ${name} after maximum retries.`);
 }
 
-async function ensureTopicPartitions(topics, numPartitions = 3) {
+async function ensureTopicPartitions(topics, numPartitions = 50) {
   const admin = kafka.admin();
   try {
     await admin.connect();
@@ -87,7 +88,7 @@ async function createConsumer() {
     await connectWithRetry(producer, 'Kafka Producer');
 
     // Ensure topics have enough partitions for parallel consumer load balancing
-    await ensureTopicPartitions(TARGET_TOPICS, 3);
+    await ensureTopicPartitions(TARGET_TOPICS, KAFKA_NUM_PARTITIONS);
 
     // Subscribe to all topics in TARGET_TOPICS
     for (const topic of TARGET_TOPICS) {
