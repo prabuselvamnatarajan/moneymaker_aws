@@ -37,11 +37,11 @@ router.patch("/:id", authenticate, updateDeploymentController);
 router.delete("/:id", authenticate, deleteDeploymentController);
 
 // Lifecycle actions
-router.post("/:id/start", authenticate, startDeploymentController);
-router.post("/:id/stop", authenticate, stopDeploymentController);
-router.post("/:id/pause", authenticate, pauseDeploymentController);
-router.post("/:id/resume", authenticate, resumeDeploymentController);
-router.post("/:id/restart", authenticate, restartDeploymentController);
+router.post("/:id/start", authenticateOrServiceToken, startDeploymentController);
+router.post("/:id/stop", authenticateOrServiceToken, stopDeploymentController);
+router.post("/:id/pause", authenticateOrServiceToken, pauseDeploymentController);
+router.post("/:id/resume", authenticateOrServiceToken, resumeDeploymentController);
+router.post("/:id/restart", authenticateOrServiceToken, restartDeploymentController);
 
 // Monitoring
 router.get("/:id/status", authenticate, getDeploymentStatusController);
