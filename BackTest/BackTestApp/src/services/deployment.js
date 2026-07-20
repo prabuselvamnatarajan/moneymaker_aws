@@ -53,6 +53,13 @@ const unsubscribeSymbolTokenIfUnused = async (instrumentToken, userId, excludeDe
   });
   if (stillUsed) return;
 
+  const activeInSymbols = await UserSymbol.exists({
+    user_id: userId,
+    instrument_token: instrumentToken,
+    is_active: true,
+  });
+  if (activeInSymbols) return;
+
   try {
     await publishSymbolUpdate({
       action: "unsubscribe",
@@ -63,6 +70,7 @@ const unsubscribeSymbolTokenIfUnused = async (instrumentToken, userId, excludeDe
     console.error("[Deployment Service] Failed to publish symbol unsubscribe:", err.message);
   }
 };
+
 
 /**
  * Rename deployment-scoped Redis keys that embed the old option symbol so strategy
