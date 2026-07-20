@@ -835,8 +835,9 @@ volumes:
 
 networks:
   app-net:
-    external: true
-    name: moneymaker_app-net
+    driver: overlay
+    attachable: true
+    name: moneymaker_net
 
 
 

@@ -45,14 +45,8 @@ build_strategy ./kafka/services/Strategies/liquidity_sweep liquidity-sweep-strat
 if ! docker info | grep -q "Swarm: active"; then
   echo "Initializing Docker Swarm..."
   docker swarm init
-  sleep 2
-fi
-
-# Ensure external overlay network exists before stack deployment
-if ! docker network ls | grep -w "moneymaker_app-net" >/dev/null 2>&1; then
-  echo "Creating overlay network moneymaker_app-net..."
-  docker network create --driver overlay --attachable moneymaker_app-net
-  sleep 1
+  echo "Waiting for Swarm network control plane..."
+  sleep 3
 fi
 
 echo "Deploying MoneyMaker stack..."
