@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const path = require('path');
+const fs = require('fs');
 const { getSourceData } = require('./sourceRetriever');
 
 // Assign env variables to constants
@@ -28,7 +29,13 @@ wss.on('connection', ws => {
             return;
         }
         let sanitised_SymbolName = sanitize(symbolName);
-        const filePath = path.join(SHARED_DIR, 'exportedData', date, `${sanitised_SymbolName}.json`);
+        let filePath = path.join(SHARED_DIR, 'exportedData', date, `${sanitised_SymbolName}.json`);
+        if (!fs.existsSync(filePath)) {
+            const fallbackPath = path.join(SHARED_DIR, date, `${sanitised_SymbolName}.json`);
+            if (fs.existsSync(fallbackPath)) {
+                filePath = fallbackPath;
+            }
+        }
         try {
             const data = await getSourceData('local_file', filePath);
             if (!Array.isArray(data)) {
