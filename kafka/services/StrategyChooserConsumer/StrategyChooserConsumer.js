@@ -34,6 +34,49 @@ async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5
     throw new Error(`Failed to connect to ${name} after maximum retries.`);
 }
 
+async function ensureTopicPartitions(topics, numPartitions = 3) {
+  const admin = kafka.admin();
+  try {
+    await admin.connect();
+    const existingTopics = await admin.listTopics();
+    const existingInSet = new Set(existingTopics);
+    const topicsToCreate = [];
+
+    for (const t of topics) {
+      if (!existingInSet.has(t)) {
+        topicsToCreate.push({ topic: t, numPartitions, replicationFactor: 1 });
+      }
+    }
+
+    if (topicsToCreate.length > 0) {
+      await admin.createTopics({ topics: topicsToCreate, waitForLeaders: true });
+      logger.info(`Created missing topics with ${numPartitions} partitions: ${topicsToCreate.map(t => t.topic).join(', ')}`);
+    }
+
+    const topicsToIncrease = [];
+    for (const t of topics) {
+      try {
+        const metadata = await admin.fetchTopicMetadata({ topics: [t] });
+        const topicMeta = metadata.topics.find(m => m.name === t);
+        if (topicMeta && topicMeta.partitions.length < numPartitions) {
+          topicsToIncrease.push({ topic: t, count: numPartitions });
+        }
+      } catch (e) {
+        // ignore per-topic metadata errors
+      }
+    }
+
+    if (topicsToIncrease.length > 0) {
+      await admin.createPartitions({ topicPartitions: topicsToIncrease });
+      logger.info(`Increased partitions to ${numPartitions} for: ${topicsToIncrease.map(t => t.topic).join(', ')}`);
+    }
+  } catch (err) {
+    logger.warn(`Failed to auto-ensure topic partitions: ${err.message}`);
+  } finally {
+    await admin.disconnect().catch(() => {});
+  }
+}
+
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
     const producer = kafka.producer();
@@ -43,6 +86,9 @@ async function createConsumer() {
 
     await connectWithRetry(consumer, 'Kafka Consumer');
     await connectWithRetry(producer, 'Kafka Producer');
+
+    // Ensure topics have enough partitions for parallel consumer load balancing
+    await ensureTopicPartitions(TARGET_TOPICS, 3);
 
     // Subscribe to all topics in TARGET_TOPICS
     for (const topic of TARGET_TOPICS) {
