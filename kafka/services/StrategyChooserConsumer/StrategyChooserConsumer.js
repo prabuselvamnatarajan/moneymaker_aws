@@ -44,7 +44,7 @@ async function ensureTopicPartitions(topics, numPartitions = 3) {
 
     for (const t of topics) {
       if (!existingInSet.has(t)) {
-        topicsToCreate.push({ topic: t, numPartitions, replicationFactor: 1 });
+        topicsToCreate.push({ topic: t, numPartitions, replicationFactor: 3 });
       }
     }
 
@@ -53,22 +53,21 @@ async function ensureTopicPartitions(topics, numPartitions = 3) {
       logger.info(`Created missing topics with ${numPartitions} partitions: ${topicsToCreate.map(t => t.topic).join(', ')}`);
     }
 
-    const topicsToIncrease = [];
-    for (const t of topics) {
-      try {
-        const metadata = await admin.fetchTopicMetadata({ topics: [t] });
-        const topicMeta = metadata.topics.find(m => m.name === t);
-        if (topicMeta && topicMeta.partitions.length < numPartitions) {
-          topicsToIncrease.push({ topic: t, count: numPartitions });
-        }
-      } catch (e) {
-        // ignore per-topic metadata errors
-      }
-    }
+    const topicsToFetch = topics.filter(t => existingInSet.has(t));
+    if (topicsToFetch.length > 0) {
+      const metadata = await admin.fetchTopicMetadata({ topics: topicsToFetch });
+      const topicsToIncrease = [];
 
-    if (topicsToIncrease.length > 0) {
-      await admin.createPartitions({ topicPartitions: topicsToIncrease });
-      logger.info(`Increased partitions to ${numPartitions} for: ${topicsToIncrease.map(t => t.topic).join(', ')}`);
+      for (const topicMeta of metadata.topics) {
+        if (topicMeta && topicMeta.partitions && topicMeta.partitions.length < numPartitions) {
+          topicsToIncrease.push({ topic: topicMeta.name, count: numPartitions });
+        }
+      }
+
+      if (topicsToIncrease.length > 0) {
+        await admin.createPartitions({ topicPartitions: topicsToIncrease });
+        logger.info(`Increased partitions to ${numPartitions} for: ${topicsToIncrease.map(t => t.topic).join(', ')}`);
+      }
     }
   } catch (err) {
     logger.warn(`Failed to auto-ensure topic partitions: ${err.message}`);
