@@ -1,4 +1,5 @@
 import Deployment from "../models/deployment.js";
+import mongoose from "mongoose";
 import fs from "fs/promises";
 import path from "path";
 import Trade from "../models/trade.js";
@@ -240,6 +241,9 @@ const applyResolvedOptionToDeployment = async (deployment, resolved, referenceSt
  * Honors the open-position gate: if open, sets pending_resolve and skips remap.
  */
 export const resolveDeploymentSymbol = async (deploymentId, options = {}) => {
+  if (!mongoose.isValidObjectId(deploymentId)) {
+    throw new Error("Deployment not found");
+  }
   const deployment = await Deployment.findById(deploymentId);
   if (!deployment) {
     throw new Error("Deployment not found");
@@ -346,6 +350,9 @@ export const resolveDeploymentSymbol = async (deploymentId, options = {}) => {
  * Called when a deployment position goes flat; flushes pending_resolve if set.
  */
 export const flushPendingSymbolResolve = async (deploymentId) => {
+  if (!mongoose.isValidObjectId(deploymentId)) {
+    return null;
+  }
   const deployment = await Deployment.findById(deploymentId);
   if (!deployment?.symbol_control?.enabled || !deployment.symbol_control.pending_resolve) {
     return null;
@@ -673,10 +680,16 @@ export const getAllDeployments = async (userId, queryParams) => {
 };
 
 export const getDeploymentById = async (userId, id) => {
+  if (!mongoose.isValidObjectId(id)) {
+    return null;
+  }
   return await Deployment.findOne({ _id: id, user_id: userId }).populate("strategy_id");
 };
 
 export const updateDeployment = async (userId, id, updateData) => {
+  if (!mongoose.isValidObjectId(id)) {
+    return null;
+  }
   const sanitizedUpdate = pickAllowedFields(updateData, USER_UPDATABLE_FIELDS);
 
   if (Object.keys(sanitizedUpdate).length === 0 && !updateData.symbol_control) {
@@ -743,6 +756,7 @@ export const updateDeployment = async (userId, id, updateData) => {
 };
 
 export const deleteDeployment = async (userId, id) => {
+  if (!mongoose.isValidObjectId(id)) return null;
   const deployment = await Deployment.findOne({ _id: id, user_id: userId });
   if (!deployment) return null;
 
@@ -771,6 +785,9 @@ const VALID_TRANSITIONS = {
 };
 
 export const transitionDeployment = async (userId, id, action) => {
+  if (!mongoose.isValidObjectId(id)) {
+    return null;
+  }
   const transition = VALID_TRANSITIONS[action];
   if (!transition) {
     throw new Error(`Invalid action: ${action}`);
@@ -1258,6 +1275,7 @@ export const syncAllDeploymentsToRedis = async () => {
 };
 
 export const getDeploymentCandles = async (userId, id, timeframe = "1m") => {
+  if (!mongoose.isValidObjectId(id)) return null;
   const deployment = await Deployment.findOne({ _id: id, user_id: userId });
   if (!deployment) return null;
 
