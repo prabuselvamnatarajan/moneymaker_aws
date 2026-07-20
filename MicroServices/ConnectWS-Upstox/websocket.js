@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 import { Kafka } from 'kafkajs';
 import protobuf from 'protobufjs';
 import { createClient } from 'redis';
-import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
+import { getAccessTokenFromRedis, getOrgAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 
 // Initialize global variables
 let protobufRoot = null;
@@ -13,35 +13,6 @@ let redisSubscriber = null;
 let connectionPromise = null;
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-
-async function getUserIdForSymbol(symbol) {
-  const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl) return '';
-  let client;
-  try {
-    client = createClient({ url: redisUrl });
-    await client.connect();
-    const liveKey = `strategies:live:${symbol}`;
-    let redisData;
-    if (typeof client.json?.get === 'function') {
-      redisData = await client.json.get(liveKey);
-    } else {
-      const rawData = await client.get(liveKey);
-      redisData = rawData ? JSON.parse(rawData) : null;
-    }
-    if (redisData && redisData.activeStrategies && redisData.activeStrategies.length > 0) {
-      const userId = redisData.activeStrategies[0].user_id;
-      if (userId) return userId;
-    }
-  } catch (err) {
-    console.error('[WS Upstox] Error getting userId for symbol:', err.message);
-  } finally {
-    if (client) {
-      await client.disconnect();
-    }
-  }
-  return '';
-}
 
 let reconnectAttempt = 0;
 let reconnectTimer = null;
@@ -62,9 +33,7 @@ function scheduleReconnect(reason) {
   reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
     try {
-      const symbolList = Array.from(activeSymbols);
-      const userId = symbolList.length > 0 ? await getUserIdForSymbol(symbolList[0]) : '';
-      await ensureWSConnection(userId);
+      await ensureWSConnection();
     } catch (err) {
       console.error('[WS Upstox] Reconnect attempt failed:', err.message);
       scheduleReconnect('retry_after_failure');
@@ -72,7 +41,7 @@ function scheduleReconnect(reason) {
   }, delay);
 }
 
-async function ensureWSConnection(userId = '') {
+async function ensureWSConnection() {
   if (activeWS && (activeWS.readyState === WebSocket.OPEN || activeWS.readyState === WebSocket.CONNECTING)) {
     return;
   }
@@ -83,10 +52,10 @@ async function ensureWSConnection(userId = '') {
 
   connectionPromise = (async () => {
     try {
-      console.log(`[WS Upstox] Auto-initiating new WebSocket connection for userId: ${userId || 'default'}...`);
-      const access_token = await getAccessTokenFromRedis(userId);
+      console.log(`[WS Upstox] Auto-initiating new WebSocket market data connection using Org/Admin access token...`);
+      const access_token = await getOrgAccessTokenFromRedis();
       if (!access_token) {
-        console.warn(`[WS Upstox] Cannot auto-initiate connection: Upstox access token missing or expired for userId: ${userId || 'default'} — re-authenticate via Brokers page.`);
+        console.warn(`[WS Upstox] Cannot initiate connection: Org/Admin Upstox access token missing or expired — re-authenticate admin via Brokers page.`);
         return;
       }
       await get_WS_URL({ access_token });
@@ -136,17 +105,8 @@ function subscribeSymbols(symbolInput, userId = '') {
     activeWS.send(content);
   } else {
     console.log('[WS Upstox] WebSocket not open. Added symbols to active/pending list:', symbolArray);
-    const targetSymbol = symbolArray[0];
-    const resolveUserId = async () => {
-      if (userId) return userId;
-      return await getUserIdForSymbol(targetSymbol);
-    };
-
-    resolveUserId().then((resolvedId) => {
-      console.log(`[WS Upstox] Triggering connection for symbol ${targetSymbol} with userId ${resolvedId || 'default'}`);
-      ensureWSConnection(resolvedId).catch((err) => {
-        console.error('[WS Upstox] Failed auto-connection trigger:', err);
-      });
+    ensureWSConnection().catch((err) => {
+      console.error('[WS Upstox] Failed auto-connection trigger:', err);
     });
   }
 }

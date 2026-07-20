@@ -82,8 +82,77 @@ async function getAccessTokenFromRedis(userId = '') {
     }
 }
 
+async function getOrgAccessTokenFromRedis() {
+    if (!redisString) {
+        await redisClientInstance.connect();
+        redisString = new RedisString(redisClientInstance.getClient());
+    }
+
+    const candidateKeys = [
+        `${DEFAULT_REDIS_KEY}:admin`,
+        `${DEFAULT_REDIS_KEY}:org`,
+        DEFAULT_REDIS_KEY
+    ];
+
+    for (const key of candidateKeys) {
+        try {
+            const token = await redisString.get(key);
+            if (token && !isUpstoxTokenExpired(token)) {
+                console.log(`[AuthoriseUpstox] Found valid Org/Admin access token under Redis key: ${key}`);
+                return token;
+            }
+        } catch (err) {
+            console.error(`[AuthoriseUpstox] Error checking key ${key}:`, err.message);
+        }
+    }
+
+    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+    if (mongoUri) {
+        try {
+            const { MongoClient } = await import('mongodb');
+            const client = new MongoClient(mongoUri);
+            await client.connect();
+            try {
+                const db = client.db('BacktestApp');
+                const adminUser = await db.collection('users').findOne({
+                    $or: [
+                        { 'roles.name': 'admin' },
+                        { username: 'admin' },
+                        { email: 'admin@moneymaker.com' }
+                    ]
+                });
+
+                let broker = null;
+                if (adminUser) {
+                    broker = await db.collection('brokers').findOne({
+                        user_id: adminUser._id.toString(),
+                        external_broker_id: 'upstox'
+                    });
+                }
+                if (!broker) {
+                    broker = await db.collection('brokers').findOne({ external_broker_id: 'upstox' });
+                }
+
+                if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
+                    console.log('[AuthoriseUpstox] Fetched Org/Admin token from MongoDB brokers collection.');
+                    await redisString.set(`${DEFAULT_REDIS_KEY}:admin`, broker.access_token);
+                    await redisString.set(DEFAULT_REDIS_KEY, broker.access_token);
+                    return broker.access_token;
+                }
+            } finally {
+                await client.close();
+            }
+        } catch (mongoErr) {
+            console.error('[AuthoriseUpstox] MongoDB lookup error for Org access token:', mongoErr.message);
+        }
+    }
+
+    console.warn('[AuthoriseUpstox] No valid Org/Admin access token found for vendor market data stream.');
+    return null;
+}
+
 async function resetAuthorisedClient() {
     authorisedClient = null;
 }
 
-export { getAuthorisedClient, resetAuthorisedClient, getAccessTokenFromRedis };
+export { getAuthorisedClient, resetAuthorisedClient, getAccessTokenFromRedis, getOrgAccessTokenFromRedis };
