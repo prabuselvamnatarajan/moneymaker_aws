@@ -34,6 +34,9 @@ app.post('/', async (req, res) => {
         const isInternalBroker = strategy_details.is_internal_broker === true;
 
         if (isLive && !isInternalBroker) {
+            if (!access_token) {
+                return res.status(401).send('Unauthorized: Broker access token missing or expired for live execution');
+            }
             // Live External Order: Call Upstox broker FIRST
             filteredBody.order_type === 'MARKET' && (filteredBody.price = 0);
             result = await placeOrders(access_token, JSON.stringify(filteredBody));

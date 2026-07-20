@@ -62,50 +62,19 @@ async function getAccessTokenFromRedis(userId = '') {
     let redisKey = cleanUserId ? `${DEFAULT_REDIS_KEY}:${cleanUserId}` : DEFAULT_REDIS_KEY;
     try {
         let access_token = await redisString.get(redisKey);
-        let resolvedKey = redisKey;
 
         if (!access_token) {
-            console.log(`No access token found in Redis for key ${redisKey}. Scanning for any valid fallback token...`);
-            try {
-                const client = redisClientInstance.getClient();
-                const keys = await client.keys(`${DEFAULT_REDIS_KEY}:*`);
-                if (keys && keys.length > 0) {
-                    for (const key of keys) {
-                        const token = await redisString.get(key);
-                        if (token && !isUpstoxTokenExpired(token)) {
-                            console.log(`[AuthoriseUpstox] Found a fallback valid access token under key: ${key}`);
-                            access_token = token;
-                            resolvedKey = key;
-                            break;
-                        }
-                    }
-                }
-            } catch (scanErr) {
-                console.error('[AuthoriseUpstox] Error scanning for fallback keys:', scanErr.message);
-            }
-        }
-
-        if (!access_token && cleanUserId) {
-            console.log(`Trying default token key ${DEFAULT_REDIS_KEY} as fallback...`);
-            access_token = await redisString.get(DEFAULT_REDIS_KEY);
-            resolvedKey = DEFAULT_REDIS_KEY;
-        }
-
-        if (!access_token) {
-            console.log("No default token, no fallback token, and no valid token found for userId. Returning null.");
+            console.log(`No access token found in Redis for key ${redisKey}. Returning null.`);
             return null;
         }
 
         if (isUpstoxTokenExpired(access_token)) {
-            console.warn(`[AuthoriseUpstox] Access token expired for key ${resolvedKey}`);
-            await deleteExpiredToken(resolvedKey);
-            if (resolvedKey !== DEFAULT_REDIS_KEY) {
-                await deleteExpiredToken(DEFAULT_REDIS_KEY);
-            }
+            console.warn(`[AuthoriseUpstox] Access token expired for key ${redisKey}`);
+            await deleteExpiredToken(redisKey);
             return null;
         }
 
-        console.log(`Fetched valid access token from key ${resolvedKey}`);
+        console.log(`Fetched valid access token from key ${redisKey}`);
         return access_token;
     } catch (error) {
         console.error(`Error fetching Access Token from key ${redisKey} :`, error.message);

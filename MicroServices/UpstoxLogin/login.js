@@ -175,10 +175,6 @@ async function setAccessTokenInRedis(credentials, userId = '') {
     try {
         await redisString.set(redisKey, credentials.access_token);
         console.log(`Access token set in Redis with key ${redisKey}`);
-        if (userId) {
-            await redisString.set('redis_upstox_access_token', credentials.access_token);
-            console.log(`Also set access token as default in Redis with key redis_upstox_access_token`);
-        }
     } catch (error) {
         console.error(`Error setting Access Token in Redis:`, error.message);
     }
