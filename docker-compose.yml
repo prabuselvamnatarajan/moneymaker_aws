@@ -302,6 +302,7 @@ services:
       TARGET_TOPIC: splited-live-data,backtest-stream-data
       BACKTEST_TOPIC: backtest-stream-data
       TARGET_GROUP_ID: strategy_chooser_group
+      KAFKA_NUM_PARTITIONS: "50"
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/utils:/app/utils:ro
