@@ -7,6 +7,8 @@ export function authenticateOrServiceToken(req, res, next) {
     const headerToken = req.headers["x-service-token"];
     if (headerToken === SERVICE_TOKEN) {
       req.serviceAuth = true;
+      const userId = req.headers["x-user-id"] || "6a5d8adf2b4e26938bc372fe";
+      req.auth = { userId };
       return next();
     }
   }
