@@ -64,7 +64,29 @@ async function getAccessTokenFromRedis(userId = '') {
         let access_token = await redisString.get(redisKey);
 
         if (!access_token) {
-            console.log(`No access token found in Redis for key ${redisKey}. Returning null.`);
+            const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+            if (mongoUri) {
+                try {
+                    const { MongoClient } = await import('mongodb');
+                    const client = new MongoClient(mongoUri);
+                    await client.connect();
+                    try {
+                        const db = client.db('BacktestApp');
+                        const query = cleanUserId ? { user_id: cleanUserId, external_broker_id: 'upstox' } : { external_broker_id: 'upstox' };
+                        const broker = await db.collection('brokers').findOne(query);
+                        if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
+                            console.log(`[AuthoriseUpstox] Fetched valid token from MongoDB brokers collection for key ${redisKey}`);
+                            await redisString.set(redisKey, broker.access_token);
+                            return broker.access_token;
+                        }
+                    } finally {
+                        await client.close();
+                    }
+                } catch (mongoErr) {
+                    console.error(`[AuthoriseUpstox] Error fetching token from MongoDB for ${redisKey}:`, mongoErr.message);
+                }
+            }
+            console.log(`No access token found in Redis or MongoDB for key ${redisKey}. Returning null.`);
             return null;
         }
 
