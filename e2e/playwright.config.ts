@@ -3,8 +3,14 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost/backtestapp';
-const UI_BASE_URL = process.env.UI_BASE_URL || 'http://localhost/backtest-ui/';
+const API_BASE_URL = (process.env.API_BASE_URL || 'http://localhost/backtestapp').replace(
+  /\/?$/,
+  '/'
+);
+const UI_BASE_URL = (process.env.UI_BASE_URL || 'http://localhost/backtest-ui/').replace(
+  /\/?$/,
+  '/'
+);
 
 export default defineConfig({
   testDir: '.',
@@ -19,6 +25,8 @@ export default defineConfig({
   use: {
     trace: 'on-first-retry',
     actionTimeout: 15_000,
+    // Self-signed / expired reverse-proxy cert when HTTP redirects to HTTPS
+    ignoreHTTPSErrors: true,
   },
   projects: [
     {
@@ -34,6 +42,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         baseURL: UI_BASE_URL,
+        ignoreHTTPSErrors: true,
       },
     },
     {
@@ -42,7 +51,7 @@ export default defineConfig({
       testMatch: /iam-auth\.spec\.ts/,
       grep: /@no-secrets/,
       use: {
-        baseURL: process.env.API_NO_SECRETS_BASE_URL || API_BASE_URL,
+        baseURL: (process.env.API_NO_SECRETS_BASE_URL || API_BASE_URL).replace(/\/?$/, '/'),
       },
     },
     {

@@ -118,7 +118,7 @@ test.describe('Profile and navigation resilience', () => {
     await page.getByRole('button', { name: 'Edit Profile' }).click();
     await page.locator('form').filter({ hasText: 'Full Name' }).locator('input[type="text"]').first().fill('E2E Renamed User');
     await page.locator('form').filter({ hasText: 'Username' }).locator('input[type="text"]').fill(`e2e${uniqueSuffix().slice(-6)}`);
-    await page.locator('form').filter({ hasText: 'Email Address' }).locator('input[type="email"]').fill(`e2e-${uniqueSuffix()}@test.local`);
+    await page.locator('form').filter({ hasText: 'Email Address' }).locator('input[type="email"]').fill(`e2e-${uniqueSuffix()}@e2e.test.com`);
     await page.getByRole('button', { name: 'Save Changes' }).click();
 
     await expect(page.getByText('Profile identity updated successfully')).toBeVisible({ timeout: 10_000 });

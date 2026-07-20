@@ -25,8 +25,17 @@ TEST_SCRIPTS_DIR="${TEST_SCRIPTS_DIR:-$ROOT/scripts/test}"
 SUITES_REGISTRY="${SUITES_REGISTRY:-$TEST_SCRIPTS_DIR/suites.registry}"
 
 # Defaults matching e2e/playwright.config.ts
-export API_BASE_URL="${API_BASE_URL:-http://localhost/backtestapp}"
-export UI_BASE_URL="${UI_BASE_URL:-http://localhost/backtest-ui/}"
+# Trailing slash required so Playwright relative paths stay under /backtestapp/
+_API_BASE="${API_BASE_URL:-http://localhost/backtestapp}"
+case "$_API_BASE" in
+  */) export API_BASE_URL="$_API_BASE" ;;
+  *)  export API_BASE_URL="${_API_BASE}/" ;;
+esac
+_UI_BASE="${UI_BASE_URL:-http://localhost/backtest-ui/}"
+case "$_UI_BASE" in
+  */) export UI_BASE_URL="$_UI_BASE" ;;
+  *)  export UI_BASE_URL="${_UI_BASE}/" ;;
+esac
 export BACKTEST_SERVICE_TOKEN="${BACKTEST_SERVICE_TOKEN:-backtest-internal-service-token}"
 
 # Shared flags (set by parse_common_flags or callers)
@@ -60,8 +69,8 @@ test_root_dir() {
   printf '%s\n' "$ROOT"
 }
 
-# Install e2e npm deps + Playwright browsers when needed.
-# Set NO_INSTALL=1 to skip.
+# Install e2e npm packages when needed. Set NO_INSTALL=1 to skip.
+# Does NOT install OS packages (that needs sudo). See ensure_playwright_browsers.
 ensure_e2e_deps() {
   if [ "$NO_INSTALL" = "1" ]; then
     log_info "Skipping e2e dependency install (--no-install)"
@@ -71,7 +80,7 @@ ensure_e2e_deps() {
   [ -d "$E2E_DIR" ] || die "e2e directory not found: $E2E_DIR"
   [ -f "$E2E_DIR/package.json" ] || die "e2e/package.json not found"
 
-  log_info "Ensuring e2e dependencies in $E2E_DIR"
+  log_info "Ensuring e2e npm dependencies in $E2E_DIR"
   (
     cd "$E2E_DIR" || exit 1
     if [ -f package-lock.json ]; then
@@ -79,14 +88,52 @@ ensure_e2e_deps() {
     else
       npm install
     fi
-
-    # Install browsers if chromium is missing (best-effort check)
     if ! npx playwright --version >/dev/null 2>&1; then
       die "Playwright not available after npm install"
     fi
-    # Always ensure browsers; --with-deps is safe / idempotent for CI/dev
-    npx playwright install --with-deps
-  ) || die "Failed to install e2e dependencies"
+  ) || die "Failed to install e2e npm dependencies"
+}
+
+# True if a Playwright chromium build is already cached.
+_playwright_chromium_present() {
+  [ -d "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}" ] || return 1
+  ls -d "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"/chromium-* >/dev/null 2>&1
+}
+
+# Install Playwright browser binaries. Avoids --with-deps by default (sudo password hang).
+# PLAYWRIGHT_WITH_DEPS=1 → npx playwright install --with-deps (CI/root only).
+# Required for UI suite; not needed for API-only (request fixture).
+ensure_playwright_browsers() {
+  [ -d "$E2E_DIR" ] || die "e2e directory not found: $E2E_DIR"
+
+  if _playwright_chromium_present; then
+    log_info "Playwright chromium already present — skipping browser install"
+    return 0
+  fi
+
+  if [ "$NO_INSTALL" = "1" ]; then
+    die "Playwright chromium not found and --no-install was set.
+  Install once (interactive sudo for OS libs), then re-run:
+    cd e2e && sudo npx playwright install-deps && npx playwright install chromium
+  Or omit --no-install / set PLAYWRIGHT_WITH_DEPS=1 in CI.
+  For API-only (no browser): ./run_all_test_cases.sh --suite backtest-app"
+  fi
+
+  log_info "Ensuring Playwright chromium in $E2E_DIR"
+  (
+    cd "$E2E_DIR" || exit 1
+    if [ "${PLAYWRIGHT_WITH_DEPS:-0}" = "1" ]; then
+      log_info "Installing browsers + system deps (PLAYWRIGHT_WITH_DEPS=1)"
+      npx playwright install --with-deps chromium
+    else
+      # Browsers only — no sudo. Host libs may still be required at runtime.
+      npx playwright install chromium
+    fi
+  ) || die "Playwright browser install failed.
+  Fix once (interactive sudo), then re-run:
+    cd e2e && sudo npx playwright install-deps && npx playwright install chromium
+  Or in root/CI: PLAYWRIGHT_WITH_DEPS=1 ./run_all_test_cases.sh --suite backtest-ui
+  For API-only tests (no browser): ./run_all_test_cases.sh --suite backtest-app"
 }
 
 # Run Playwright from e2e/. Remaining args are passed through.

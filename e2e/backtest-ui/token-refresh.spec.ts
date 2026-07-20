@@ -13,7 +13,7 @@ const JWT_AUDIENCE = 'iam-clients';
 
 async function signupFreshUser(request: APIRequestContext) {
   const suffix = uniqueSuffix();
-  const email = `e2e-refresh-${suffix}@test.local`;
+  const email = `e2e-refresh-${suffix}@e2e.test.com`;
   const username = `e2erefresh${suffix.replace(/[^a-z0-9]/gi, '').slice(0, 14)}`;
   const password = 'TestPass123!';
   const res = await request.post(apiPath('/auth/signup'), {

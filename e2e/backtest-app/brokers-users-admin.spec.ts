@@ -558,7 +558,7 @@ test('TC-ADM-001: Non-admin cannot access any /api/admin/* route', async ({ requ
 test('TC-ADM-002: Admin creates a new user; duplicate email rejected', async ({ request }) => {
   const admin = await loginAsAdmin(request);
   const suffix = uniqueSuffix();
-  const email = `adm-create-${suffix}@test.local`;
+  const email = `adm-create-${suffix}@e2e.test.com`;
   const username = `admuser${suffix}`;
   const password = 'AdminCreate123!';
 
@@ -592,7 +592,7 @@ test('TC-ADM-003: Duplicate username (different email) rejected', async ({ reque
     data: {
       username,
       name: 'First User',
-      email: `first-${suffix}@test.local`,
+      email: `first-${suffix}@e2e.test.com`,
       password,
     },
   });
@@ -602,7 +602,7 @@ test('TC-ADM-003: Duplicate username (different email) rejected', async ({ reque
     data: {
       username,
       name: 'Second User',
-      email: `second-${suffix}@test.local`,
+      email: `second-${suffix}@e2e.test.com`,
       password,
     },
   });
@@ -615,7 +615,7 @@ test('TC-ADM-004: Missing required fields on user creation rejected', async ({ r
   const base = {
     username: 'adm',
     name: 'Admin User',
-    email: 'adm@test.local',
+    email: 'adm@e2e.test.com',
     password: 'Pass123!',
   };
   const cases = [
@@ -637,7 +637,7 @@ test('TC-ADM-005: initializeUserAccounts failure does not block user creation', 
 }) => {
   const admin = await loginAsAdmin(request);
   const suffix = uniqueSuffix();
-  const email = `init-resilient-${suffix}@test.local`;
+  const email = `init-resilient-${suffix}@e2e.test.com`;
   const password = 'InitResilient123!';
 
   const createRes = await apiRequest(request, admin.accessToken).post('/admin/users', {
@@ -696,7 +696,7 @@ test('TC-ADM-006: Admin update user — email/username uniqueness re-checked onl
 test('TC-ADM-007: Admin update user password re-hashes via bcrypt', async ({ request }) => {
   const admin = await loginAsAdmin(request);
   const suffix = uniqueSuffix();
-  const email = `pw-hash-${suffix}@test.local`;
+  const email = `pw-hash-${suffix}@e2e.test.com`;
   const oldPassword = 'OldPassword123!';
   const newPassword = 'NewPassword456!';
 
@@ -741,7 +741,7 @@ test('TC-ADM-008: Admin delete user is a hard delete with no cascade cleanup', a
 }) => {
   const admin = await loginAsAdmin(request);
   const suffix = uniqueSuffix();
-  const email = `orphan-admin-${suffix}@test.local`;
+  const email = `orphan-admin-${suffix}@e2e.test.com`;
   const password = 'OrphanAdmin123!';
 
   const createRes = await apiRequest(request, admin.accessToken).post('/admin/users', {
@@ -942,10 +942,10 @@ test('TC-ADM-014: Regular user cannot use admin sub-resource creation endpoints'
 
 // ─── RBAC Cross-Cutting (TC-ADM-015 – TC-ADM-016) ──────────────────────────
 
-test.skip(
-  true,
-  'TC-ADM-015: authorize() middleware wired to zero routes — duplicate RBAC audit covered by TC-RBAC-001 in iam-auth.spec.ts (#41)'
-);
+test('TC-ADM-015: authorize() middleware wired to zero routes — duplicate of TC-RBAC-001 (#41)', async () => {
+  // Intentionally skipped — single RBAC audit lives in iam-auth.spec.ts (TC-RBAC-001).
+  test.skip(true, 'Duplicate of TC-RBAC-001 in iam-auth.spec.ts');
+});
 
 test('TC-ADM-016: Mutating routes rely on authenticate + ad-hoc isAdmin, not authorize() (#41)', {
   ...tags.audit,

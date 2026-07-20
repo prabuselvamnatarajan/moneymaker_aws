@@ -58,7 +58,11 @@ curl -sf http://localhost/backtestapp/health
 ```bash
 cd e2e
 npm install
-npx playwright install --with-deps   # first time only
+# Browsers + OS libs (one-time; needs sudo for system packages):
+sudo npx playwright install-deps
+npx playwright install chromium
+# In CI/root you can instead: PLAYWRIGHT_WITH_DEPS=1 ./run_all_test_cases.sh --suite backtest-ui
+# API-only suite does not need browsers: ./run_all_test_cases.sh --suite backtest-app
 
 # Full suite (api + ui projects)
 npm run test:e2e

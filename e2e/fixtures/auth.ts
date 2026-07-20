@@ -1,20 +1,25 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 
-export const API_BASE = process.env.API_BASE_URL || 'http://localhost/backtestapp';
+/** Always trailing slash so relative apiPath() resolves under /backtestapp/ */
+export const API_BASE = (process.env.API_BASE_URL || 'http://localhost/backtestapp').replace(
+  /\/?$/,
+  '/'
+);
 export const SERVICE_TOKEN =
   process.env.BACKTEST_SERVICE_TOKEN || 'backtest-internal-service-token';
 
+// Prefer UI seed profiles (@cobratrades.com). moneymaker.com is a docs fallback only.
 export const SEED_CREDENTIALS = {
   admin: {
-    email: process.env.ADMIN_EMAIL || 'admin@moneymaker.com',
+    email: process.env.ADMIN_EMAIL || 'admin@cobratrades.com',
     password: process.env.ADMIN_PASSWORD || 'adminpassword123',
-    fallbackEmail: 'admin@cobratrades.com',
+    fallbackEmail: 'admin@moneymaker.com',
     fallbackPassword: 'adminpassword123',
   },
   user: {
-    email: process.env.USER_EMAIL || 'user@moneymaker.com',
+    email: process.env.USER_EMAIL || 'user@cobratrades.com',
     password: process.env.USER_PASSWORD || 'userpassword123',
-    fallbackEmail: 'user@cobratrades.com',
+    fallbackEmail: 'user@moneymaker.com',
     fallbackPassword: 'userpassword123',
   },
 };
@@ -25,9 +30,22 @@ export interface AuthTokens {
   userId?: string;
 }
 
+/**
+ * Relative API path (no leading slash).
+ *
+ * Important:
+ * - Leading `/` would drop `/backtestapp` from baseURL (URL resolution).
+ * - Prefer root mounts (`/auth`, `/brokers`, …) — NOT `/api/*`.
+ *   BackTestApp mounts legacy `app.use("/api", tradeRoutes)` BEFORE `/api/brokers`
+ *   etc., so `GET /api/brokers` is captured as `GET /api/:id` → "Trade not found".
+ * - Keep an explicit `api/...` prefix only for the legacy trade endpoint (`api/trade`).
+ */
 export function apiPath(path: string): string {
-  const normalized = path.startsWith('/') ? path : `/${path}`;
-  return normalized.startsWith('/api') ? normalized : `/api${normalized}`;
+  const stripped = path.replace(/^\/+/, '');
+  // Preserve intentional legacy /api/trade (and similar) paths
+  if (stripped === 'api' || stripped.startsWith('api/')) return stripped;
+  // Strip accidental api/ prefix from callers that still pass /api/...
+  return stripped.replace(/^api\//, '');
 }
 
 export async function loginAs(
@@ -79,7 +97,7 @@ export async function createUserB(
   adminToken: string,
   suffix = Date.now()
 ): Promise<{ userId: string; email: string; password: string; tokens: AuthTokens }> {
-  const email = `e2e-user-b-${suffix}@test.local`;
+  const email = `e2e-user-b-${suffix}@e2e.test.com`;
   const username = `e2euserb${suffix}`;
   const password = 'TestPassword123!';
   const res = await apiRequest(request, adminToken).post(apiPath('/admin/users'), {
@@ -135,7 +153,7 @@ export async function signupUser(
   request: APIRequestContext,
   suffix = Date.now()
 ): Promise<{ email: string; password: string; username: string; tokens: AuthTokens }> {
-  const email = `e2e-signup-${suffix}@test.local`;
+  const email = `e2e-signup-${suffix}@e2e.test.com`;
   const username = `e2esignup${suffix}`;
   const password = 'SignupPass123!';
   const res = await request.post(apiPath('/auth/signup'), {

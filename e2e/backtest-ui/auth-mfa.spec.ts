@@ -14,7 +14,7 @@ const JWT_AUDIENCE = 'iam-clients';
 
 async function signupFreshUser(request: APIRequestContext) {
   const suffix = uniqueSuffix();
-  const email = `e2e-ui-${suffix}@test.local`;
+  const email = `e2e-ui-${suffix}@e2e.test.com`;
   const username = `e2eui${suffix.replace(/[^a-z0-9]/gi, '').slice(0, 16)}`;
   const password = 'TestPass123!';
   const name = 'E2E UI User';
@@ -238,7 +238,7 @@ test.describe('Authentication & MFA', () => {
 
   test('TC-UI-008: signup auto-logs in then shows forced MFA setup screen', async ({ page }) => {
     const suffix = uniqueSuffix();
-    const email = `e2e-signup-ui-${suffix}@test.local`;
+    const email = `e2e-signup-ui-${suffix}@e2e.test.com`;
     const username = `e2esignupui${suffix.replace(/[^a-z0-9]/gi, '').slice(0, 12)}`;
     const password = 'SignupPass123!';
 

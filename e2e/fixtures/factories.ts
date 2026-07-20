@@ -1,6 +1,14 @@
 import type { APIRequestContext } from '@playwright/test';
 import { apiRequest, loginAsUser, uniqueSuffix } from './auth';
 
+/** Unwrap `{ message, data }` envelopes used by most BackTestApp create endpoints. */
+function unwrapEntity<T>(body: unknown): T {
+  if (body && typeof body === 'object' && 'data' in body && (body as { data: unknown }).data != null) {
+    return (body as { data: T }).data;
+  }
+  return body as T;
+}
+
 export interface AccountRef {
   _id: string;
   account_id?: string;
@@ -50,7 +58,7 @@ export async function createAccount(
   if (!res.ok()) {
     throw new Error(`createAccount failed: ${res.status()} ${await res.text()}`);
   }
-  return res.json();
+  return unwrapEntity<AccountRef>(await res.json());
 }
 
 export async function createStrategy(
@@ -68,7 +76,7 @@ export async function createStrategy(
   if (!res.ok()) {
     throw new Error(`createStrategy failed: ${res.status()} ${await res.text()}`);
   }
-  return res.json();
+  return unwrapEntity<StrategyRef>(await res.json());
 }
 
 export async function createSymbol(
@@ -77,8 +85,10 @@ export async function createSymbol(
   overrides: Record<string, unknown> = {}
 ): Promise<SymbolRef> {
   const suffix = uniqueSuffix();
+  const symbolName = `E2E${suffix.slice(-6)}`;
   const payload = {
-    symbol: `E2E${suffix.slice(-6)}`,
+    symbol_name: symbolName,
+    symbol: symbolName,
     instrument_token: `E2E-TOKEN-${suffix}`,
     exchange: 'NSE',
     instrument_class: 'EQUITY',
@@ -90,7 +100,7 @@ export async function createSymbol(
   if (!res.ok()) {
     throw new Error(`createSymbol failed: ${res.status()} ${await res.text()}`);
   }
-  return res.json();
+  return unwrapEntity<SymbolRef>(await res.json());
 }
 
 export async function createDeployment(
@@ -121,9 +131,9 @@ export async function createDeployment(
   };
   const res = await apiRequest(request, token).post('/deployments', { data: payload });
   if (!res.ok()) {
-    throw new Error(`createDeployment failed: ${res.status()} ${await res.status()}`);
+    throw new Error(`createDeployment failed: ${res.status()} ${await res.text()}`);
   }
-  return res.json();
+  return unwrapEntity<DeploymentRef>(await res.json());
 }
 
 export async function createTradeFixture(
@@ -188,7 +198,7 @@ export async function createExternalBrokerForUser(
     },
   });
   if (!res.ok()) throw new Error(`createExternalBroker failed: ${res.status()}`);
-  return res.json();
+  return unwrapEntity(await res.json());
 }
 
 export async function seedUserChain(request: APIRequestContext) {
@@ -215,6 +225,11 @@ export async function getAccountBalance(
 ): Promise<number> {
   const res = await apiRequest(request, token).get(`/accounts/${accountId}/balance`);
   if (!res.ok()) throw new Error(`balance fetch failed: ${res.status()}`);
-  const data = await res.json();
-  return data.balance ?? data.current_balance ?? data.currentBalance;
+  const raw = await res.json();
+  const data = unwrapEntity<Record<string, number>>(raw);
+  const balance = data.balance ?? data.current_balance ?? data.currentBalance;
+  if (typeof balance !== 'number' || Number.isNaN(balance)) {
+    throw new Error(`balance parse failed: ${JSON.stringify(raw)}`);
+  }
+  return balance;
 }

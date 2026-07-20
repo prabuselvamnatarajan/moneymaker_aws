@@ -110,7 +110,7 @@ async function postLegacyTrade(
   payload: Record<string, unknown>,
   headers: Record<string, string> = serviceHeaders()
 ): Promise<APIResponse> {
-  return request.post(apiPath('/trade'), { headers, data: payload });
+  return request.post(apiPath('api/trade'), { headers, data: payload });
 }
 
 async function parseTradeResponse(res: APIResponse): Promise<{
@@ -174,7 +174,8 @@ async function listLedgerForAccount(
   accountId: string
 ): Promise<Array<{ trade_id?: string; change_in_balance: number; order_type?: string }>> {
   const res = await apiRequest(request, token).get('/ledger', {
-    params: { account_id: accountId, limit: 200 },
+    // BackTestApp ledger filter uses camelCase accountId (see services/ledger.js)
+    params: { accountId, limit: 200 },
   });
   await expectStatus(res, 200);
   const body = await jsonBody<{ items: Array<{ trade_id?: string; change_in_balance: number; order_type?: string }> }>(res);
@@ -362,8 +363,9 @@ test('TC-TRD-001: BUY trade opens LONG position when flat', async ({ request }) 
   expect(closing_balance).toBeCloseTo(expectedBalance, 2);
 
   const ledger = await listLedgerForAccount(request, accessToken, fx.account._id);
-  const entry = ledger.find((l) => l.trade_id === trade._id);
-  expect(entry).toBeDefined();
+  const tradeKeys = new Set([String(trade._id), String(trade.trade_id)].filter(Boolean));
+  const entry = ledger.find((l) => tradeKeys.has(String(l.trade_id)));
+  expect(entry, `ledger entries=${JSON.stringify(ledger.slice(0, 3))}`).toBeDefined();
   expect(entry!.change_in_balance).toBeLessThan(0);
   expect(entry!.order_type).toBe('BUY');
 });
@@ -1171,7 +1173,7 @@ test('TC-TRD-032: legacy endpoint trusts body user_id (#49)', async ({ request }
 });
 
 test('TC-TRD-033: legacy endpoint rejects unauthenticated calls', async ({ request }) => {
-  const res = await request.post(apiPath('/trade'), {
+  const res = await request.post(apiPath('api/trade'), {
     headers: { 'Content-Type': 'application/json' },
     data: { price: 1, quantity: 1, type_of_order: 'BUY', user_id: newObjectId() },
   });

@@ -30,7 +30,7 @@ const NO_SECRETS_BASE_URL = process.env.API_NO_SECRETS_BASE_URL;
 // ---------------------------------------------------------------------------
 
 async function signupFresh(request: APIRequestContext, suffix = uniqueSuffix()) {
-  const email = `e2e-${suffix}@test.local`;
+  const email = `e2e-${suffix}@e2e.test.com`;
   const username = `e2e${suffix.replace(/[^a-z0-9]/gi, '').slice(0, 20)}`;
   const password = 'TestPass123!';
   const res = await request.post(apiPath('/auth/signup'), {
@@ -122,7 +122,8 @@ async function withMongo<T>(fn: (db: import('mongodb').Db) => Promise<T>): Promi
 
 async function noSecretsContext() {
   if (!NO_SECRETS_BASE_URL) throw new Error('API_NO_SECRETS_BASE_URL not set');
-  return playwrightRequest.newContext({ baseURL: NO_SECRETS_BASE_URL });
+  const base = NO_SECRETS_BASE_URL.replace(/\/?$/, '/');
+  return playwrightRequest.newContext({ baseURL: base, ignoreHTTPSErrors: true });
 }
 
 function grepRoutesForAuthorize(): string[] {
@@ -185,7 +186,7 @@ test.describe('Signup', () => {
     await expectMessageContains(dupEmail, 'User already exists');
 
     const dupUser = await request.post(apiPath('/auth/signup'), {
-      data: { username, name: 'Dup2', email: `other-${uniqueSuffix()}@test.local`, password },
+      data: { username, name: 'Dup2', email: `other-${uniqueSuffix()}@e2e.test.com`, password },
     });
     await expectStatus(dupUser, 409);
     await expectMessageContains(dupUser, 'User already exists');
@@ -233,7 +234,8 @@ test.describe('Login', () => {
     const current = sessions.find((s: { current?: boolean }) => s.current);
     expect(current?.os).toBe('Windows');
     expect(current?.browser).toBe('Chrome');
-    expect(current?.ip).toBe('203.0.113.50');
+    // Nginx appends proxy IP → "client, proxy"
+    expect(String(current?.ip || '')).toMatch(/^203\.0\.113\.50/);
   });
 
   test('TC-AUTH-006: login with wrong password returns generic invalid-credentials error', async ({ request }) => {
@@ -244,7 +246,7 @@ test.describe('Login', () => {
   });
 
   test('TC-AUTH-007: login with nonexistent email returns same generic error as wrong password', async ({ request }) => {
-    const res = await loginRaw(request, `nobody-${uniqueSuffix()}@test.local`, 'SomePass123!');
+    const res = await loginRaw(request, `nobody-${uniqueSuffix()}@e2e.test.com`, 'SomePass123!');
     await expectStatus(res, 401);
     await expectMessageContains(res, 'Invalid email or password');
   });
@@ -266,7 +268,7 @@ test.describe('Login', () => {
   test('TC-AUTH-009: login blocked if user has zero assigned roles', async ({ request }) => {
     const admin = await loginAsAdmin(request);
     const suffix = uniqueSuffix();
-    const email = `norole-${suffix}@test.local`;
+    const email = `norole-${suffix}@e2e.test.com`;
     const createRes = await apiRequest(request, admin.accessToken).post('/admin/users', {
       data: {
         username: `norole${suffix}`,
@@ -286,7 +288,7 @@ test.describe('Login', () => {
   test('TC-AUTH-037: deactivated user can still log in (known bug)', async ({ request }) => {
     const admin = await loginAsAdmin(request);
     const suffix = uniqueSuffix();
-    const email = `deact-${suffix}@test.local`;
+    const email = `deact-${suffix}@e2e.test.com`;
     const password = 'DeactPass123!';
     const createRes = await apiRequest(request, admin.accessToken).post('/admin/users', {
       data: {
@@ -660,7 +662,7 @@ test.describe('Password management', () => {
     const { email } = await signupFresh(request);
     const real = await request.post(apiPath('/auth/forgot-password'), { data: { email } });
     const fake = await request.post(apiPath('/auth/forgot-password'), {
-      data: { email: `fake-${uniqueSuffix()}@test.local` },
+      data: { email: `fake-${uniqueSuffix()}@e2e.test.com` },
     });
     await expectStatus(real, 200);
     await expectStatus(fake, 200);
@@ -724,7 +726,7 @@ test.describe('Password management', () => {
 test.describe('CORS and hardening', () => {
   test('TC-AUTH-034: wide-open CORS and PATCH omitted from preflight (#50)', async ({ request }) => {
     const loginRes = await request.post(apiPath('/auth/login'), {
-      data: { email: 'nobody@test.local', password: 'x' },
+      data: { email: 'nobody@e2e.test.com', password: 'x' },
       headers: { Origin: 'https://evil.example.com' },
     });
     expect(loginRes.headers()['access-control-allow-origin']).toBe('*');
@@ -742,7 +744,7 @@ test.describe('CORS and hardening', () => {
   });
 
   test('TC-AUTH-035: no security headers (helmet) applied (#23)', async ({ request }) => {
-    const res = await request.get('/health');
+    const res = await request.get(apiPath('health'));
     await expectStatus(res, 200);
     const headers = res.headers();
     expect(headers['x-content-type-options']).toBeUndefined();
@@ -1168,7 +1170,7 @@ test.describe('RBAC decorative subsystem', () => {
 
     const admin = await loginAsAdmin(request);
     const suffix = uniqueSuffix();
-    const email = `rbac-${suffix}@test.local`;
+    const email = `rbac-${suffix}@e2e.test.com`;
     const password = 'RbacPass123!';
 
     const roleId = await withMongo(async (db) => {

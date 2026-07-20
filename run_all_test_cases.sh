@@ -135,9 +135,9 @@ if [ "$DO_BUILD" = "1" ]; then
   "$ROOT/build-all.sh" || die "build-all.sh failed"
 fi
 
-# Install deps once at root level; suite scripts get --no-install to avoid repeat
+# Install npm deps once; suite scripts get --no-install to skip npm reinstall.
+# UI runner still calls ensure_playwright_browsers (installs chromium if missing).
 ensure_e2e_deps
-# Suite runners should skip reinstall
 export NO_INSTALL=1
 
 ensure_stack_ready all

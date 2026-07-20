@@ -84,6 +84,7 @@ done
 
 ensure_stack_ready ui
 ensure_e2e_deps
+ensure_playwright_browsers
 
 PW_ARGS="--project=ui"
 
