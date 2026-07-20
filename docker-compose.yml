@@ -190,11 +190,11 @@ services:
     environment:
       MONGO_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       DB_NAME: stock_database
-      EXPORT_VOLUME_PATH: /exported_stock_data
+      EXPORT_VOLUME_PATH: /shared
       EXPORT_PREF_COLLECTION: exportPreferences
       EXPORT_CRON_SCHEDULE: 15 16 * * *
     volumes:
-      - exported_stock_data:/exported_stock_data
+      - backtest-data:/shared
     deploy:
       replicas: 1
       restart_policy:
