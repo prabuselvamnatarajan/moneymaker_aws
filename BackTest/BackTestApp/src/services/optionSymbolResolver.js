@@ -45,6 +45,31 @@ const normalizeChainItems = (rawItems) =>
       : item.put_options,
   }));
 
+export const resolveExpiryDate = (scExpiry) => {
+  const expiryStr = String(scExpiry || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(expiryStr)) {
+    const d = new Date(`${expiryStr}T00:00:00.000Z`);
+    if (!Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === expiryStr) {
+      return expiryStr;
+    }
+  }
+
+  const now = new Date();
+  let offsetWeeks = 0;
+  if (expiryStr === "next_week") {
+    offsetWeeks = 1;
+  }
+
+  const dayOfWeek = now.getUTCDay();
+  let daysUntilThursday = (4 - dayOfWeek + 7) % 7;
+  if (daysUntilThursday === 0 && now.getUTCHours() >= 10) {
+    daysUntilThursday = 7;
+  }
+  daysUntilThursday += offsetWeeks * 7;
+  const targetDate = new Date(now.getTime() + daysUntilThursday * 86400000);
+  return targetDate.toISOString().slice(0, 10);
+};
+
 export const fetchUnderlyingLtp = async (underlyingSymbol, userId) => {
   const ltpServiceUrl = process.env.GET_LTP_SERVICE_URL || "http://get-ltp:80";
   const ltpResponse = await fetch(
@@ -62,11 +87,11 @@ export const fetchUnderlyingLtp = async (underlyingSymbol, userId) => {
     throw new Error(`Symbol ${underlyingSymbol} not found in LTP service`);
   }
   const val = entries[0][1];
-  const ltp = val.last_price || val.lastPrice;
-  if (!ltp) {
+  const ltp = typeof val === "number" ? val : (val?.last_price ?? val?.lastPrice);
+  if (ltp === undefined || ltp === null || isNaN(ltp)) {
     throw new Error(`Could not retrieve LTP for underlying symbol ${underlyingSymbol}`);
   }
-  return ltp;
+  return Number(ltp);
 };
 
 export const fetchOptionChain = async (underlyingSymbol, userId, expiry) => {

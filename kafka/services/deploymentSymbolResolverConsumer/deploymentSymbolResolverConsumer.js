@@ -189,6 +189,8 @@ async function handleTick(symbol, data) {
           dep.last_resolved_strike = referenceStrike;
         }
       } catch (err) {
+        // Back off for 30s on error to avoid rapid retries when service or option chain is failing
+        lastResolveAt.set(dep.deployment_id, Date.now() + 30000);
         logger.error(
           `Failed resolve for deployment ${dep.deployment_id}: ${err.message}`
         );

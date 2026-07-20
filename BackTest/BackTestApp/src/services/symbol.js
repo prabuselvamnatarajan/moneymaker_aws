@@ -185,8 +185,14 @@ export const deleteSymbol = async (userId, id) => {
   const Trade = mongoose.model("Trade");
   const Ledger = mongoose.model("Ledger");
 
-  // Step 1: Find all deployments linked to this symbol (owned by this user)
-  const deployments = await Deployment.find({ user_symbol_id: result._id, user_id: userId }, { _id: 1 });
+  // Step 1: Find all deployments linked to this symbol (owned by this user, including controlled deployments)
+  const deployments = await Deployment.find({
+    user_id: userId,
+    $or: [
+      { user_symbol_id: result._id },
+      { "symbol_control.underlying_user_symbol_id": result._id }
+    ]
+  }, { _id: 1 });
   const deploymentIds = deployments.map(d => d._id);
 
   // Step 2: Cascade-delete all child records by deployment_id (most records only reference deployment)
@@ -201,8 +207,14 @@ export const deleteSymbol = async (userId, id) => {
   await Position.deleteMany({ user_symbol_id: result._id, user_id: userId });
   await Ledger.deleteMany({ user_symbol_id: result._id, user_id: userId });
 
-  // Step 4: Delete all deployments for this symbol
-  await Deployment.deleteMany({ user_symbol_id: result._id, user_id: userId });
+  // Step 4: Delete all deployments for this symbol (direct or controlled underlying)
+  await Deployment.deleteMany({
+    user_id: userId,
+    $or: [
+      { user_symbol_id: result._id },
+      { "symbol_control.underlying_user_symbol_id": result._id }
+    ]
+  });
 
   // Step 5: Delete the symbol itself
   await UserSymbol.deleteOne({ _id: result._id });

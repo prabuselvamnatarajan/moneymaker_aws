@@ -14,9 +14,10 @@ import { getSymbolCandles, publishSymbolUpdate } from "./symbol.js";
 import {
   resolveOptionSymbol,
   computeReferenceStrike,
+  resolveExpiryDate,
 } from "./optionSymbolResolver.js";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "symbol_control"];
 
 const hasOpenPosition = async (deploymentId) => {
   const openPos = await Position.findOne({
@@ -332,6 +333,11 @@ export const resolveDeploymentSymbol = async (deploymentId, options = {}) => {
   } catch (err) {
     deployment.symbol_control.last_resolve_error = err.message;
     await deployment.save();
+    try {
+      await syncControlledDeploymentsIndex();
+    } catch (syncErr) {
+      console.error("[SymbolControl] Index sync after error failed:", syncErr.message);
+    }
     throw err;
   }
 };
@@ -377,14 +383,7 @@ const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
     throw new Error("Underlying symbol must have strike_price_diff > 0");
   }
 
-  const expiryDate = String(sc.expiry || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
-    throw new Error("symbol_control.expiry must be a date in YYYY-MM-DD format");
-  }
-  const parsedExpiry = new Date(`${expiryDate}T00:00:00.000Z`);
-  if (Number.isNaN(parsedExpiry.getTime()) || parsedExpiry.toISOString().slice(0, 10) !== expiryDate) {
-    throw new Error("symbol_control.expiry is not a valid calendar date");
-  }
+  const expiryDate = resolveExpiryDate(sc.expiry);
 
   if (!underlying.is_active) {
     underlying.is_active = true;
@@ -680,11 +679,48 @@ export const getDeploymentById = async (userId, id) => {
 export const updateDeployment = async (userId, id, updateData) => {
   const sanitizedUpdate = pickAllowedFields(updateData, USER_UPDATABLE_FIELDS);
 
-  if (Object.keys(sanitizedUpdate).length === 0) {
+  if (Object.keys(sanitizedUpdate).length === 0 && !updateData.symbol_control) {
     throw new Error("No valid fields provided for update");
   }
 
-  return await Deployment.findOneAndUpdate(
+  const existing = await Deployment.findOne({ _id: id, user_id: userId });
+  if (!existing) {
+    throw new Error("Deployment not found");
+  }
+
+  if (updateData.symbol_control) {
+    const sc = updateData.symbol_control;
+    if (sc.enabled) {
+      const underlyingId = sc.underlying_user_symbol_id || existing.symbol_control?.underlying_user_symbol_id;
+      if (!underlyingId) {
+        throw new Error("symbol_control.underlying_user_symbol_id is required when enabled");
+      }
+      const underlying = await UserSymbol.findOne({ _id: underlyingId, user_id: userId });
+      if (!underlying) {
+        throw new Error("Underlying symbol not found");
+      }
+      const expiryDate = resolveExpiryDate(sc.expiry || existing.symbol_control?.expiry);
+      sanitizedUpdate.symbol_control = {
+        enabled: true,
+        underlying_user_symbol_id: underlying._id,
+        underlying_instrument_token: underlying.instrument_token,
+        moneyness: String(sc.moneyness || existing.symbol_control?.moneyness || "ITM").toUpperCase(),
+        offset: sc.offset || existing.symbol_control?.offset || 1,
+        option_type: String(sc.option_type || existing.symbol_control?.option_type || "CE").toUpperCase(),
+        expiry: expiryDate,
+        last_resolved_strike: existing.symbol_control?.last_resolved_strike,
+        last_resolved_at: existing.symbol_control?.last_resolved_at,
+        pending_resolve: existing.symbol_control?.pending_resolve || false,
+        last_resolve_error: existing.symbol_control?.last_resolve_error,
+      };
+    } else {
+      sanitizedUpdate.symbol_control = {
+        enabled: false,
+      };
+    }
+  }
+
+  const updated = await Deployment.findOneAndUpdate(
     { _id: id, user_id: userId },
     sanitizedUpdate,
     {
@@ -692,6 +728,18 @@ export const updateDeployment = async (userId, id, updateData) => {
       runValidators: true,
     }
   );
+
+  if (updated && updated.symbol_control?.enabled && !updateData.skip_resolve) {
+    try {
+      await resolveDeploymentSymbol(updated._id, { force: false });
+    } catch (err) {
+      console.error(`[SymbolControl] Re-resolve on update failed for ${updated._id}:`, err.message);
+    }
+  }
+
+  await syncAllDeploymentsToRedis();
+  await syncControlledDeploymentsIndex();
+  return updated;
 };
 
 export const deleteDeployment = async (userId, id) => {
