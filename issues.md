@@ -143,3 +143,52 @@ All 16 identified issues have been audited and verified as **RESOLVED / FIXED** 
 * **Status**: **RESOLVED**
 * **Description**: Source imports depending on runtime-mounted directory.
 * **Resolution**: Dockerfiles use `COPY ./redis_operations /app/redis_utils/redis_operations` and `scripts/copy_shared.sh` to bundle shared code into Docker images during build time.
+
+---
+
+## 17. Org Market-Data Token Cleared on Any User Expiry (Critical)
+* **Status**: **RESOLVED**
+* **Description**: `clearBrokerAccessToken` deleted the shared `redis_upstox_access_token` org key whenever any user's Upstox token expired, knocking out the vendor WebSocket feed for all tenants.
+* **Resolution**: Org/admin Redis keys are deleted only when the expired broker belongs to an admin user; afterward `syncOrgAccessTokenIfAdmin()` attempts to repopulate from MongoDB.
+* **Code Location**:
+  * [broker.js](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestApp/src/services/broker.js)
+
+---
+
+## 18. Global Upstox Unsubscribe on Per-User Remap (Critical)
+* **Status**: **RESOLVED**
+* **Description**: Deployment strike remap unsubscribed an instrument globally after checking only the remapping user's watchlist, starving other users of ticks for the same instrument.
+* **Resolution**: `unsubscribeSymbolTokenIfUnused` now checks `UserSymbol` globally (`is_active: true`) before publishing unsubscribe.
+* **Code Location**:
+  * [deployment.js](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestApp/src/services/deployment.js)
+
+---
+
+## 19. Unscoped Mongo Broker Token Fallback (High)
+* **Status**: **RESOLVED**
+* **Description**: `getAccessTokenFromRedis()` without `userId` and `getOrgAccessTokenFromRedis()` fell back to `findOne({ external_broker_id: 'upstox' })`, returning an arbitrary tenant's token.
+* **Resolution**: User lookups require an explicit `userId`; org lookup uses only the admin-role user's broker and also seeds `:org` Redis key.
+* **Code Location**:
+  * [AuthoriseUpstoxClient.js](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js)
+
+---
+
+## 20. Service Token Hardcoded User Impersonation (High)
+* **Status**: **RESOLVED**
+* **Description**: `authenticateOrServiceToken` defaulted missing `X-User-Id` to a seed user ObjectId, causing live trades and lifecycle actions to run as the wrong user.
+* **Resolution**: `X-User-Id` is required for service-token auth; `placeOrders` and sweep signal logger send the real `strategy_details.user_id`; trade controller prefers body/`X-User-Id` under service auth.
+* **Code Locations**:
+  * [serviceTokenMiddleware.js](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestApp/src/middlewares/serviceTokenMiddleware.js)
+  * [trade.js](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestApp/src/controllers/trade.js)
+  * [dependency.js](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/MicroServices/Orders/placeOrders/dependency.js)
+
+---
+
+## 21. Symbols List Live Metrics Not Wired (Medium)
+* **Status**: **RESOLVED**
+* **Description**: Symbols list showed placeholder last price / 24h change / volume; WebSocket only forwarded LTP and UI used strict token equality.
+* **Resolution**: Backend `extractMarketMetrics` forwards `change_pct` and `volume`; UI maintains capped `liveQuotes` with normalized token matching and displays live columns.
+* **Code Locations**:
+  * [websocketService.js](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestApp/src/services/websocketService.js)
+  * [instrumentToken.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestUI/src/utils/instrumentToken.ts)
+  * [SymbolsListView.tsx](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/BackTest/BackTestUI/src/components/SymbolsListView.tsx)
