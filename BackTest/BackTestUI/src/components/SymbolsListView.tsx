@@ -12,11 +12,11 @@ import {
 import { SymbolData } from '../types';
 import { api } from '../api';
 import { mapSymbol } from '../adapters';
-import { getLivePrice, tokensMatch } from '../utils/instrumentToken';
+import { getLiveQuote, tokensMatch, LiveQuote } from '../utils/instrumentToken';
 
 interface SymbolsListViewProps {
   symbols: SymbolData[]; // Parent state — used only for overview metrics
-  livePrices?: Record<string, number>;
+  liveQuotes?: Record<string, LiveQuote>;
   onAddSymbol: (newSym: SymbolData) => void;
   onNavigateToEntity: (type: 'symbol', id: string) => void;
   onRefreshData?: () => Promise<void> | void;
@@ -27,7 +27,7 @@ interface SymbolsListViewProps {
 
 export default function SymbolsListView({
   symbols,
-  livePrices = {},
+  liveQuotes = {},
   onAddSymbol,
   onNavigateToEntity,
   onRefreshData,
@@ -192,11 +192,20 @@ export default function SymbolsListView({
     }
   };
 
-  // Computed overview metrics (from parent unfiltered symbols prop)
-  const activeCount = symbols.filter(s => s.isActive).length;
-  const totalVolume = symbols.reduce((sum, s) => sum + s.volume24h, 0);
-  const avgChange = symbols.reduce((sum, s) => sum + s.change24h, 0) / (symbols.length || 1);
-  const topMover = [...symbols].sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h))[0];
+  // Computed overview metrics — prefer live quotes when available
+  const enrichedSymbols = symbols.map(s => {
+    const q = getLiveQuote(liveQuotes, s.instrumentToken || '');
+    return {
+      ...s,
+      lastPrice: q?.lastPrice ?? s.lastPrice,
+      change24h: q?.change24h ?? s.change24h,
+      volume24h: q?.volume24h ?? s.volume24h,
+    };
+  });
+  const activeCount = enrichedSymbols.filter(s => s.isActive).length;
+  const totalVolume = enrichedSymbols.reduce((sum, s) => sum + (s.volume24h || 0), 0);
+  const avgChange = enrichedSymbols.reduce((sum, s) => sum + (s.change24h || 0), 0) / (enrichedSymbols.length || 1);
+  const topMover = [...enrichedSymbols].sort((a, b) => Math.abs(b.change24h || 0) - Math.abs(a.change24h || 0))[0];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,9 +216,9 @@ export default function SymbolsListView({
       ticker: instrumentToken.trim(),
       name,
       exchange: exchange.toUpperCase(),
-      lastPrice: 100.0,
-      change24h: 0.0,
-      volume24h: 100000,
+      lastPrice: 0,
+      change24h: 0,
+      volume24h: 0,
       instrumentType: instrumentClass.toLowerCase() as 'equity' | 'index' | 'option',
       instrumentToken: instrumentToken.trim(),
       description,
@@ -475,14 +484,22 @@ export default function SymbolsListView({
               </thead>
               <tbody className="divide-y divide-slate-900">
                 {tableSymbols.map(sym => {
-                  const isPositive = sym.change24h >= 0;
-                  const isToggling = togglingId === sym.id;
                   const liveSym = symbols.find(s =>
-                    s.id === sym.id || tokensMatch(s.instrumentToken, sym.instrumentToken)
+                    s.id === sym.id || tokensMatch(s.instrumentToken || '', sym.instrumentToken || '')
                   );
+                  const quote = getLiveQuote(liveQuotes, sym.instrumentToken || '');
                   const currentPrice =
-                    getLivePrice(livePrices, sym.instrumentToken) ??
+                    quote?.lastPrice ??
                     (liveSym ? liveSym.lastPrice : sym.lastPrice);
+                  const currentChange =
+                    quote?.change24h ??
+                    (liveSym ? liveSym.change24h : sym.change24h);
+                  const currentVolume =
+                    quote?.volume24h ??
+                    (liveSym ? liveSym.volume24h : sym.volume24h);
+                  const isPositive = (currentChange ?? 0) >= 0;
+                  const isToggling = togglingId === sym.id;
+                  const hasPrice = currentPrice != null && currentPrice > 0;
                   return (
                     <tr key={sym.id || sym.ticker} className="hover:bg-indigo-600/5 transition-colors">
                       <td className="p-4">
@@ -516,16 +533,24 @@ export default function SymbolsListView({
                         </span>
                       </td>
                       <td className="p-4 text-right font-bold font-mono text-slate-200">
-                        ₹{currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                        {hasPrice
+                          ? `₹${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+                          : '—'}
                       </td>
                       <td className="p-4 text-right">
-                        <span className={`inline-flex items-center gap-1 font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                          {isPositive ? '+' : ''}{sym.change24h}%
-                        </span>
+                        {quote?.change24h != null || (currentChange != null && currentChange !== 0) ? (
+                          <span className={`inline-flex items-center gap-1 font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                            {isPositive ? '+' : ''}{(currentChange ?? 0).toFixed(2)}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 font-mono">—</span>
+                        )}
                       </td>
                       <td className="p-4 text-right text-slate-400 font-mono">
-                        ₹{sym.volume24h.toLocaleString()}
+                        {currentVolume != null && currentVolume > 0
+                          ? currentVolume.toLocaleString()
+                          : '—'}
                       </td>
                       <td className="p-4 text-center">
                         <div className="flex items-center justify-center gap-2">

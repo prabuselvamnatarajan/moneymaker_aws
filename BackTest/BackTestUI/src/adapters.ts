@@ -43,9 +43,9 @@ export function mapSymbol(backendSym: any): SymbolData {
     ticker: backendSym.symbol || 'UNKNOWN',
     name: backendSym.symbol_name || getSymbolName(backendSym.symbol),
     exchange: backendSym.exchange || 'NSE',
-    lastPrice: 100.0, // Default fallback price
-    change24h: 0.0,
-    volume24h: 100000,
+    lastPrice: 0,
+    change24h: 0,
+    volume24h: 0,
     instrumentType: mappedType as any,
     instrumentToken: backendSym.instrument_token || '',
     description: backendSym.description || '',

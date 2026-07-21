@@ -27,7 +27,7 @@ import DeploymentAnalysisView from './components/DeploymentAnalysisView';
 import LiveCandlestickView from './components/LiveCandlestickView';
 import { api } from './api';
 import { mapAccount, mapSymbol, mapTrade, mapDeployment, mapLedger } from './adapters';
-import { applyLivePrice, tokensMatch } from './utils/instrumentToken';
+import { applyLiveQuote, tokensMatch, pruneLiveQuotes, LiveQuote } from './utils/instrumentToken';
 
 const INITIAL_FILTERS: TransactionFilters = {
   search: '',
@@ -68,7 +68,7 @@ export default function App() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [strategyDefinitions, setStrategyDefinitions] = useState<any[]>([]);
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
-  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+  const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({});
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filters, setFilters] = useState<TransactionFilters>(INITIAL_FILTERS);
   
@@ -90,7 +90,14 @@ export default function App() {
 
       // Fetch watchlisted symbols
       const symbolsRes = await api.symbols.list();
-      setSymbols(symbolsRes.items.map(mapSymbol));
+      const mappedSymbols = symbolsRes.items.map(mapSymbol);
+      setSymbols(mappedSymbols);
+      setLiveQuotes(prev =>
+        pruneLiveQuotes(
+          prev,
+          mappedSymbols.map(s => s.instrumentToken || '').filter(Boolean)
+        )
+      );
 
       // Fetch deployments (mapped as strategies in UI)
       const deploymentsRes = await api.deployments.list();
@@ -212,11 +219,23 @@ export default function App() {
             window.dispatchEvent(new CustomEvent('broker-updated', { detail: msg }));
             loadData();
           } else if (msg && msg.instrument_token && msg.last_price !== undefined) {
-            setLivePrices(prev => applyLivePrice(prev, msg.instrument_token, msg.last_price));
+            const patch: LiveQuote = { lastPrice: msg.last_price };
+            if (typeof msg.change_pct === 'number' && !Number.isNaN(msg.change_pct)) {
+              patch.change24h = msg.change_pct;
+            }
+            if (typeof msg.volume === 'number' && !Number.isNaN(msg.volume)) {
+              patch.volume24h = msg.volume;
+            }
+            setLiveQuotes(prev => applyLiveQuote(prev, msg.instrument_token, patch));
             setSymbols(prevSymbols =>
               prevSymbols.map(sym =>
-                tokensMatch(sym.instrumentToken, msg.instrument_token)
-                  ? { ...sym, lastPrice: msg.last_price }
+                tokensMatch(sym.instrumentToken || '', msg.instrument_token)
+                  ? {
+                      ...sym,
+                      lastPrice: msg.last_price,
+                      ...(patch.change24h !== undefined ? { change24h: patch.change24h } : {}),
+                      ...(patch.volume24h !== undefined ? { volume24h: patch.volume24h } : {}),
+                    }
                   : sym
               )
             );
@@ -754,7 +773,7 @@ export default function App() {
         return (
           <SymbolsListView
             symbols={symbols}
-            livePrices={livePrices}
+            liveQuotes={liveQuotes}
             onAddSymbol={handleAddSymbol}
             onNavigateToEntity={handleSelectEntity}
             onRefreshData={loadData}
