@@ -137,16 +137,9 @@ async function getOrgAccessTokenFromRedis() {
             try {
                 const db = client.db('BacktestApp');
                 const adminRole = await db.collection('roles').findOne({ name: 'admin' });
-                const adminRoleIds = adminRole ? [adminRole._id, adminRole._id.toString()] : [];
-
-                const adminUser = await db.collection('users').findOne({
-                    $or: [
-                        { roles: { $in: adminRoleIds } },
-                        { username: 'admin' },
-                        { email: 'admin@cobratrades.com' },
-                        { email: 'admin@moneymaker.com' }
-                    ]
-                });
+                const adminUser = adminRole ? await db.collection('users').findOne({
+                    roles: { $in: [adminRole._id, adminRole._id.toString()] }
+                }) : null;
 
                 let broker = null;
                 if (adminUser) {

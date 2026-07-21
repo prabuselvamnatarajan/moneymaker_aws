@@ -191,12 +191,9 @@ async function setAccessTokenInRedis(credentials, userId = '') {
                     user = await db.collection('users').findOne({ _id: userId });
                 }
 
-                if (user) {
-                    if (user.username === 'admin' || user.email === 'admin@cobratrades.com' || user.email === 'admin@moneymaker.com') {
-                        isAdmin = true;
-                    } else if (user.roles && Array.isArray(user.roles)) {
-                        isAdmin = user.roles.some(r => adminRoleIds.includes(String(r)));
-                    }
+                if (user && adminRole && Array.isArray(user.roles)) {
+                    const adminRoleIds = [adminRole._id.toString(), String(adminRole._id)];
+                    isAdmin = user.roles.some(r => adminRoleIds.includes(String(r)));
                 }
             } catch (err) {
                 console.error('Error checking if user is admin in setAccessTokenInRedis:', err.message);

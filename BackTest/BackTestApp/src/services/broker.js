@@ -117,13 +117,10 @@ export async function syncOrgAccessTokenIfAdmin(userOrUserId) {
     if (!user) return;
 
     const adminRole = await Role.findOne({ name: "admin" }).lean();
-    const adminRoleIds = adminRole ? [adminRole._id.toString(), String(adminRole._id)] : [];
+    if (!adminRole) return;
+    const adminRoleIdStr = adminRole._id.toString();
 
-    const isAdmin =
-      user.username === "admin" ||
-      user.email === "admin@cobratrades.com" ||
-      user.email === "admin@moneymaker.com" ||
-      (user.roles && user.roles.some((r) => adminRoleIds.includes(String(r))));
+    const isAdmin = user.roles && Array.isArray(user.roles) && user.roles.some((r) => String(r._id || r) === adminRoleIdStr);
 
     if (!isAdmin) return;
 
