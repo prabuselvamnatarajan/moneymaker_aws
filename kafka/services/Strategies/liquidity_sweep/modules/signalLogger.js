@@ -6,11 +6,15 @@ function getSweepLogApiBase() {
     return process.env.SWEEP_LOG_API || process.env.BACKTEST_APP_URL || 'http://backtest-app:3000';
 }
 
-function getServiceHeaders() {
+function getServiceHeaders(strategy_details = {}) {
     const token = process.env.BACKTEST_SERVICE_TOKEN;
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
         headers['x-service-token'] = token;
+    }
+    const userId = strategy_details.user_id;
+    if (userId) {
+        headers['x-user-id'] = String(userId);
     }
     return headers;
 }
@@ -18,11 +22,18 @@ function getServiceHeaders() {
 async function persistLog(payload, strategy_details) {
     const deploymentId = strategy_details?.deployment_id;
     if (!deploymentId) {
+        console.error('[liquidity_sweep] Refusing to persist sweep log: strategy_details.deployment_id is missing');
+        return;
+    }
+    if (process.env.BACKTEST_SERVICE_TOKEN && !strategy_details?.user_id) {
+        console.error(
+            `[liquidity_sweep] Refusing to persist sweep log for deployment ${deploymentId}: strategy_details.user_id is required when BACKTEST_SERVICE_TOKEN is set`
+        );
         return;
     }
     const base = getSweepLogApiBase();
     const url = `${base}/api/deployments/${deploymentId}/sweep-signals`;
-    const headers = getServiceHeaders();
+    const headers = getServiceHeaders(strategy_details);
 
     for (let attempt = 0; attempt < 3; attempt++) {
         try {

@@ -3,34 +3,46 @@ import cors from 'cors';
 
 import { getAuthorisedClient, resetAuthorisedClient } from './redis_utils/AuthoriseUpstoxClient.js';
 
-
 const app = express();
 const port = process.env.PORT || 80;
 
 app.use(cors());
 
+function sendAuthError(res, e) {
+    const status = e.statusCode || 500;
+    const message = e.message || 'Internal Server Error';
+    if (status >= 500) {
+        console.error(e);
+    } else {
+        console.warn(message);
+    }
+    res.status(status).send(message);
+}
 
 app.get('/', async (req, res) => {
     try {
-        const UpstoxClient = await getAuthorisedClient(req.query.userId || '');
-
-        let apiInstance = new UpstoxClient.UserApi();
-        let apiVersion = "2.0"; 
-
-        apiInstance.getUserFundMargin(apiVersion, null, (error, data, response) => {
-        if (error) {
-            console.error("Failed to get OrderBook:", error);
-            resetAuthorisedClient();
-            res.status(500).send('Internal Server Error');
-        } else {
-            console.log('API called successfully. Returned data: ' + JSON.stringify(data));
-            res.send(data);
+        const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+        if (!userId) {
+            return res.status(400).send('Bad Request: userId is required');
         }
+
+        const UpstoxClient = await getAuthorisedClient(userId);
+        const apiInstance = new UpstoxClient.UserApi();
+        const apiVersion = '2.0';
+
+        apiInstance.getUserFundMargin(apiVersion, null, (error, data) => {
+            if (error) {
+                console.error('Failed to get FundsAndMargin:', error);
+                resetAuthorisedClient();
+                res.status(500).send('Internal Server Error');
+            } else {
+                console.log('API called successfully. Returned data: ' + JSON.stringify(data));
+                res.send(data);
+            }
         });
     } catch (e) {
-        console.error(e);
         resetAuthorisedClient();
-        res.status(500).send('Internal Server Error');
+        sendAuthError(res, e);
     }
 });
 

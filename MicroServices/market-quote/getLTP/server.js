@@ -3,20 +3,38 @@ import cors from 'cors';
 
 import { getAuthorisedClient, resetAuthorisedClient } from './redis_utils/AuthoriseUpstoxClient.js';
 
-
 const app = express();
 const port = process.env.PORT || 80;
 
 app.use(cors());
 
+function sendAuthError(res, e) {
+    const status = e.statusCode || 500;
+    const message = e.message || 'Internal Server Error';
+    if (status >= 500) {
+        console.error(e);
+    } else {
+        console.warn(message);
+    }
+    res.status(status).send(message);
+}
 
 app.get('/', async (req, res) => {
     try {
-        const UpstoxClient = await getAuthorisedClient(req.query.userId || '');
-        let marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
-        marketQuoteApiInstance.getLtp({instrumentKey: req.query.symbol || 'NSE_INDEX|Nifty 50'}, (error, data, response) => {
+        const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+        if (!userId) {
+            return res.status(400).send('Bad Request: userId is required');
+        }
+        const symbol = typeof req.query.symbol === 'string' ? req.query.symbol.trim() : '';
+        if (!symbol) {
+            return res.status(400).send('Bad Request: symbol is required');
+        }
+
+        const UpstoxClient = await getAuthorisedClient(userId);
+        const marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
+        marketQuoteApiInstance.getLtp({ instrumentKey: symbol }, (error, data) => {
             if (error) {
-                console.error("Failed to get LTP:", error);
+                console.error('Failed to get LTP:', error);
                 resetAuthorisedClient();
                 res.status(500).send('Internal Server Error');
             } else {
@@ -25,9 +43,8 @@ app.get('/', async (req, res) => {
             }
         });
     } catch (e) {
-        console.error(e);
         resetAuthorisedClient();
-        res.status(500).send('Internal Server Error');
+        sendAuthError(res, e);
     }
 });
 

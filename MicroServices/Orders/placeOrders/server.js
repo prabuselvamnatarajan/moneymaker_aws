@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import fs from 'fs';
 
 const app = express();
 const port = process.env.PORT || 80;
@@ -16,32 +15,27 @@ app.post('/', async (req, res) => {
     try {
         const body = req.body;
 
-        // 1. Input Validation
         if (!body.instrument_token || body.price === undefined || body.quantity === undefined || !body.transaction_type || !body.strategy_details || !body.strategy_details.user_id) {
             return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
         }
 
         const { strategy_details = {}, ...filteredBody } = body;
-        const access_token = await getAccessTokenFromRedis(strategy_details.user_id);
 
         console.log('Request Body:', body);
 
         let result = null;
         let orderResponse = null;
 
-        // Determine if the deployment strategy mode is LIVE and if it has an external broker
         const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
         const isInternalBroker = strategy_details.is_internal_broker === true;
 
         if (isLive && !isInternalBroker) {
-            if (!access_token) {
-                return res.status(401).send('Unauthorized: Broker access token missing or expired for live execution');
-            }
-            // Live External Order: Call Upstox broker FIRST
+            // Throws 401 if token missing/expired — no silent fallback.
+            const access_token = await getAccessTokenFromRedis(strategy_details.user_id);
+
             filteredBody.order_type === 'MARKET' && (filteredBody.price = 0);
             result = await placeOrders(access_token, JSON.stringify(filteredBody));
-            
-            // Only if Upstox order succeeds, record the trade in our internal app (BackTestApp)
+
             try {
                 orderResponse = await triggerBackTestApp(body);
                 let { data: { closing_balance } = {} } = orderResponse || {};
@@ -52,13 +46,11 @@ app.post('/', async (req, res) => {
                 console.error('Failed to record successful live trade in BackTestApp:', err);
             }
 
-            // Sync live account balance
             let new_balance = await getLiveAccountBalance(strategy_details.user_id);
             if (new_balance !== undefined && new_balance !== null) {
                 await setAccountBalanceToRedis(strategy_details.account_id, new_balance);
             }
         } else {
-            // Test Mode or Internal Broker: Record trade in our internal app FIRST
             orderResponse = await triggerBackTestApp(body);
             let { data: { closing_balance } = {} } = orderResponse || {};
             if (closing_balance !== undefined && closing_balance !== null) {
@@ -73,12 +65,13 @@ app.post('/', async (req, res) => {
                 result = 'Test Mode: Order not placed with external broker.';
             }
         }
-        
+
         storeOrderDetails(body.instrument_token, body);
         res.send(result || orderResponse);
     } catch (e) {
         console.error(e);
-        res.status(500).send(e.message || 'Internal Server Error');
+        const status = e.statusCode || 500;
+        res.status(status).send(e.message || 'Internal Server Error');
     }
 });
 

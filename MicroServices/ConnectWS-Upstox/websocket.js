@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 import { Kafka } from 'kafkajs';
 import protobuf from 'protobufjs';
 import { createClient } from 'redis';
-import { getAccessTokenFromRedis, getOrgAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
+import { getOrgAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 
 // Initialize global variables
 let protobufRoot = null;
@@ -54,13 +54,14 @@ async function ensureWSConnection() {
     try {
       console.log(`[WS Upstox] Auto-initiating new WebSocket market data connection using Org/Admin access token...`);
       const access_token = await getOrgAccessTokenFromRedis();
-      if (!access_token) {
-        console.warn(`[WS Upstox] Cannot initiate connection: Org/Admin Upstox access token missing or expired — re-authenticate admin via Brokers page.`);
-        return;
-      }
       await get_WS_URL({ access_token });
     } catch (err) {
-      console.error('[WS Upstox] Error auto-initiating WebSocket connection:', err);
+      const message = err.message || String(err);
+      if (err.statusCode === 503 || message.includes('Org/Admin')) {
+        console.error(`[WS Upstox] Cannot initiate connection: ${message}`);
+      } else {
+        console.error('[WS Upstox] Error auto-initiating WebSocket connection:', err);
+      }
     } finally {
       connectionPromise = null;
     }

@@ -8,6 +8,12 @@ const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
 let redisString;
 let authorisedClient;
 
+function httpError(message, statusCode) {
+    const err = new Error(message);
+    err.statusCode = statusCode;
+    return err;
+}
+
 function isUpstoxTokenExpired(token, skewSeconds = 60) {
     if (!token || typeof token !== 'string') {
         return true;
@@ -40,75 +46,105 @@ async function deleteExpiredToken(redisKey) {
     }
 }
 
+async function ensureRedisString() {
+    if (!redisString) {
+        await redisClientInstance.connect();
+        redisString = new RedisString(redisClientInstance.getClient());
+    }
+}
+
 async function getAuthorisedClient(userId = '') {
+    const cleanUserId = String(userId || '').trim();
+    if (!cleanUserId || cleanUserId === 'default') {
+        throw httpError('Bad Request: userId is required to authorize Upstox client', 400);
+    }
+
     try {
-        const access_token = await getAccessTokenFromRedis(userId);
-        let defaultClient = UpstoxClient.ApiClient.instance;
+        const access_token = await getAccessTokenFromRedis(cleanUserId);
+        if (!access_token) {
+            throw httpError(
+                `Unauthorized: Upstox access token missing or expired for user ${cleanUserId}`,
+                401
+            );
+        }
+        const defaultClient = UpstoxClient.ApiClient.instance;
         defaultClient.authentications['OAUTH2'].accessToken = access_token;
         authorisedClient = UpstoxClient;
     } catch (error) {
+        if (error.statusCode) throw error;
         console.error(`Error Creating Authorised Client with AccessToken :`, error.message);
-        throw new Error(`Failed to authorize Upstox client: ${error.message}`);
+        throw httpError(`Failed to authorize Upstox client: ${error.message}`, 500);
     }
     return authorisedClient;
 }
 
 async function getAccessTokenFromRedis(userId = '') {
-    if (!redisString) {
-        await redisClientInstance.connect();
-        redisString = new RedisString(redisClientInstance.getClient());
+    // User-scoped lookups require an explicit userId. Org feed must use getOrgAccessTokenFromRedis().
+    const cleanUserId = (userId === 'default') ? '' : String(userId || '').trim();
+    if (!cleanUserId) {
+        throw httpError(
+            'Bad Request: userId is required for getAccessTokenFromRedis. Use getOrgAccessTokenFromRedis for org feed.',
+            400
+        );
     }
-    const cleanUserId = (userId === 'default') ? '' : userId;
-    let redisKey = cleanUserId ? `${DEFAULT_REDIS_KEY}:${cleanUserId}` : DEFAULT_REDIS_KEY;
+
+    await ensureRedisString();
+    const redisKey = `${DEFAULT_REDIS_KEY}:${cleanUserId}`;
+
+    let access_token;
     try {
-        let access_token = await redisString.get(redisKey);
-
-        if (!access_token) {
-            const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-            if (mongoUri) {
-                try {
-                    const { MongoClient } = await import('mongodb');
-                    const client = new MongoClient(mongoUri);
-                    await client.connect();
-                    try {
-                        const db = client.db('BacktestApp');
-                        const query = cleanUserId ? { user_id: cleanUserId, external_broker_id: 'upstox' } : { external_broker_id: 'upstox' };
-                        const broker = await db.collection('brokers').findOne(query);
-                        if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
-                            console.log(`[AuthoriseUpstox] Fetched valid token from MongoDB brokers collection for key ${redisKey}`);
-                            await redisString.set(redisKey, broker.access_token);
-                            return broker.access_token;
-                        }
-                    } finally {
-                        await client.close();
-                    }
-                } catch (mongoErr) {
-                    console.error(`[AuthoriseUpstox] Error fetching token from MongoDB for ${redisKey}:`, mongoErr.message);
-                }
-            }
-            console.log(`No access token found in Redis or MongoDB for key ${redisKey}. Returning null.`);
-            return null;
-        }
-
-        if (isUpstoxTokenExpired(access_token)) {
-            console.warn(`[AuthoriseUpstox] Access token expired for key ${redisKey}`);
-            await deleteExpiredToken(redisKey);
-            return null;
-        }
-
-        console.log(`Fetched valid access token from key ${redisKey}`);
-        return access_token;
+        access_token = await redisString.get(redisKey);
     } catch (error) {
         console.error(`Error fetching Access Token from key ${redisKey} :`, error.message);
-        return null;
+        throw httpError(`Failed to read Upstox access token from Redis: ${error.message}`, 500);
     }
+
+    if (!access_token) {
+        const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+        if (mongoUri) {
+            try {
+                const { MongoClient } = await import('mongodb');
+                const client = new MongoClient(mongoUri);
+                await client.connect();
+                try {
+                    const db = client.db('BacktestApp');
+                    const broker = await db.collection('brokers').findOne({
+                        user_id: cleanUserId,
+                        external_broker_id: 'upstox',
+                    });
+                    if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
+                        console.log(`[AuthoriseUpstox] Fetched valid token from MongoDB brokers collection for key ${redisKey}`);
+                        await redisString.set(redisKey, broker.access_token);
+                        return broker.access_token;
+                    }
+                } finally {
+                    await client.close();
+                }
+            } catch (mongoErr) {
+                console.error(`[AuthoriseUpstox] Error fetching token from MongoDB for ${redisKey}:`, mongoErr.message);
+            }
+        }
+        throw httpError(
+            `Unauthorized: Upstox access token missing or expired for user ${cleanUserId}`,
+            401
+        );
+    }
+
+    if (isUpstoxTokenExpired(access_token)) {
+        console.warn(`[AuthoriseUpstox] Access token expired for key ${redisKey}`);
+        await deleteExpiredToken(redisKey);
+        throw httpError(
+            `Unauthorized: Upstox access token expired for user ${cleanUserId}`,
+            401
+        );
+    }
+
+    console.log(`Fetched valid access token from key ${redisKey}`);
+    return access_token;
 }
 
 async function getOrgAccessTokenFromRedis() {
-    if (!redisString) {
-        await redisClientInstance.connect();
-        redisString = new RedisString(redisClientInstance.getClient());
-    }
+    await ensureRedisString();
 
     const candidateKeys = [
         `${DEFAULT_REDIS_KEY}:admin`,
@@ -148,6 +184,7 @@ async function getOrgAccessTokenFromRedis() {
                         roles: { $in: [adminRole._id, adminRole._id.toString()] }
                     }) : null;
 
+                    // Only use an admin user's broker — never fall back to an arbitrary Upstox broker.
                     let broker = null;
                     if (adminUser) {
                         const userIds = [adminUser._id, adminUser._id.toString()];
@@ -156,13 +193,11 @@ async function getOrgAccessTokenFromRedis() {
                             external_broker_id: 'upstox'
                         });
                     }
-                    if (!broker) {
-                        broker = await db.collection('brokers').findOne({ external_broker_id: 'upstox' });
-                    }
 
                     if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
                         console.log('[AuthoriseUpstox] Fetched Org/Admin token from MongoDB brokers collection.');
                         await redisString.set(`${DEFAULT_REDIS_KEY}:admin`, broker.access_token);
+                        await redisString.set(`${DEFAULT_REDIS_KEY}:org`, broker.access_token);
                         await redisString.set(DEFAULT_REDIS_KEY, broker.access_token);
                         return broker.access_token;
                     }
@@ -175,8 +210,10 @@ async function getOrgAccessTokenFromRedis() {
         }
     }
 
-    console.warn('[AuthoriseUpstox] No valid Org/Admin access token found for vendor market data stream.');
-    return null;
+    throw httpError(
+        'Service Unavailable: Org/Admin Upstox access token missing or expired — re-authenticate admin via Brokers page.',
+        503
+    );
 }
 
 async function resetAuthorisedClient() {

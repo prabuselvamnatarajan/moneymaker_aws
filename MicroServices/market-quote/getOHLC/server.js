@@ -8,18 +8,36 @@ const port = process.env.PORT || 80;
 
 app.use(cors());
 
+function sendAuthError(res, e) {
+    const status = e.statusCode || 500;
+    const message = e.message || 'Internal Server Error';
+    if (status >= 500) {
+        console.error(e);
+    } else {
+        console.warn(message);
+    }
+    res.status(status).send(message);
+}
+
 app.get('/', async (req, res) => {
     try {
-        const UpstoxClient = await getAuthorisedClient(req.query.userId || '');
+        const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+        if (!userId) {
+            return res.status(400).send('Bad Request: userId is required');
+        }
+        const symbol = typeof req.query.symbol === 'string' ? req.query.symbol.trim() : '';
+        if (!symbol) {
+            return res.status(400).send('Bad Request: symbol is required');
+        }
+        const interval = typeof req.query.interval === 'string' && req.query.interval.trim()
+            ? req.query.interval.trim()
+            : 'I1';
 
-        let marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
-
-        let symbol = req.query.symbol || 'NSE_INDEX|Nifty 50';
-        let interval = req.query.interval || 'I1';
-
-        marketQuoteApiInstance.getMarketQuoteOHLC(interval, { instrumentKey: symbol }, (error, data, response) => {
+        const UpstoxClient = await getAuthorisedClient(userId);
+        const marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
+        marketQuoteApiInstance.getMarketQuoteOHLC(interval, { instrumentKey: symbol }, (error, data) => {
             if (error) {
-                console.error("Failed to get OHLC:", error);
+                console.error('Failed to get OHLC:', error);
                 resetAuthorisedClient();
                 res.status(500).send('Internal Server Error');
             } else {
@@ -28,9 +46,8 @@ app.get('/', async (req, res) => {
             }
         });
     } catch (e) {
-        console.error(e);
         resetAuthorisedClient();
-        res.status(500).send('Internal Server Error');
+        sendAuthError(res, e);
     }
 });
 

@@ -8,15 +8,38 @@ const port = process.env.PORT || 80;
 
 app.use(cors());
 
+function sendAuthError(res, e) {
+    const status = e.statusCode || 500;
+    const message = e.message || 'Internal Server Error';
+    if (status >= 500) {
+        console.error(e);
+    } else {
+        console.warn(message);
+    }
+    res.status(status).send(message);
+}
+
 app.get('/', async (req, res) => {
     try {
-        const UpstoxClient = await getAuthorisedClient(req.query.userId || '');
+        const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+        if (!userId) {
+            return res.status(400).send('Bad Request: userId is required');
+        }
+        const symbol = typeof req.query.symbol === 'string' ? req.query.symbol.trim() : '';
+        if (!symbol) {
+            return res.status(400).send('Bad Request: symbol is required');
+        }
+        const expiry = typeof req.query.expiry === 'string' ? req.query.expiry.trim() : '';
+        if (!expiry) {
+            return res.status(400).send('Bad Request: expiry is required');
+        }
 
-        let apiInstance  = new UpstoxClient.OptionsApi();
+        const UpstoxClient = await getAuthorisedClient(userId);
+        const apiInstance = new UpstoxClient.OptionsApi();
 
-        apiInstance.getPutCallOptionChain(req.query.symbol || 'NSE_INDEX|Nifty 50', req.query.expiry, (error, data, response) => {
+        apiInstance.getPutCallOptionChain(symbol, expiry, (error, data) => {
             if (error) {
-                console.error("Failed to get Put Call Option Chain:", error);
+                console.error('Failed to get Put Call Option Chain:', error);
                 resetAuthorisedClient();
                 res.status(500).send('Internal Server Error');
             } else {
@@ -25,9 +48,8 @@ app.get('/', async (req, res) => {
             }
         });
     } catch (e) {
-        console.error(e);
         resetAuthorisedClient();
-        res.status(500).send('Internal Server Error');
+        sendAuthError(res, e);
     }
 });
 

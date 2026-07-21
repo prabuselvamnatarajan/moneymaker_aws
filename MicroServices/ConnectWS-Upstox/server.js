@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
+import { getOrgAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { get_WS_URL, initRedisSubscriber } from './websocket.js';
 
 const app = express();
@@ -8,11 +8,9 @@ const port = process.env.PORT || 80;
 
 app.use(cors());
 
-// Initialize Redis Subscriber for symbol updates
 initRedisSubscriber().catch(err => {
     console.error('Failed to initialize Redis Subscriber in server.js:', err);
 });
-
 
 app.get('/', async (req, res) => {
     try {
@@ -22,12 +20,14 @@ app.get('/', async (req, res) => {
             symbols = [symbols];
         }
         console.log(symbols);
-        const access_token = await getAccessTokenFromRedis();
+        // Throws 503 if org token missing — no silent fallback.
+        const access_token = await getOrgAccessTokenFromRedis();
         get_WS_URL({ access_token, symbol: symbols });
         res.send("Varataa Mamee tuuurrrr....");
     } catch (e) {
         console.error(e);
-        res.status(500).send('Internal Server Error');
+        const status = e.statusCode || 500;
+        res.status(status).send(e.message || 'Internal Server Error');
     }
 });
 
