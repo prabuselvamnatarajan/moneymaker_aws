@@ -29,14 +29,40 @@ async function withRedisClient(callback) {
   }
 }
 
+async function isUserAdmin(userId) {
+  if (!userId) return false;
+  try {
+    const User = (await import("../models/user.js")).default;
+    const Role = (await import("../iam/models/role.js")).default;
+    const adminRole = await Role.findOne({ name: "admin" }).lean();
+    if (!adminRole) return false;
+    const adminRoleIdStr = adminRole._id.toString();
+    const user = await User.findById(userId);
+    if (!user || !Array.isArray(user.roles)) return false;
+    return user.roles.some((r) => String(r._id || r) === adminRoleIdStr);
+  } catch (err) {
+    console.error("[Broker Service] Failed to check admin role:", err.message);
+    return false;
+  }
+}
+
 async function clearBrokerAccessToken(broker) {
   broker.access_token = "";
   await broker.save();
 
+  const ownerIsAdmin = await isUserAdmin(broker.user_id);
+
   await withRedisClient(async (client) => {
     const userKey = getUpstoxRedisKey(broker.user_id || "");
     await client.del(userKey);
-    await client.del(DEFAULT_REDIS_KEY);
+
+    // Only clear shared org keys when the expired broker belongs to an admin.
+    // Clearing them for regular users would knock out the vendor market-data feed.
+    if (ownerIsAdmin) {
+      await client.del(DEFAULT_REDIS_KEY);
+      await client.del(`${DEFAULT_REDIS_KEY}:admin`);
+      await client.del(`${DEFAULT_REDIS_KEY}:org`);
+    }
 
     const payload = JSON.stringify({
       event: "broker_updated",
@@ -46,8 +72,13 @@ async function clearBrokerAccessToken(broker) {
     await client.publish("broker_updates", payload);
   });
 
+  // After clearing an admin token, try to repopulate org keys from another valid admin broker.
+  if (ownerIsAdmin) {
+    await syncOrgAccessTokenIfAdmin();
+  }
+
   console.log(
-    `[Broker Service] Cleared expired Upstox access token for broker ${broker._id} (user: ${broker.user_id || "default"})`
+    `[Broker Service] Cleared expired Upstox access token for broker ${broker._id} (user: ${broker.user_id || "default"}, admin=${ownerIsAdmin})`
   );
 }
 
@@ -139,6 +170,7 @@ export async function syncOrgAccessTokenIfAdmin(userOrUserId) {
     if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
       await withRedisClient(async (client) => {
         await client.set(`${DEFAULT_REDIS_KEY}:admin`, broker.access_token);
+        await client.set(`${DEFAULT_REDIS_KEY}:org`, broker.access_token);
         await client.set(DEFAULT_REDIS_KEY, broker.access_token);
         await client.set(`redis_upstox_access_token:${user._id.toString()}`, broker.access_token);
 

@@ -87,18 +87,16 @@ async function get_new_access_token(code, userId = '') {
     };
 
     try {
-        console.log('Sending request to Upstox API with data:', data);
+        console.log('Sending request to Upstox API for authorization code exchange (credentials redacted).');
         const response = await axios.post(url, new URLSearchParams(data), { headers });
 
-        console.log('Response Data:', response.data);
-
         if (!response.data || typeof response.data.access_token !== 'string') {
-            console.error('Invalid response structure:', response.data);
+            console.error('Invalid response structure from Upstox API (access_token missing).');
             throw new Error('Invalid response from Upstox API. Ensure the API is returning the correct data.');
         }
 
         const access_token = response.data.access_token;
-        console.log(`Access Token: ${access_token}`);
+        console.log('Access token obtained successfully from Upstox API.');
 
         let credentials = {
             client_id,
@@ -181,7 +179,9 @@ async function setAccessTokenInRedis(credentials, userId = '') {
                 await client.connect();
                 const db = client.db('BacktestApp');
                 const adminRole = await db.collection('roles').findOne({ name: 'admin' });
-                const adminRoleIds = adminRole ? [adminRole._id.toString(), String(adminRole._id)] : [];
+                const adminRoleIds = adminRole
+                    ? [adminRole._id.toString(), String(adminRole._id)]
+                    : [];
 
                 const { ObjectId } = await import('mongodb');
                 let user = null;
@@ -192,7 +192,6 @@ async function setAccessTokenInRedis(credentials, userId = '') {
                 }
 
                 if (user && adminRole && Array.isArray(user.roles)) {
-                    const adminRoleIds = [adminRole._id.toString(), String(adminRole._id)];
                     isAdmin = user.roles.some(r => adminRoleIds.includes(String(r)));
                 }
             } catch (err) {
@@ -212,8 +211,9 @@ async function setAccessTokenInRedis(credentials, userId = '') {
 
         if (isAdmin) {
             await redisString.set('redis_upstox_access_token:admin', credentials.access_token);
+            await redisString.set('redis_upstox_access_token:org', credentials.access_token);
             await redisString.set('redis_upstox_access_token', credentials.access_token);
-            console.log(`Org/Admin access token set in Redis with keys redis_upstox_access_token:admin and redis_upstox_access_token`);
+            console.log(`Org/Admin access token set in Redis with keys redis_upstox_access_token:admin, :org, and default`);
         }
     } catch (error) {
         console.error(`Error setting Access Token in Redis:`, error.message);
