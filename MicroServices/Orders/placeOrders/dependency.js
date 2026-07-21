@@ -144,6 +144,10 @@ async function triggerBackTestApp(body) {
         if (BACKTEST_SERVICE_TOKEN) {
             headers['X-Service-Token'] = BACKTEST_SERVICE_TOKEN;
         }
+        const callerUserId = strategy_details.user_id || testAPIBody.user_id;
+        if (callerUserId) {
+            headers['X-User-Id'] = String(callerUserId);
+        }
         const res = await fetch(url, {
             method: 'POST',
             headers,

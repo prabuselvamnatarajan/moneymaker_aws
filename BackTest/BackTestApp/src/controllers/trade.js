@@ -4,7 +4,15 @@ export const createTradeController = async (req, res, next) => {
   try {
     const tradeData = { ...req.body };
 
-    if (req.auth && req.auth.userId) {
+    if (req.serviceAuth) {
+      // Internal callers: prefer body.user_id, else X-User-Id from middleware.
+      const resolvedUserId = tradeData.user_id || req.auth?.userId;
+      if (!resolvedUserId) {
+        return res.status(400).json({ message: "user_id is required (body or X-User-Id header)" });
+      }
+      tradeData.user_id = resolvedUserId;
+    } else if (req.auth && req.auth.userId) {
+      // JWT auth: always bind trade to the authenticated user.
       tradeData.user_id = req.auth.userId;
     } else if (!tradeData.user_id) {
       return res.status(400).json({ message: "user_id is required" });
