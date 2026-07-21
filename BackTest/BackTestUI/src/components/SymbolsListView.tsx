@@ -12,9 +12,11 @@ import {
 import { SymbolData } from '../types';
 import { api } from '../api';
 import { mapSymbol } from '../adapters';
+import { getLivePrice, tokensMatch } from '../utils/instrumentToken';
 
 interface SymbolsListViewProps {
   symbols: SymbolData[]; // Parent state — used only for overview metrics
+  livePrices?: Record<string, number>;
   onAddSymbol: (newSym: SymbolData) => void;
   onNavigateToEntity: (type: 'symbol', id: string) => void;
   onRefreshData?: () => Promise<void> | void;
@@ -25,6 +27,7 @@ interface SymbolsListViewProps {
 
 export default function SymbolsListView({
   symbols,
+  livePrices = {},
   onAddSymbol,
   onNavigateToEntity,
   onRefreshData,
@@ -474,8 +477,12 @@ export default function SymbolsListView({
                 {tableSymbols.map(sym => {
                   const isPositive = sym.change24h >= 0;
                   const isToggling = togglingId === sym.id;
-                  const liveSym = symbols.find(s => s.id === sym.id || s.instrumentToken === sym.instrumentToken);
-                  const currentPrice = liveSym ? liveSym.lastPrice : sym.lastPrice;
+                  const liveSym = symbols.find(s =>
+                    s.id === sym.id || tokensMatch(s.instrumentToken, sym.instrumentToken)
+                  );
+                  const currentPrice =
+                    getLivePrice(livePrices, sym.instrumentToken) ??
+                    (liveSym ? liveSym.lastPrice : sym.lastPrice);
                   return (
                     <tr key={sym.id || sym.ticker} className="hover:bg-indigo-600/5 transition-colors">
                       <td className="p-4">

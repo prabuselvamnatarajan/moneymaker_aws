@@ -27,6 +27,7 @@ import DeploymentAnalysisView from './components/DeploymentAnalysisView';
 import LiveCandlestickView from './components/LiveCandlestickView';
 import { api } from './api';
 import { mapAccount, mapSymbol, mapTrade, mapDeployment, mapLedger } from './adapters';
+import { applyLivePrice, tokensMatch } from './utils/instrumentToken';
 
 const INITIAL_FILTERS: TransactionFilters = {
   search: '',
@@ -67,6 +68,7 @@ export default function App() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [strategyDefinitions, setStrategyDefinitions] = useState<any[]>([]);
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filters, setFilters] = useState<TransactionFilters>(INITIAL_FILTERS);
   
@@ -210,10 +212,11 @@ export default function App() {
             window.dispatchEvent(new CustomEvent('broker-updated', { detail: msg }));
             loadData();
           } else if (msg && msg.instrument_token && msg.last_price !== undefined) {
-            setSymbols(prevSymbols => 
-              prevSymbols.map(sym => 
-                sym.instrumentToken === msg.instrument_token 
-                  ? { ...sym, lastPrice: msg.last_price } 
+            setLivePrices(prev => applyLivePrice(prev, msg.instrument_token, msg.last_price));
+            setSymbols(prevSymbols =>
+              prevSymbols.map(sym =>
+                tokensMatch(sym.instrumentToken, msg.instrument_token)
+                  ? { ...sym, lastPrice: msg.last_price }
                   : sym
               )
             );
@@ -751,6 +754,7 @@ export default function App() {
         return (
           <SymbolsListView
             symbols={symbols}
+            livePrices={livePrices}
             onAddSymbol={handleAddSymbol}
             onNavigateToEntity={handleSelectEntity}
             onRefreshData={loadData}
