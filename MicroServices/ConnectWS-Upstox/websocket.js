@@ -217,6 +217,19 @@ async function initRedisSubscriber() {
         console.error('[WS Upstox Redis Sub] Error processing event message:', err);
       }
     });
+
+    await redisSubscriber.subscribe('broker_updates', async (message) => {
+      try {
+        const payload = JSON.parse(message);
+        console.log('[WS Upstox Redis Sub] Received broker_update event:', payload);
+        if (!activeWS || activeWS.readyState !== WebSocket.OPEN) {
+          console.log('[WS Upstox] Broker update received & WS connection not open. Auto-initiating connection...');
+          await ensureWSConnection();
+        }
+      } catch (err) {
+        console.error('[WS Upstox Redis Sub] Error processing broker_update message:', err);
+      }
+    });
   } catch (err) {
     console.error('[WS Upstox Redis Sub] Failed to connect:', err);
   }

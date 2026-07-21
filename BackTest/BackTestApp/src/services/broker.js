@@ -107,6 +107,51 @@ export const getAllBrokers = async (userId, isAdmin = false) => {
   return sanitizeExpiredUpstoxBrokers(brokers);
 };
 
+export async function syncOrgAccessTokenIfAdmin(userOrUserId) {
+  try {
+    const User = (await import("../models/user.js")).default;
+    const Role = (await import("../models/role.js")).default;
+
+    let userId = typeof userOrUserId === "string" ? userOrUserId : userOrUserId?._id;
+    let user = typeof userOrUserId === "object" && userOrUserId.username ? userOrUserId : await User.findById(userId);
+    if (!user) return;
+
+    const adminRole = await Role.findOne({ name: "admin" }).lean();
+    const adminRoleIds = adminRole ? [adminRole._id.toString(), String(adminRole._id)] : [];
+
+    const isAdmin =
+      user.username === "admin" ||
+      user.email === "admin@cobratrades.com" ||
+      user.email === "admin@moneymaker.com" ||
+      (user.roles && user.roles.some((r) => adminRoleIds.includes(String(r))));
+
+    if (!isAdmin) return;
+
+    const broker = await Broker.findOne({
+      user_id: user._id.toString(),
+      external_broker_id: "upstox",
+    });
+
+    if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
+      await withRedisClient(async (client) => {
+        await client.set(`${DEFAULT_REDIS_KEY}:admin`, broker.access_token);
+        await client.set(DEFAULT_REDIS_KEY, broker.access_token);
+        await client.set(`redis_upstox_access_token:${user._id.toString()}`, broker.access_token);
+
+        const payload = JSON.stringify({
+          event: "broker_updated",
+          userId: user._id.toString(),
+          brokerId: "upstox",
+        });
+        await client.publish("broker_updates", payload);
+      });
+      console.log(`[Broker Service] Synced Org/Admin Upstox access token to Redis for admin user: ${user._id}`);
+    }
+  } catch (err) {
+    console.error("[Broker Service] Error syncing Org access token for admin:", err.message);
+  }
+}
+
 export const updateBroker = async (brokerId, userId, isAdmin, updateData) => {
   const query = isAdmin ? { _id: brokerId } : { _id: brokerId, user_id: userId, is_internal: false };
   const broker = await Broker.findOne(query);
@@ -122,9 +167,17 @@ export const updateBroker = async (brokerId, userId, isAdmin, updateData) => {
       ...updateData.credentials
     };
   }
-  if (updateData.access_token !== undefined) broker.access_token = updateData.access_token;
+  if (updateData.access_token !== undefined) {
+    broker.access_token = updateData.access_token;
+  }
+
+  const savedBroker = await broker.save();
+
+  if (savedBroker.external_broker_id === "upstox" && savedBroker.access_token && !isUpstoxTokenExpired(savedBroker.access_token)) {
+    await syncOrgAccessTokenIfAdmin(savedBroker.user_id);
+  }
   
-  return await broker.save();
+  return savedBroker;
 };
 
 export const deleteBroker = async (brokerId, userId, isAdmin) => {

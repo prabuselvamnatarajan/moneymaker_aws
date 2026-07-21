@@ -3,6 +3,7 @@ import * as mfaService from "../services/mfaService.js";
 import * as sessionService from "../services/sessionService.js";
 import * as jwtService from "../utils/jwtService.js";
 import { parseUserAgent } from "../utils/userAgentParser.js";
+import { syncOrgAccessTokenIfAdmin } from "../../services/broker.js";
 
 export async function setup(req, res, next) {
   try {
@@ -88,6 +89,8 @@ export async function loginVerify(req, res, next) {
     };
     const accessToken = jwtService.signAccessToken(payload);
     const refreshToken = jwtService.signRefreshToken(payload);
+
+    await syncOrgAccessTokenIfAdmin(verifiedUser);
 
     res.status(200).json({
       message: "Login success!",

@@ -2,6 +2,7 @@ import * as authService from "../services/authService.js";
 import * as jwtService from "../utils/jwtService.js";
 import * as sessionService from "../services/sessionService.js";
 import { parseUserAgent } from "../utils/userAgentParser.js";
+import { syncOrgAccessTokenIfAdmin } from "../../services/broker.js";
 
 export async function signup(req, res, next) {
   try {
@@ -73,6 +74,8 @@ export async function login(req, res, next) {
     };
     const accessToken = jwtService.signAccessToken(payload);
     const refreshToken = jwtService.signRefreshToken(payload);
+
+    await syncOrgAccessTokenIfAdmin(user);
 
     res.status(200).json({
       message: "Login success!",
