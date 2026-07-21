@@ -110,18 +110,25 @@ export const getAllBrokers = async (userId, isAdmin = false) => {
 export async function syncOrgAccessTokenIfAdmin(userOrUserId) {
   try {
     const User = (await import("../models/user.js")).default;
-    const Role = (await import("../models/role.js")).default;
-
-    let userId = typeof userOrUserId === "string" ? userOrUserId : userOrUserId?._id;
-    let user = typeof userOrUserId === "object" && userOrUserId.username ? userOrUserId : await User.findById(userId);
-    if (!user) return;
+    const Role = (await import("../iam/models/role.js")).default;
 
     const adminRole = await Role.findOne({ name: "admin" }).lean();
     if (!adminRole) return;
     const adminRoleIdStr = adminRole._id.toString();
 
-    const isAdmin = user.roles && Array.isArray(user.roles) && user.roles.some((r) => String(r._id || r) === adminRoleIdStr);
+    let user = null;
+    if (userOrUserId) {
+      let userId = typeof userOrUserId === "string" ? userOrUserId : userOrUserId?._id;
+      user = typeof userOrUserId === "object" && userOrUserId.username ? userOrUserId : await User.findById(userId);
+    } else {
+      user = await User.findOne({
+        roles: { $in: [adminRole._id, adminRoleIdStr] }
+      });
+    }
 
+    if (!user) return;
+
+    const isAdmin = user.roles && Array.isArray(user.roles) && user.roles.some((r) => String(r._id || r) === adminRoleIdStr);
     if (!isAdmin) return;
 
     const broker = await Broker.findOne({

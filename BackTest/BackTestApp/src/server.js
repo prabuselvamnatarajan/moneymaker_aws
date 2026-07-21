@@ -46,6 +46,13 @@ connectDB().then(async () => {
   } catch (err) {
     console.error("⚠️ Failed to perform initial active symbols sync to Redis:", err.message);
   }
+  try {
+    const { syncOrgAccessTokenIfAdmin } = await import("./services/broker.js");
+    await syncOrgAccessTokenIfAdmin();
+    console.log("✅ Initial Org Upstox access token sync to Redis completed");
+  } catch (err) {
+    console.error("⚠️ Failed to perform initial Org Upstox access token sync to Redis:", err.message);
+  }
   const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
   });

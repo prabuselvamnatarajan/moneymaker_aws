@@ -512,10 +512,14 @@ services:
       - kafka-broker-2
       - kafka-broker-3
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
@@ -526,9 +530,13 @@ services:
     image: get-ltp:latest
     depends_on:
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
@@ -539,9 +547,13 @@ services:
     image: get-ohlc:latest
     depends_on:
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
@@ -552,9 +564,13 @@ services:
     image: get-fullmarketquote:latest
     depends_on:
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
@@ -569,11 +585,15 @@ services:
       - kafka-broker-2
       - kafka-broker-3
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
       TARGET_TOPIC: order_details
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
       NGINX_ADDRESS: https://reverse-proxy
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
       FUNDS_AND_MARGIN_API_URL: /fundsandmargin
@@ -591,9 +611,13 @@ services:
     image: get-orderbook:latest
     depends_on:
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
@@ -604,9 +628,13 @@ services:
     image: get-funds-and-margin:latest
     depends_on:
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
@@ -617,9 +645,13 @@ services:
     image: get-put-call-option-chain:latest
     depends_on:
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
@@ -630,9 +662,13 @@ services:
     image: get-option-contracts:latest
     depends_on:
       - redis
+      - mongo1
+      - mongo2
+      - mongo3
     environment:
       PORT: 80
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
       - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
       - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro

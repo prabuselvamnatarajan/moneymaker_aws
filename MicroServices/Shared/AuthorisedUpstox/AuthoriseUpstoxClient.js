@@ -130,40 +130,48 @@ async function getOrgAccessTokenFromRedis() {
 
     const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
     if (mongoUri) {
+        let mongodbModule = null;
         try {
-            const { MongoClient } = await import('mongodb');
-            const client = new MongoClient(mongoUri);
-            await client.connect();
+            mongodbModule = await import('mongodb');
+        } catch {
+            // mongodb package not installed in this service
+        }
+
+        if (mongodbModule && mongodbModule.MongoClient) {
             try {
-                const db = client.db('BacktestApp');
-                const adminRole = await db.collection('roles').findOne({ name: 'admin' });
-                const adminUser = adminRole ? await db.collection('users').findOne({
-                    roles: { $in: [adminRole._id, adminRole._id.toString()] }
-                }) : null;
+                const client = new mongodbModule.MongoClient(mongoUri);
+                await client.connect();
+                try {
+                    const db = client.db('BacktestApp');
+                    const adminRole = await db.collection('roles').findOne({ name: 'admin' });
+                    const adminUser = adminRole ? await db.collection('users').findOne({
+                        roles: { $in: [adminRole._id, adminRole._id.toString()] }
+                    }) : null;
 
-                let broker = null;
-                if (adminUser) {
-                    const userIds = [adminUser._id, adminUser._id.toString()];
-                    broker = await db.collection('brokers').findOne({
-                        user_id: { $in: userIds },
-                        external_broker_id: 'upstox'
-                    });
-                }
-                if (!broker) {
-                    broker = await db.collection('brokers').findOne({ external_broker_id: 'upstox' });
-                }
+                    let broker = null;
+                    if (adminUser) {
+                        const userIds = [adminUser._id, adminUser._id.toString()];
+                        broker = await db.collection('brokers').findOne({
+                            user_id: { $in: userIds },
+                            external_broker_id: 'upstox'
+                        });
+                    }
+                    if (!broker) {
+                        broker = await db.collection('brokers').findOne({ external_broker_id: 'upstox' });
+                    }
 
-                if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
-                    console.log('[AuthoriseUpstox] Fetched Org/Admin token from MongoDB brokers collection.');
-                    await redisString.set(`${DEFAULT_REDIS_KEY}:admin`, broker.access_token);
-                    await redisString.set(DEFAULT_REDIS_KEY, broker.access_token);
-                    return broker.access_token;
+                    if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
+                        console.log('[AuthoriseUpstox] Fetched Org/Admin token from MongoDB brokers collection.');
+                        await redisString.set(`${DEFAULT_REDIS_KEY}:admin`, broker.access_token);
+                        await redisString.set(DEFAULT_REDIS_KEY, broker.access_token);
+                        return broker.access_token;
+                    }
+                } finally {
+                    await client.close();
                 }
-            } finally {
-                await client.close();
+            } catch (mongoErr) {
+                console.error('[AuthoriseUpstox] MongoDB lookup error for Org access token:', mongoErr.message);
             }
-        } catch (mongoErr) {
-            console.error('[AuthoriseUpstox] MongoDB lookup error for Org access token:', mongoErr.message);
         }
     }
 

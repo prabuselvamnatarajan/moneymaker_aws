@@ -410,6 +410,8 @@ export const clearAndSeedDB = async () => {
 
     console.log("Created trade and ledger yield history.");
     await syncAllDeploymentsToRedis();
+    const { syncOrgAccessTokenIfAdmin } = await import("../services/broker.js");
+    await syncOrgAccessTokenIfAdmin();
     console.log("✅ Database clear and seed completed successfully!");
   } catch (error) {
     console.error("❌ Clear and seed failed:", error);
