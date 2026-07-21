@@ -168,6 +168,53 @@ function extractLtp(feed) {
   return null;
 }
 
+function extractLtpc(feed) {
+  if (feed.ltpc) return feed.ltpc;
+  if (feed.fullFeed) {
+    const ff = feed.fullFeed.marketFF || feed.fullFeed.indexFF;
+    if (ff && ff.ltpc) return ff.ltpc;
+  }
+  if (feed.firstLevelWithGreeks && feed.firstLevelWithGreeks.ltpc) {
+    return feed.firstLevelWithGreeks.ltpc;
+  }
+  return null;
+}
+
+function extractVolume(feed) {
+  if (feed.fullFeed && feed.fullFeed.marketFF && feed.fullFeed.marketFF.vtt != null) {
+    return Number(feed.fullFeed.marketFF.vtt);
+  }
+  if (feed.firstLevelWithGreeks && feed.firstLevelWithGreeks.vtt != null) {
+    return Number(feed.firstLevelWithGreeks.vtt);
+  }
+  if (feed.vtt != null) {
+    return Number(feed.vtt);
+  }
+  return null;
+}
+
+/** Extract LTP, session change %, and volume-traded-today from an Upstox feed tick. */
+function extractMarketMetrics(feed) {
+  const ltp = extractLtp(feed);
+  if (ltp === null) return null;
+
+  const ltpc = extractLtpc(feed);
+  const cp = ltpc && ltpc.cp != null ? Number(ltpc.cp) : null;
+  let changePct = null;
+  if (cp != null && cp > 0) {
+    changePct = ((ltp - cp) / cp) * 100;
+  }
+
+  const volume = extractVolume(feed);
+
+  return {
+    last_price: ltp,
+    prev_close: cp,
+    change_pct: changePct,
+    volume: volume != null && !Number.isNaN(volume) ? volume : null,
+  };
+}
+
 async function initKafkaConsumer() {
   const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092').split(',');
   const consumerGroupId = `backtest-app-ws-${Math.random().toString(36).substring(2, 10)}`;
@@ -195,14 +242,21 @@ async function initKafkaConsumer() {
         const instrumentToken = message.key.toString();
         const data = JSON.parse(message.value.toString());
 
-        const ltp = extractLtp(data);
-        if (ltp === null) return;
+        const metrics = extractMarketMetrics(data);
+        if (metrics === null) return;
 
-        const outboundMsg = JSON.stringify({
+        const outboundPayload = {
           instrument_token: instrumentToken,
-          last_price: ltp,
+          last_price: metrics.last_price,
           timestamp: Date.now()
-        });
+        };
+        if (metrics.change_pct != null) {
+          outboundPayload.change_pct = metrics.change_pct;
+        }
+        if (metrics.volume != null) {
+          outboundPayload.volume = metrics.volume;
+        }
+        const outboundMsg = JSON.stringify(outboundPayload);
 
         const cleanToken = instrumentToken.includes('|') ? instrumentToken.split('|')[1] : instrumentToken;
 

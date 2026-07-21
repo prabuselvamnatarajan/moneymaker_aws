@@ -53,12 +53,13 @@ const unsubscribeSymbolTokenIfUnused = async (instrumentToken, userId, excludeDe
   });
   if (stillUsed) return;
 
-  const activeInSymbols = await UserSymbol.exists({
-    user_id: userId,
+  // ConnectWS-Upstox unsubscribes globally — only drop the feed if no user
+  // (any tenant) still has this instrument active on their watchlist.
+  const stillActiveGlobally = await UserSymbol.exists({
     instrument_token: instrumentToken,
     is_active: true,
   });
-  if (activeInSymbols) return;
+  if (stillActiveGlobally) return;
 
   try {
     await publishSymbolUpdate({
