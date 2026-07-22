@@ -1,264 +1,261 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import { RedisClient, RedisString } from './redis_utils/redis_operations/index.js';
 
 dotenv.config();
 
-const redisUrl = process.env.REDIS_URL;
-const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
-let redisString;
-
-const url = 'https://api.upstox.com/v2/login/authorization/token';
-const headers = {
-    'accept': 'application/json',
+const UPSTOX_TOKEN_URL = 'https://api.upstox.com/v2/login/authorization/token';
+const UPSTOX_AUTH_DIALOG_URL = 'https://api.upstox.com/v2/login/authorization/dialog';
+const UPSTOX_TOKEN_HEADERS = {
+    accept: 'application/json',
     'Content-Type': 'application/x-www-form-urlencoded',
 };
 
-async function start_app_upstox(userId = '') {
-    const uri = process.env.MONGODB_URI;
-    if (!uri) {
-        throw new Error('MONGODB_URI must be defined in the environment variables.');
+let redisClientInstance;
+let redisString;
+
+function requireEnv(name) {
+    const value = process.env[name];
+    if (typeof value !== 'string' || !value.trim()) {
+        throw new Error(`${name} must be defined in the environment variables.`);
     }
+    return value.trim();
+}
+
+function requireUserId(userId) {
+    const cleanUserId = String(userId || '').trim();
+    if (!cleanUserId) {
+        throw new Error(
+            'userId is required. Pass ?userId= when starting OAuth, and ensure Upstox returns state in the callback.'
+        );
+    }
+    return cleanUserId;
+}
+
+function assertUpstoxCredentialFields(credentials, userId, { requireSecret = false } = {}) {
+    if (!credentials || typeof credentials !== 'object') {
+        throw new Error(`Upstox broker credentials missing in MongoDB for user: ${userId}`);
+    }
+
+    const clientId = String(credentials.client_id || '').trim();
+    const redirectUri = String(credentials.redirect_uri || '').trim();
+    const clientSecret = String(credentials.client_secret || '').trim();
+
+    if (!clientId) {
+        throw new Error(`Upstox client_id missing in MongoDB broker credentials for user: ${userId}`);
+    }
+    if (!redirectUri) {
+        throw new Error(`Upstox redirect_uri missing in MongoDB broker credentials for user: ${userId}`);
+    }
+    if (requireSecret && !clientSecret) {
+        throw new Error(`Upstox client_secret missing in MongoDB broker credentials for user: ${userId}`);
+    }
+
+    return {
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+    };
+}
+
+async function withMongoClient(callback) {
+    const uri = requireEnv('MONGODB_URI');
+    const dbName = requireEnv('MONGO_DB');
     const client = new MongoClient(uri);
+
     try {
         await client.connect();
-        const db = client.db('BacktestApp');
-        const collection = db.collection('brokers');
-        
-        const query = userId ? { user_id: userId, external_broker_id: 'upstox' } : { external_broker_id: 'upstox' };
-        const broker = await collection.findOne(query);
-        
-        if (!broker || !broker.credentials) {
-            throw new Error(`Upstox broker configuration not found for user: ${userId}`);
-        }
-        
-        const { client_id, redirect_uri } = broker.credentials;
-        if (!client_id || !redirect_uri) {
-            throw new Error('client_id and redirect_uri must be defined in broker credentials.');
-        }
-        
-        const params = new URLSearchParams({
-            response_type: 'code',
-            client_id,
-            redirect_uri,
-        });
-        if (userId) {
-            params.set('state', userId);
-        }
-        return `https://api.upstox.com/v2/login/authorization/dialog?${params.toString()}`;
+        return await callback(client.db(dbName));
     } finally {
         await client.close();
     }
 }
 
-async function get_new_access_token(code, userId = '') {
-    if (!code) {
-        throw new Error('The "code" parameter is required but was not provided. Ensure the authorization code is passed correctly.');
+async function getUpstoxBrokerFromDb(userId, { requireSecret = false } = {}) {
+    const cleanUserId = requireUserId(userId);
+
+    const broker = await withMongoClient(async (db) =>
+        db.collection('brokers').findOne({
+            user_id: cleanUserId,
+            external_broker_id: 'upstox',
+        })
+    );
+
+    if (!broker) {
+        throw new Error(`Upstox broker configuration not found in MongoDB for user: ${cleanUserId}`);
     }
 
-    console.log(`Processing code: ${code}`);
+    const credentials = assertUpstoxCredentialFields(broker.credentials, cleanUserId, { requireSecret });
 
-    const uri = process.env.MONGODB_URI;
-    if (!uri) {
-        throw new Error('MONGODB_URI must be defined in the environment variables.');
+    return {
+        broker,
+        credentials,
+        userId: cleanUserId,
+    };
+}
+
+async function getRedisString() {
+    if (!redisString) {
+        const redisUrl = requireEnv('REDIS_URL');
+        redisClientInstance = new RedisClient({ url: redisUrl });
+        await redisClientInstance.connect();
+        redisString = new RedisString(redisClientInstance.getClient());
     }
+    return redisString;
+}
 
-    const client = new MongoClient(uri);
-    let broker;
-    try {
-        await client.connect();
-        const db = client.db('BacktestApp');
-        const collection = db.collection('brokers');
-        
-        const query = userId ? { user_id: userId, external_broker_id: 'upstox' } : { external_broker_id: 'upstox' };
-        broker = await collection.findOne(query);
-        if (!broker || !broker.credentials) {
-            throw new Error(`Upstox broker configuration not found for user: ${userId}`);
+async function isAdminUser(userId) {
+    return withMongoClient(async (db) => {
+        const adminRole = await db.collection('roles').findOne({ name: 'admin' });
+        if (!adminRole) {
+            throw new Error('Admin role not found in MongoDB while resolving Upstox token scope.');
         }
-    } finally {
-        await client.close();
+
+        const adminRoleIds = new Set([adminRole._id.toString(), String(adminRole._id)]);
+
+        let user;
+        try {
+            user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+        } catch {
+            user = await db.collection('users').findOne({ _id: userId });
+        }
+
+        if (!user) {
+            throw new Error(`User ${userId} not found in MongoDB while resolving Upstox token scope.`);
+        }
+
+        if (!Array.isArray(user.roles)) {
+            return false;
+        }
+
+        return user.roles.some((role) => adminRoleIds.has(String(role)));
+    });
+}
+
+async function start_app_upstox(userId) {
+    const { credentials, userId: cleanUserId } = await getUpstoxBrokerFromDb(userId);
+
+    const params = new URLSearchParams({
+        response_type: 'code',
+        client_id: credentials.client_id,
+        redirect_uri: credentials.redirect_uri,
+        state: cleanUserId,
+    });
+
+    return `${UPSTOX_AUTH_DIALOG_URL}?${params.toString()}`;
+}
+
+async function get_new_access_token(code, userId) {
+    if (!code || !String(code).trim()) {
+        throw new Error('The "code" parameter is required but was not provided.');
     }
 
-    const { client_id, client_secret, redirect_uri } = broker.credentials;
+    const cleanCode = String(code).trim();
+    console.log(`Processing Upstox authorization code for user: ${requireUserId(userId)}`);
 
-    if (!client_id || !client_secret || !redirect_uri) {
-        throw new Error('client_id, client_secret, and redirect_uri must be defined in broker credentials.');
-    }
+    const { credentials, userId: cleanUserId } = await getUpstoxBrokerFromDb(userId, { requireSecret: true });
 
     const data = {
-        'code': code,
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'redirect_uri': redirect_uri,
-        'grant_type': 'authorization_code'
+        code: cleanCode,
+        client_id: credentials.client_id,
+        client_secret: credentials.client_secret,
+        redirect_uri: credentials.redirect_uri,
+        grant_type: 'authorization_code',
     };
 
+    let access_token;
     try {
-        console.log(`Sending request to Upstox API for authorization code exchange (redirect_uri: ${redirect_uri}).`);
-        const response = await axios.post(url, new URLSearchParams(data), { headers });
+        console.log(`Sending Upstox token exchange request (redirect_uri: ${credentials.redirect_uri}).`);
+        const response = await axios.post(UPSTOX_TOKEN_URL, new URLSearchParams(data), {
+            headers: UPSTOX_TOKEN_HEADERS,
+        });
 
-        if (!response.data || typeof response.data.access_token !== 'string') {
-            console.error('Invalid response structure from Upstox API (access_token missing).');
-            throw new Error('Invalid response from Upstox API. Ensure the API is returning the correct data.');
+        if (!response.data || typeof response.data.access_token !== 'string' || !response.data.access_token.trim()) {
+            throw new Error('Invalid response from Upstox API: access_token missing.');
         }
 
-        const access_token = response.data.access_token;
+        access_token = response.data.access_token.trim();
         console.log('Access token obtained successfully from Upstox API.');
-
-        let credentials = {
-            client_id,
-            client_secret,
-            redirect_uri,
-            access_token,
-            user_id: userId
-        };
-
-        await checkAndUpdateCredentials(credentials, userId);
-        await setAccessTokenInRedis(credentials, userId);
-        await publishBrokerUpdate(userId);
-        return access_token;
     } catch (error) {
         const upstoxMessage = error.response?.data?.message
             || error.response?.data?.error?.reason
             || error.response?.data?.error
             || null;
+
         if (upstoxMessage) {
-            console.error(`Error obtaining access token from Upstox: ${upstoxMessage}`);
+            console.error(`Upstox token exchange failed: ${upstoxMessage}`);
         } else {
-            console.error(`Error obtaining access token: ${error.message}`);
+            console.error(`Upstox token exchange failed: ${error.message}`);
         }
+
         if (error.response?.data) {
             console.error('Upstox token exchange response:', JSON.stringify(error.response.data));
         }
-        const detail = upstoxMessage
-            ? `Failed to obtain access token: ${upstoxMessage}`
-            : 'Failed to obtain access token. Please check the provided "code" and API configuration.';
-        throw new Error(detail);
+
+        throw new Error(
+            upstoxMessage
+                ? `Failed to obtain Upstox access token: ${upstoxMessage}`
+                : `Failed to obtain Upstox access token: ${error.message}`
+        );
     }
+
+    await persistAccessTokenInMongo(cleanUserId, access_token);
+    await setAccessTokenInRedis(access_token, cleanUserId);
+    await publishBrokerUpdate(cleanUserId);
+
+    return access_token;
 }
 
-async function checkAndUpdateCredentials(credentials, userId = '') {
-    const uri = process.env.MONGODB_URI;
-    if (!uri) {
-        throw new Error('MONGODB_URI must be defined in the environment variables.');
-    }
-
-    const client = new MongoClient(uri);
-
-    try {
-        await client.connect();
-        const db = client.db('BacktestApp');
-        const collection = db.collection('brokers');
-
-        const query = userId ? { user_id: userId, external_broker_id: 'upstox' } : { external_broker_id: 'upstox' };
-        const existingEntry = await collection.findOne(query);
-
-        if (existingEntry) {
-            await collection.updateOne(query, { 
-                $set: { 
-                    access_token: credentials.access_token,
-                    created_at: new Date()
-                } 
-            });
-            console.log(`Access token updated in MongoDB brokers collection for user: ${userId}`);
-        } else {
-            const newBroker = {
-                name: 'Upstox',
-                is_internal: false,
-                user_id: userId,
-                external_broker_id: 'upstox',
-                credentials: {
-                    client_id: credentials.client_id,
-                    client_secret: credentials.client_secret,
-                    redirect_uri: credentials.redirect_uri
+async function persistAccessTokenInMongo(userId, accessToken) {
+    const updateResult = await withMongoClient(async (db) =>
+        db.collection('brokers').updateOne(
+            { user_id: userId, external_broker_id: 'upstox' },
+            {
+                $set: {
+                    access_token: accessToken,
+                    created_at: new Date(),
                 },
-                access_token: credentials.access_token,
-                created_at: new Date()
-            };
-            await collection.insertOne(newBroker);
-            console.log(`New Upstox broker entry created in MongoDB brokers collection for user: ${userId}`);
-        }
-    } catch (error) {
-        console.error('Error checking/updating credentials in MongoDB:', error);
-    } finally {
-        await client.close();
-    }
-}
-
-async function setAccessTokenInRedis(credentials, userId = '') {
-    if (!redisString) {
-        await redisClientInstance.connect();
-        redisString = new RedisString(redisClientInstance.getClient());
-    }
-
-    let isAdmin = !userId;
-    if (userId) {
-        const uri = process.env.MONGODB_URI;
-        if (uri) {
-            const client = new MongoClient(uri);
-            try {
-                await client.connect();
-                const db = client.db('BacktestApp');
-                const adminRole = await db.collection('roles').findOne({ name: 'admin' });
-                const adminRoleIds = adminRole
-                    ? [adminRole._id.toString(), String(adminRole._id)]
-                    : [];
-
-                const { ObjectId } = await import('mongodb');
-                let user = null;
-                try {
-                    user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
-                } catch {
-                    user = await db.collection('users').findOne({ _id: userId });
-                }
-
-                if (user && adminRole && Array.isArray(user.roles)) {
-                    isAdmin = user.roles.some(r => adminRoleIds.includes(String(r)));
-                }
-            } catch (err) {
-                console.error('Error checking if user is admin in setAccessTokenInRedis:', err.message);
-            } finally {
-                await client.close();
             }
-        }
+        )
+    );
+
+    if (updateResult.matchedCount === 0) {
+        throw new Error(`Upstox broker record not found in MongoDB while saving access token for user: ${userId}`);
     }
 
-    try {
-        if (userId) {
-            const userKey = `redis_upstox_access_token:${userId}`;
-            await redisString.set(userKey, credentials.access_token);
-            console.log(`Access token set in Redis with key ${userKey}`);
-        }
-
-        if (isAdmin) {
-            await redisString.set('redis_upstox_access_token:admin', credentials.access_token);
-            await redisString.set('redis_upstox_access_token:org', credentials.access_token);
-            await redisString.set('redis_upstox_access_token', credentials.access_token);
-            console.log(`Org/Admin access token set in Redis with keys redis_upstox_access_token:admin, :org, and default`);
-        }
-    } catch (error) {
-        console.error(`Error setting Access Token in Redis:`, error.message);
-    }
+    console.log(`Access token updated in MongoDB brokers collection for user: ${userId}`);
 }
 
-async function publishBrokerUpdate(userId = '') {
-    if (!redisString) {
-        await redisClientInstance.connect();
-        redisString = new RedisString(redisClientInstance.getClient());
+async function setAccessTokenInRedis(accessToken, userId) {
+    const redis = await getRedisString();
+    const userKey = `redis_upstox_access_token:${userId}`;
+
+    await redis.set(userKey, accessToken);
+    console.log(`Access token set in Redis with key ${userKey}`);
+
+    const isAdmin = await isAdminUser(userId);
+    if (!isAdmin) {
+        return;
     }
-    try {
-        const client = redisClientInstance.getClient();
-        const payload = JSON.stringify({
-            event: 'broker_updated',
-            userId,
-            brokerId: 'upstox'
-        });
-        await client.publish('broker_updates', payload);
-        console.log(`Published broker update to Redis channel broker_updates for user: ${userId}`);
-    } catch (error) {
-        console.error(`Error publishing broker update to Redis:`, error.message);
-    }
+
+    await redis.set('redis_upstox_access_token:admin', accessToken);
+    await redis.set('redis_upstox_access_token:org', accessToken);
+    await redis.set('redis_upstox_access_token', accessToken);
+    console.log('Org/Admin access token set in Redis with keys redis_upstox_access_token:admin, :org, and default');
+}
+
+async function publishBrokerUpdate(userId) {
+    const redis = await getRedisString();
+    const client = redisClientInstance.getClient();
+    const payload = JSON.stringify({
+        event: 'broker_updated',
+        userId,
+        brokerId: 'upstox',
+    });
+
+    await client.publish('broker_updates', payload);
+    console.log(`Published broker update to Redis channel broker_updates for user: ${userId}`);
 }
 
 export { get_new_access_token, start_app_upstox };

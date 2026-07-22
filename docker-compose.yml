@@ -502,7 +502,7 @@ services:
       - "8080:80"
     environment:
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
-      MONGODB_DB_NAME: UPLINK_SERVER_USER_DATA
+      MONGO_DB: BacktestApp
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       PORT: 80
     volumes:

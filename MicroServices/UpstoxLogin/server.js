@@ -4,30 +4,39 @@ import cors from 'cors';
 import { get_new_access_token, start_app_upstox } from './login.js';
 
 const app = express();
-const port = process.env.PORT || 80; // Use port from environment variables
+const port = process.env.PORT || 80;
 app.use(cors());
 
 app.get('/', async (req, res) => {
-    const { code, state } = req.query;
+    const { code, state, userId } = req.query;
 
     if (code) {
         try {
-            console.log('Calling get_new_access_token with code:', code, 'and state (userId):', state);
-            await get_new_access_token(code, state || '');
-            res.send("Success!!!");
+            if (!state || !String(state).trim()) {
+                throw new Error('OAuth callback missing required state (userId). Restart login from the Brokers page.');
+            }
+
+            console.log('Calling get_new_access_token with code and state (userId):', state);
+            await get_new_access_token(code, state);
+            res.send('Success!!!');
         } catch (error) {
             console.error('Error getting access token or performing operation:', error);
             res.status(500).send(error.message || 'Internal Server Error');
         }
-    } else {
-        console.log('No code received, redirecting to Upstox login for user:', req.query.userId || '');
-        try {
-            const redirectUrl = await start_app_upstox(req.query.userId || '');
-            res.redirect(redirectUrl);
-        } catch (err) {
-            console.error('Error redirecting to Upstox authorization dialog:', err);
-            res.status(500).send('Internal Server Error: ' + err.message);
+        return;
+    }
+
+    try {
+        if (!userId || !String(userId).trim()) {
+            throw new Error('userId query parameter is required to start Upstox OAuth login.');
         }
+
+        console.log('Redirecting to Upstox login for user:', userId);
+        const redirectUrl = await start_app_upstox(userId);
+        res.redirect(redirectUrl);
+    } catch (err) {
+        console.error('Error redirecting to Upstox authorization dialog:', err);
+        res.status(500).send(`Internal Server Error: ${err.message}`);
     }
 });
 

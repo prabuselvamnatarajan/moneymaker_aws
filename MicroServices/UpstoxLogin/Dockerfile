@@ -13,5 +13,4 @@ COPY . .
 # Expose the port
 EXPOSE 80
 
-# Pass environment variables at runtime
-CMD ["sh", "-c", "CLIENT_ID=$CLIENT_ID CLIENT_SECRET=$CLIENT_SECRET REDIRECT_URI=$REDIRECT_URI node server.js"]
+CMD ["node", "server.js"]
