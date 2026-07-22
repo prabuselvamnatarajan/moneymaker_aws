@@ -166,7 +166,7 @@ export default function AccountsListView({
     try {
       setInlineBrokerSubmitting(true);
       setInlineBrokerError(null);
-      const res = await api.brokers.create(inlineBrokerName.trim());
+      const res = await api.brokers.create({ name: inlineBrokerName.trim() });
       const newB = res.data;
       setBrokers(prev => [...prev, newB]);
       setBrokerId(newB._id);

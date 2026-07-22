@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { Broker, ExternalBroker } from '../types';
+import {
+  getDefaultUpstoxCredentialRows,
+  getUpstoxOAuthStartUrl,
+} from '../utils/upstoxOAuth';
 import { 
   Globe, Plus, Loader2, Landmark, CheckCircle2, ShieldAlert, 
   Trash2, Save, ExternalLink, Key, Eye, EyeOff, RefreshCw, Info, Settings, X
@@ -121,11 +125,7 @@ export default function BrokersListView() {
     
     // Auto-populate default key-value pairs if platform is upstox
     if (firstPlatform === 'upstox') {
-      setCredentialRows([
-        { key: 'client_id', value: '', isSecret: false },
-        { key: 'client_secret', value: '', isSecret: true },
-        { key: 'redirect_uri', value: 'http://localhost/logedin', isSecret: false },
-      ]);
+      setCredentialRows(getDefaultUpstoxCredentialRows());
     } else {
       setCredentialRows([
         { key: 'client_id', value: '', isSecret: false },
@@ -137,11 +137,7 @@ export default function BrokersListView() {
   const handlePlatformChange = (platform: string) => {
     setSelectedPlatform(platform);
     if (platform === 'upstox') {
-      setCredentialRows([
-        { key: 'client_id', value: '', isSecret: false },
-        { key: 'client_secret', value: '', isSecret: true },
-        { key: 'redirect_uri', value: 'http://localhost/logedin', isSecret: false },
-      ]);
+      setCredentialRows(getDefaultUpstoxCredentialRows());
     } else {
       setCredentialRows([
         { key: 'client_id', value: '', isSecret: false },
@@ -292,9 +288,7 @@ export default function BrokersListView() {
     }
   };
 
-  const getOAuthUrl = () => {
-    return `http://localhost:8080/?userId=${encodeURIComponent(currentUserId)}`;
-  };
+  const getOAuthUrl = () => getUpstoxOAuthStartUrl(currentUserId);
 
   const getBrokerAuthStatus = (broker: Broker): 'authorized' | 'expired' | 'disconnected' => {
     if (broker.is_internal) return 'authorized';

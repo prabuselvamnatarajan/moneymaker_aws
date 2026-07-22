@@ -8,6 +8,40 @@ import {
 
 const DEFAULT_REDIS_KEY = "redis_upstox_access_token";
 
+const UPSTOX_REQUIRED_CREDENTIAL_KEYS = ["client_id", "client_secret", "redirect_uri"];
+
+function validateUpstoxCredentials(credentials, { allowPartialSecret = false } = {}) {
+  if (!credentials || typeof credentials !== "object") {
+    throw new Error("Upstox credentials are required.");
+  }
+
+  for (const key of UPSTOX_REQUIRED_CREDENTIAL_KEYS) {
+    const value = credentials[key];
+    if (key === "client_secret" && allowPartialSecret && !value) {
+      continue;
+    }
+    if (typeof value !== "string" || !value.trim()) {
+      throw new Error(`Upstox credential "${key}" is required.`);
+    }
+  }
+}
+
+function normalizeUpstoxCredentials(existingCredentials = {}, incomingCredentials = {}) {
+  const normalized = {};
+  for (const [key, value] of Object.entries(incomingCredentials)) {
+    if (typeof value === "string") {
+      normalized[key] = value.trim();
+    }
+  }
+
+  if (!normalized.client_secret && existingCredentials.client_secret) {
+    normalized.client_secret = existingCredentials.client_secret;
+  }
+
+  validateUpstoxCredentials(normalized, { allowPartialSecret: true });
+  return normalized;
+}
+
 async function withRedisClient(callback) {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
@@ -118,10 +152,13 @@ async function sanitizeExpiredUpstoxBrokers(brokers) {
 }
 
 export const createBroker = async (userId, brokerData) => {
-  const broker = new Broker({
-    ...brokerData,
-    user_id: userId,
-  });
+  const payload = { ...brokerData, user_id: userId };
+
+  if (payload.external_broker_id === "upstox") {
+    payload.credentials = normalizeUpstoxCredentials({}, payload.credentials || {});
+  }
+
+  const broker = new Broker(payload);
   return await broker.save();
 };
 
@@ -198,10 +235,18 @@ export const updateBroker = async (brokerId, userId, isAdmin, updateData) => {
   if (updateData.name !== undefined) broker.name = updateData.name;
   if (updateData.external_broker_id !== undefined) broker.external_broker_id = updateData.external_broker_id;
   if (updateData.credentials !== undefined) {
-    broker.credentials = {
-      ...broker.credentials,
-      ...updateData.credentials
-    };
+    const platform = updateData.external_broker_id || broker.external_broker_id;
+    if (platform === "upstox") {
+      broker.credentials = normalizeUpstoxCredentials(
+        broker.credentials || {},
+        updateData.credentials
+      );
+    } else {
+      broker.credentials = {
+        ...broker.credentials,
+        ...updateData.credentials,
+      };
+    }
   }
   if (updateData.access_token !== undefined) {
     broker.access_token = updateData.access_token;

@@ -38,11 +38,15 @@ async function start_app_upstox(userId = '') {
             throw new Error('client_id and redirect_uri must be defined in broker credentials.');
         }
         
-        let url = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${client_id}&redirect_uri=${redirect_uri}`;
+        const params = new URLSearchParams({
+            response_type: 'code',
+            client_id,
+            redirect_uri,
+        });
         if (userId) {
-            url += `&state=${encodeURIComponent(userId)}`;
+            params.set('state', userId);
         }
-        return url;
+        return `https://api.upstox.com/v2/login/authorization/dialog?${params.toString()}`;
     } finally {
         await client.close();
     }
@@ -78,6 +82,10 @@ async function get_new_access_token(code, userId = '') {
 
     const { client_id, client_secret, redirect_uri } = broker.credentials;
 
+    if (!client_id || !client_secret || !redirect_uri) {
+        throw new Error('client_id, client_secret, and redirect_uri must be defined in broker credentials.');
+    }
+
     const data = {
         'code': code,
         'client_id': client_id,
@@ -87,7 +95,7 @@ async function get_new_access_token(code, userId = '') {
     };
 
     try {
-        console.log('Sending request to Upstox API for authorization code exchange (credentials redacted).');
+        console.log(`Sending request to Upstox API for authorization code exchange (redirect_uri: ${redirect_uri}).`);
         const response = await axios.post(url, new URLSearchParams(data), { headers });
 
         if (!response.data || typeof response.data.access_token !== 'string') {
@@ -111,8 +119,22 @@ async function get_new_access_token(code, userId = '') {
         await publishBrokerUpdate(userId);
         return access_token;
     } catch (error) {
-        console.error(`Error obtaining access token: ${error.message}`);
-        throw new Error('Failed to obtain access token. Please check the provided "code" and API configuration.');
+        const upstoxMessage = error.response?.data?.message
+            || error.response?.data?.error?.reason
+            || error.response?.data?.error
+            || null;
+        if (upstoxMessage) {
+            console.error(`Error obtaining access token from Upstox: ${upstoxMessage}`);
+        } else {
+            console.error(`Error obtaining access token: ${error.message}`);
+        }
+        if (error.response?.data) {
+            console.error('Upstox token exchange response:', JSON.stringify(error.response.data));
+        }
+        const detail = upstoxMessage
+            ? `Failed to obtain access token: ${upstoxMessage}`
+            : 'Failed to obtain access token. Please check the provided "code" and API configuration.';
+        throw new Error(detail);
     }
 }
 

@@ -135,6 +135,7 @@ export const clearAndSeedDB = async () => {
     await zerodhaBroker.save();
 
     // Seed user-specific Upstox brokers with default credentials
+    const defaultUpstoxRedirectUri = process.env.UPSTOX_REDIRECT_URI || "https://localhost/logedin";
     const upstoxBrokerAdmin = new Broker({
       name: "Upstox",
       is_internal: false,
@@ -143,7 +144,7 @@ export const clearAndSeedDB = async () => {
       credentials: {
         client_id: "50b489f2-22c5-4824-9da5-9b815aab9667",
         client_secret: "d51apkeb3c",
-        redirect_uri: "http://localhost/logedin"
+        redirect_uri: defaultUpstoxRedirectUri
       },
       access_token: ""
     });
@@ -157,7 +158,7 @@ export const clearAndSeedDB = async () => {
       credentials: {
         client_id: "50b489f2-22c5-4824-9da5-9b815aab9667",
         client_secret: "d51apkeb3c",
-        redirect_uri: "http://localhost/logedin"
+        redirect_uri: defaultUpstoxRedirectUri
       },
       access_token: ""
     });

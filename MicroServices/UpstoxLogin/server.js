@@ -17,7 +17,7 @@ app.get('/', async (req, res) => {
             res.send("Success!!!");
         } catch (error) {
             console.error('Error getting access token or performing operation:', error);
-            res.status(500).send('Internal Server Error');
+            res.status(500).send(error.message || 'Internal Server Error');
         }
     } else {
         console.log('No code received, redirecting to Upstox login for user:', req.query.userId || '');
