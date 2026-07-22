@@ -415,12 +415,20 @@ export const clearAndSeedDB = async () => {
     console.log("✅ Database clear and seed completed successfully!");
   } catch (error) {
     console.error("❌ Clear and seed failed:", error);
+    throw error;
   }
 };
 
 if (process.argv[1] && process.argv[1].endsWith("clear_and_seed.js")) {
-  connectDB().then(async () => {
-    await clearAndSeedDB();
-    process.exit(0);
-  });
+  connectDB()
+    .then(clearAndSeedDB)
+    .then(async () => {
+      await mongoose.disconnect();
+      process.exit(0);
+    })
+    .catch(async (error) => {
+      console.error(error);
+      await mongoose.disconnect().catch(() => {});
+      process.exit(1);
+    });
 }
