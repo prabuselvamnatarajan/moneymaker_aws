@@ -220,4 +220,46 @@ async function resetAuthorisedClient() {
     authorisedClient = null;
 }
 
-export { getAuthorisedClient, resetAuthorisedClient, getAccessTokenFromRedis, getOrgAccessTokenFromRedis };
+/**
+ * Clear a user's Upstox token from Redis (and Mongo when available) after Upstox rejects it.
+ * JWT exp can still look valid while Upstox returns UDAPI100050 Invalid token.
+ */
+async function invalidateUserAccessToken(userId) {
+    const cleanUserId = String(userId || '').trim();
+    if (!cleanUserId) return;
+
+    await ensureRedisString();
+    const redisKey = `${DEFAULT_REDIS_KEY}:${cleanUserId}`;
+    await deleteExpiredToken(redisKey);
+    authorisedClient = null;
+
+    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+    if (!mongoUri) return;
+
+    try {
+        const { MongoClient } = await import('mongodb');
+        const client = new MongoClient(mongoUri);
+        await client.connect();
+        try {
+            const db = client.db('BacktestApp');
+            await db.collection('brokers').updateOne(
+                { user_id: cleanUserId, external_broker_id: 'upstox' },
+                { $set: { access_token: '' } }
+            );
+            console.warn(`[AuthoriseUpstox] Cleared invalid Upstox access_token in Mongo for user ${cleanUserId}`);
+        } finally {
+            await client.close();
+        }
+    } catch (err) {
+        console.error(`[AuthoriseUpstox] Failed to clear Mongo token for ${cleanUserId}:`, err.message);
+    }
+}
+
+export {
+    getAuthorisedClient,
+    resetAuthorisedClient,
+    getAccessTokenFromRedis,
+    getOrgAccessTokenFromRedis,
+    invalidateUserAccessToken,
+};
+

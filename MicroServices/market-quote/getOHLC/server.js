@@ -1,12 +1,31 @@
 import express from 'express';
 import cors from 'cors';
 
-import { getAuthorisedClient, resetAuthorisedClient } from './redis_utils/AuthoriseUpstoxClient.js';
+import {
+    getAuthorisedClient,
+    resetAuthorisedClient,
+    invalidateUserAccessToken,
+} from './redis_utils/AuthoriseUpstoxClient.js';
 
 const app = express();
 const port = process.env.PORT || 80;
 
 app.use(cors());
+
+
+function extractUpstoxErrorMessage(error) {
+    try {
+        const text = error?.response?.text || error?.text;
+        if (text) {
+            const parsed = JSON.parse(text);
+            const first = parsed?.errors?.[0];
+            if (first?.message) return first.message;
+        }
+    } catch {
+        // ignore parse errors
+    }
+    return error?.message || 'Upstox API request failed';
+}
 
 function sendAuthError(res, e) {
     const status = e.statusCode || 500;
@@ -35,11 +54,18 @@ app.get('/', async (req, res) => {
 
         const UpstoxClient = await getAuthorisedClient(userId);
         const marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
-        marketQuoteApiInstance.getMarketQuoteOHLC(interval, { instrumentKey: symbol }, (error, data) => {
+        marketQuoteApiInstance.getMarketQuoteOHLC(interval, { instrumentKey: symbol }, async (error, data) => {
             if (error) {
                 console.error('Failed to get OHLC:', error);
                 resetAuthorisedClient();
-                res.status(500).send('Internal Server Error');
+                const status = error.status || error.statusCode;
+                if (status === 401 || status === 403) {
+                    await invalidateUserAccessToken(userId).catch(() => {});
+                    return res.status(401).send(
+                        'Unauthorized: Invalid or expired Upstox access token — re-authenticate via Brokers page.'
+                    );
+                }
+                return res.status(500).send(`Internal Server Error: ${extractUpstoxErrorMessage(error)}`);
             } else {
                 console.log('API called successfully. Returned data: ' + JSON.stringify(data));
                 res.send(data);

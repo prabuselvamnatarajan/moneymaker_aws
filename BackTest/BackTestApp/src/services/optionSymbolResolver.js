@@ -76,7 +76,10 @@ export const fetchUnderlyingLtp = async (underlyingSymbol, userId) => {
     `${ltpServiceUrl}/?symbol=${encodeURIComponent(underlyingSymbol)}&userId=${userId}`
   );
   if (!ltpResponse.ok) {
-    throw new Error(`LTP service returned status ${ltpResponse.status}`);
+    const bodyText = await ltpResponse.text().catch(() => "");
+    throw new Error(
+      `LTP service returned status ${ltpResponse.status}${bodyText ? `: ${bodyText}` : ""}`
+    );
   }
   const ltpData = await ltpResponse.json();
   if (ltpData.status !== "success" || !ltpData.data) {
@@ -104,7 +107,10 @@ export const fetchOptionChain = async (underlyingSymbol, userId, expiry) => {
     `${optionChainServiceUrl}/?symbol=${encodeURIComponent(underlyingSymbol)}&expiry=${encodeURIComponent(expiry)}&userId=${userId}`
   );
   if (!optionChainResponse.ok) {
-    throw new Error(`Option chain service returned status ${optionChainResponse.status}`);
+    const bodyText = await optionChainResponse.text().catch(() => "");
+    throw new Error(
+      `Option chain service returned status ${optionChainResponse.status}${bodyText ? `: ${bodyText}` : ""}`
+    );
   }
   const optionChainData = await optionChainResponse.json();
   if (optionChainData.status !== "success" || !Array.isArray(optionChainData.data)) {

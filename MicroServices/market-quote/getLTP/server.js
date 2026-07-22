@@ -1,7 +1,11 @@
 import express from 'express';
 import cors from 'cors';
 
-import { getAuthorisedClient, resetAuthorisedClient } from './redis_utils/AuthoriseUpstoxClient.js';
+import {
+    getAuthorisedClient,
+    resetAuthorisedClient,
+    invalidateUserAccessToken,
+} from './redis_utils/AuthoriseUpstoxClient.js';
 
 const app = express();
 const port = process.env.PORT || 80;
@@ -19,6 +23,20 @@ function sendAuthError(res, e) {
     res.status(status).send(message);
 }
 
+function extractUpstoxErrorMessage(error) {
+    try {
+        const text = error?.response?.text || error?.text;
+        if (text) {
+            const parsed = JSON.parse(text);
+            const first = parsed?.errors?.[0];
+            if (first?.message) return first.message;
+        }
+    } catch {
+        // ignore parse errors
+    }
+    return error?.message || 'Upstox API request failed';
+}
+
 app.get('/', async (req, res) => {
     try {
         const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
@@ -32,15 +50,21 @@ app.get('/', async (req, res) => {
 
         const UpstoxClient = await getAuthorisedClient(userId);
         const marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
-        marketQuoteApiInstance.getLtp({ instrumentKey: symbol }, (error, data) => {
+        marketQuoteApiInstance.getLtp({ instrumentKey: symbol }, async (error, data) => {
             if (error) {
                 console.error('Failed to get LTP:', error);
                 resetAuthorisedClient();
-                res.status(500).send('Internal Server Error');
-            } else {
-                console.log('API called successfully. Returned data: ' + JSON.stringify(data));
-                res.send(data);
+                const status = error.status || error.statusCode;
+                if (status === 401 || status === 403) {
+                    await invalidateUserAccessToken(userId).catch(() => {});
+                    return res.status(401).send(
+                        'Unauthorized: Invalid or expired Upstox access token — re-authenticate via Brokers page.'
+                    );
+                }
+                return res.status(500).send(`Internal Server Error: ${extractUpstoxErrorMessage(error)}`);
             }
+            console.log('API called successfully. Returned data: ' + JSON.stringify(data));
+            res.send(data);
         });
     } catch (e) {
         resetAuthorisedClient();
