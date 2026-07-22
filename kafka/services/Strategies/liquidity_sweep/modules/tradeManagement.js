@@ -44,6 +44,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         account_id,
         use_full_amount = false,
         quantity = 1,
+        no_of_lots = 1,
         lot_size,
         instrument_token,
         product = 'D',
@@ -57,13 +58,16 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         commission_rate = 0,
     } = strategy_details;
 
+    const lot = Number(lot_size) > 0 ? Number(lot_size) : null;
+    const lots = Number(no_of_lots) >= 1 ? Math.floor(Number(no_of_lots)) : 1;
+
     if (quantityOverride != null && quantityOverride > 0) {
         quantity = quantityOverride;
-    } else if (transaction_type === 'BUY' && use_full_amount) {
+    } else if (transaction_type === 'BUY') {
         const shortQty = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
         if (shortQty > 0) {
             quantity = shortQty;
-        } else {
+        } else if (use_full_amount) {
             const current_acc_balance = await getAccountBalanceFromRedis(account_id);
             let maxAffordableValue = current_acc_balance;
             if (commission_type === 'FLAT') {
@@ -72,18 +76,37 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
                 maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
             }
             maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
-            if (lot_size) {
-                quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
+            if (lot) {
+                quantity = Math.floor(maxAffordableValue / (ltp * lot)) * lot;
             } else {
                 quantity = Math.floor(maxAffordableValue / ltp);
             }
+        } else if (lot) {
+            quantity = lots * lot;
         }
-    }
-
-    if (transaction_type === 'SELL' && use_full_amount && quantityOverride == null) {
+    } else if (transaction_type === 'SELL') {
         quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
         if (quantity <= 0) {
             quantity = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+        }
+        if (quantity <= 0) {
+            if (use_full_amount) {
+                const current_acc_balance = await getAccountBalanceFromRedis(account_id);
+                let maxAffordableValue = current_acc_balance;
+                if (commission_type === 'FLAT') {
+                    maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
+                } else if (commission_type === 'PERCENTAGE') {
+                    maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
+                }
+                maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+                if (lot) {
+                    quantity = Math.floor(maxAffordableValue / (ltp * lot)) * lot;
+                } else {
+                    quantity = Math.floor(maxAffordableValue / ltp);
+                }
+            } else if (lot) {
+                quantity = lots * lot;
+            }
         }
     }
 
@@ -110,14 +133,21 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
 }
 
 async function computeRiskBasedQuantity(strategy_details, entry, riskDistance, params) {
+    const lot = Number(strategy_details.lot_size) > 0 ? Number(strategy_details.lot_size) : null;
+    const lots = Number(strategy_details.no_of_lots) >= 1 ? Math.floor(Number(strategy_details.no_of_lots)) : 1;
+
+    // When not using full balance / risk sizing with lot config, prefer fixed lot sizing
+    if (!strategy_details.use_full_amount && lot) {
+        return lots * lot;
+    }
+
     if (riskDistance <= 0 || entry <= 0) {
-        return 1;
+        return lot ? lot : 1;
     }
     const balance = await getAccountBalanceFromRedis(strategy_details.account_id);
     const riskAmount = balance * params.accountRiskPerTrade;
     const qty = Math.floor(riskAmount / riskDistance);
-    if (strategy_details.lot_size) {
-        const lot = strategy_details.lot_size;
+    if (lot) {
         return Math.max(Math.floor(qty / lot) * lot, lot);
     }
     return Math.max(qty, 1);
@@ -307,8 +337,12 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
         const target1Hit = isLong ? ltp >= position.target1 : ltp <= position.target1;
         if (target1Hit) {
             let partialQty = Math.floor(position.remainingQty * params.partialExitPct);
+            const lot = Number(strategy_details.lot_size) > 0 ? Number(strategy_details.lot_size) : null;
+            if (lot) {
+                partialQty = Math.floor(partialQty / lot) * lot;
+            }
             if (partialQty <= 0 && position.remainingQty > 1) {
-                partialQty = 1;
+                partialQty = lot ? Math.min(lot, position.remainingQty) : 1;
             }
             if (partialQty > 0) {
                 const closed = await closePosition(position, ltp, symbol, strategy_details, 'partial_target1', partialQty, tick.timestamp);

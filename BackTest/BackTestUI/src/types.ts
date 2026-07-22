@@ -38,6 +38,8 @@ export interface Strategy {
   backtestDate?: string;
   backtestSpeed?: number;
   useFullAmount?: boolean;
+  lotSize?: number | null;
+  noOfLots?: number;
   symbolControl?: SymbolControlConfig;
 }
 
@@ -56,6 +58,8 @@ export interface SymbolData {
   isActive?: boolean;
   /** Strike grid step for INDEX underlyings (e.g. 50 Nifty, 100 Bank Nifty). */
   strikePriceDiff?: number | null;
+  /** Contract lot size for OPTION symbols (e.g. 25, 50, 75). */
+  lotSize?: number | null;
 }
 
 export interface SymbolControlConfig {

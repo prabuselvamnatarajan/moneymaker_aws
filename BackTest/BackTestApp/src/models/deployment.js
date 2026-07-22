@@ -84,6 +84,17 @@ const deploymentSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  /** Snapshot of OPTION UserSymbol.lot_size at deploy/remap time (not user-editable). */
+  lot_size: {
+    type: Number,
+    default: null,
+  },
+  /** Number of lots to trade when use_full_amount is false. */
+  no_of_lots: {
+    type: Number,
+    default: 1,
+    min: 1,
+  },
   backtest_run_id: {
     type: String,
   },

@@ -426,6 +426,7 @@ export const api = {
       description?: string;
       instrument_class?: string;
       strike_price_diff?: number;
+      lot_size?: number;
     }) {
       const res = await fetch(`${BASE_URL}/symbols`, {
         method: 'POST',
@@ -441,6 +442,7 @@ export const api = {
       range_option: 'ITM' | 'ATM' | 'OTM' | 'ALL';
       option_type: 'Call' | 'Put' | 'Both';
       expiry?: string;
+      lot_size: number;
     }) {
       const res = await fetch(`${BASE_URL}/symbols/bulk`, {
         method: 'POST',
@@ -606,6 +608,8 @@ export const api = {
       backtest_date?: string;
       backtest_speed?: number;
       use_full_amount?: boolean;
+      lot_size?: number | null;
+      no_of_lots?: number;
       symbol_control?: {
         enabled: boolean;
         underlying_user_symbol_id?: string;
@@ -629,6 +633,7 @@ export const api = {
       backtest_date?: string;
       backtest_speed?: number;
       use_full_amount?: boolean;
+      no_of_lots?: number;
     }) {
       const res = await fetch(`${BASE_URL}/deployments/${id}`, {
         method: 'PATCH',

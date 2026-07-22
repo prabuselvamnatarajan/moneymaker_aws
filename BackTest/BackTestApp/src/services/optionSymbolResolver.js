@@ -198,6 +198,7 @@ const formatSymbolName = (underlying, strike, type, expiry) => {
 
 /**
  * Ensure a UserSymbol exists for an option instrument; activate + subscribe if needed.
+ * @param {number|null} lotSize - Optional lot size to set on create or fill if missing.
  */
 export const ensureOptionUserSymbol = async (
   userId,
@@ -205,11 +206,16 @@ export const ensureOptionUserSymbol = async (
   optionData,
   strikePrice,
   expiryDate,
-  typeLabel
+  typeLabel,
+  lotSize = null
 ) => {
   const instrumentToken = optionData.instrument_key;
+  const normalizedLotSize = lotSize != null && Number(lotSize) > 0 ? Number(lotSize) : null;
   let existing = await UserSymbol.findOne({ user_id: userId, instrument_token: instrumentToken });
   if (!existing) {
+    if (!(normalizedLotSize > 0)) {
+      throw new Error("lot_size is required when creating OPTION UserSymbol and must be > 0");
+    }
     const symbol_name = formatSymbolName(underlyingSymbol, strikePrice, typeLabel, expiryDate);
     existing = await new UserSymbol({
       user_id: userId,
@@ -219,6 +225,7 @@ export const ensureOptionUserSymbol = async (
       exchange: "NFO",
       instrument_class: "OPTION",
       description: `${underlyingSymbol} ${typeLabel} Option Contract`,
+      lot_size: normalizedLotSize,
       is_active: true,
     }).save();
     try {
@@ -230,17 +237,38 @@ export const ensureOptionUserSymbol = async (
     } catch (e) {
       console.error("Failed to publish symbol subscribe for option symbol:", e);
     }
-  } else if (!existing.is_active) {
-    existing.is_active = true;
-    await existing.save();
-    try {
-      await publishSymbolUpdate({
-        action: "subscribe",
-        instrument_token: existing.instrument_token,
-        userId,
-      });
-    } catch (e) {
-      console.error("Failed to publish symbol subscribe for reactivated option:", e);
+  } else {
+    let dirty = false;
+    if (!(Number(existing.lot_size) > 0) && normalizedLotSize > 0) {
+      existing.lot_size = normalizedLotSize;
+      dirty = true;
+    } else if (normalizedLotSize > 0 && Number(existing.lot_size) !== normalizedLotSize) {
+      // Prefer newly provided lot size from bulk add / resolve
+      existing.lot_size = normalizedLotSize;
+      dirty = true;
+    }
+    if (!existing.is_active) {
+      if (!(Number(existing.lot_size) > 0)) {
+        throw new Error(
+          `Cannot activate OPTION ${instrumentToken} without lot_size; provide lot_size`
+        );
+      }
+      existing.is_active = true;
+      dirty = true;
+    }
+    if (dirty) {
+      await existing.save();
+      if (existing.is_active) {
+        try {
+          await publishSymbolUpdate({
+            action: "subscribe",
+            instrument_token: existing.instrument_token,
+            userId,
+          });
+        } catch (e) {
+          console.error("Failed to publish symbol subscribe for reactivated option:", e);
+        }
+      }
     }
   }
 
@@ -249,6 +277,7 @@ export const ensureOptionUserSymbol = async (
     instrument_token: existing.instrument_token,
     symbol: existing.symbol,
     symbol_name: existing.symbol_name,
+    lot_size: existing.lot_size,
     strike_price: strikePrice,
     option_type: typeLabel,
     expiry: expiryDate,
@@ -266,6 +295,7 @@ export const ensureAdjacentOptionSymbols = async ({
   chainItems,
   selectedStrike,
   optionType,
+  lotSize = null,
 }) => {
   const side = String(optionType).toUpperCase();
   const sorted = [...chainItems].sort((a, b) => a.strike_price - b.strike_price);
@@ -287,7 +317,8 @@ export const ensureAdjacentOptionSymbols = async ({
         optionData,
         item.strike_price,
         item.expiry,
-        side
+        side,
+        lotSize
       );
       adjacent.push(ensured);
     } catch (err) {
@@ -313,6 +344,7 @@ export const resolveOptionSymbol = async ({
   expiry,
   ltp: providedLtp,
   ensureAdjacent = true,
+  lotSize = null,
 }) => {
   if (!underlyingSymbol || !moneyness || !optionType) {
     throw new Error("underlyingSymbol, moneyness, and optionType are required");
@@ -357,7 +389,8 @@ export const resolveOptionSymbol = async ({
     optionData,
     selected.strike_price,
     selected.expiry,
-    side
+    side,
+    lotSize
   );
 
   let adjacent = [];
@@ -368,6 +401,7 @@ export const resolveOptionSymbol = async ({
       chainItems,
       selectedStrike: selected.strike_price,
       optionType: side,
+      lotSize,
     });
   }
 

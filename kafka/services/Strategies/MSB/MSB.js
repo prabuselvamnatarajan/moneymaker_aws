@@ -24,7 +24,8 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     let { 
         account_id, 
         use_full_amount = false, 
-        quantity = 1, 
+        quantity = 1,
+        no_of_lots = 1,
         lot_size, 
         instrument_token, 
         product = "D", 
@@ -37,28 +38,41 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         commission_type = "PERCENTAGE",
         commission_rate = 0
     } = strategy_details;
-    if ( transaction_type == "BUY" && use_full_amount) {
-        let current_acc_balance = await getAccountBalanceFromRedis(account_id);
-        let maxAffordableValue = current_acc_balance;
-        if (commission_type === "FLAT") {
-            maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
-        } else if (commission_type === "PERCENTAGE") {
-            maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
-        }
-        // Subtract a tiny safety buffer of 0.05 to prevent floating-point or rounding-off failures
-        maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
 
-        if (lot_size) {
-            quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
-        } else {
-            quantity = Math.floor(maxAffordableValue / ltp);
+    const lot = Number(lot_size) > 0 ? Number(lot_size) : null;
+    const lots = Number(no_of_lots) >= 1 ? Math.floor(Number(no_of_lots)) : 1;
+
+    if (transaction_type === "SELL") {
+        // Exit long: always prefer Redis holdings
+        const boughtQty = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+        if (boughtQty > 0) {
+            quantity = boughtQty;
+        } else if (lot) {
+            // Lot-sized strategies must not invent a SELL without holdings
+            quantity = 0;
+        }
+        // else: keep default quantity (legacy equity behavior)
+    } else if (transaction_type === "BUY") {
+        if (use_full_amount) {
+            let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+            let maxAffordableValue = current_acc_balance;
+            if (commission_type === "FLAT") {
+                maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
+            } else if (commission_type === "PERCENTAGE") {
+                maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
+            }
+            maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+
+            if (lot) {
+                quantity = Math.floor(maxAffordableValue / (ltp * lot)) * lot;
+            } else {
+                quantity = Math.floor(maxAffordableValue / ltp);
+            }
+        } else if (lot) {
+            quantity = lots * lot;
         }
     }
-    if (transaction_type == "SELL" && use_full_amount) {
-        // For SELL orders, quantity should be determined based on holdings.
-        // so we get the last bought quantity from redis with the tag.
-        quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
-    }
+
     if (timestamp) {
         strategy_details.execution_time = new Date(timestamp).toISOString();
     }

@@ -62,6 +62,7 @@ export default function SymbolsListView({
   const [editInstrumentClass, setEditInstrumentClass] = useState<'EQUITY' | 'INDEX' | 'OPTION'>('EQUITY');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editStrikePriceDiff, setEditStrikePriceDiff] = useState<number>(50);
+  const [editLotSize, setEditLotSize] = useState<number>(50);
 
   const handleOpenEdit = (sym: SymbolData) => {
     setEditingSymbol(sym);
@@ -72,6 +73,7 @@ export default function SymbolsListView({
     setEditInstrumentClass((sym.instrumentClass || 'EQUITY') as any);
     setEditIsActive(sym.isActive);
     setEditStrikePriceDiff(sym.strikePriceDiff || 50);
+    setEditLotSize(sym.lotSize || 50);
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -88,6 +90,7 @@ export default function SymbolsListView({
         ...((editInstrumentClass === 'INDEX' || editInstrumentClass === 'EQUITY')
           ? { strike_price_diff: editStrikePriceDiff }
           : {}),
+        ...(editInstrumentClass === 'OPTION' ? { lot_size: editLotSize } : {}),
       });
       setEditingSymbol(null);
       await fetchTableData();
@@ -120,6 +123,7 @@ export default function SymbolsListView({
   const [description, setDescription] = useState('');
   const [instrumentClass, setInstrumentClass] = useState<'EQUITY' | 'INDEX' | 'OPTION'>('EQUITY');
   const [strikePriceDiff, setStrikePriceDiff] = useState<number>(50);
+  const [lotSize, setLotSize] = useState<number>(50);
 
   // Bulk addition form fields
   const [bulkSymbol, setBulkSymbol] = useState('');
@@ -127,6 +131,7 @@ export default function SymbolsListView({
   const [rangeOption, setRangeOption] = useState<'ITM' | 'ATM' | 'OTM' | 'ALL'>('ITM');
   const [optionType, setOptionType] = useState<'Call' | 'Put' | 'Both'>('Call');
   const [expiry, setExpiry] = useState(new Date().toISOString().split('T')[0]);
+  const [bulkLotSize, setBulkLotSize] = useState<number>(50);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkSuccess, setBulkSuccess] = useState<string | null>(null);
@@ -209,6 +214,7 @@ export default function SymbolsListView({
     e.preventDefault();
     if (!instrumentToken || !name || !exchange) return;
     if ((instrumentClass === 'INDEX' || instrumentClass === 'EQUITY') && !(strikePriceDiff > 0)) return;
+    if (instrumentClass === 'OPTION' && !(lotSize > 0)) return;
 
     const newSym: SymbolData = {
       ticker: instrumentToken.trim(),
@@ -223,6 +229,7 @@ export default function SymbolsListView({
       instrumentClass,
       strikePriceDiff:
         instrumentClass === 'INDEX' || instrumentClass === 'EQUITY' ? strikePriceDiff : null,
+      lotSize: instrumentClass === 'OPTION' ? lotSize : null,
     };
 
     onAddSymbol(newSym);
@@ -234,6 +241,7 @@ export default function SymbolsListView({
     setDescription('');
     setInstrumentClass('EQUITY');
     setStrikePriceDiff(50);
+    setLotSize(50);
     setShowAddForm(false);
     // Re-fetch table after adding
     setTimeout(() => fetchTableData(), 500);
@@ -243,6 +251,10 @@ export default function SymbolsListView({
     e.preventDefault();
     if (!bulkSymbol) {
       setBulkError('Please select a symbol');
+      return;
+    }
+    if (!(bulkLotSize > 0)) {
+      setBulkError('Lot size is required and must be > 0');
       return;
     }
     setBulkLoading(true);
@@ -256,6 +268,7 @@ export default function SymbolsListView({
         range_option: rangeOption,
         option_type: optionType,
         expiry: expiry || undefined,
+        lot_size: bulkLotSize,
       });
       setBulkSuccess(res.message);
       // Re-fetch symbols
@@ -267,6 +280,7 @@ export default function SymbolsListView({
         setShowBulkModal(false);
         setBulkSuccess(null);
         setBulkSymbol('');
+        setBulkLotSize(50);
       }, 2000);
     } catch (err: any) {
       console.error('Failed to add bulk symbols:', err);
@@ -473,6 +487,7 @@ export default function SymbolsListView({
                   <th className="p-4">Ticker / Asset Name</th>
                   <th className="p-4">Exchange Platform</th>
                   <th className="p-4">Instrument Class</th>
+                  <th className="p-4 font-mono">Lot Size</th>
                   <th className="p-4 font-mono">Status</th>
                   <th className="p-4 text-right">Last price quote</th>
                   <th className="p-4 text-right">24h Market Swing</th>
@@ -519,6 +534,9 @@ export default function SymbolsListView({
                         }`}>
                           {sym.instrumentType}
                         </span>
+                      </td>
+                      <td className="p-4 font-mono text-slate-300">
+                        {sym.instrumentType === 'option' && sym.lotSize != null ? sym.lotSize : '—'}
                       </td>
                       <td className="p-4">
                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-mono tracking-wider font-bold uppercase border ${
@@ -700,6 +718,22 @@ export default function SymbolsListView({
                 </div>
               )}
 
+              {instrumentClass === 'OPTION' && (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Lot Size</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={lotSize}
+                    onChange={(e) => setLotSize(parseInt(e.target.value, 10) || 0)}
+                    placeholder="e.g. 25, 50, 75"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
+                  />
+                  <p className="text-[10px] text-slate-500">Contract lot size required for option order quantity.</p>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Description (Optional)</label>
                 <textarea
@@ -839,6 +873,20 @@ export default function SymbolsListView({
                 </div>
               )}
 
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Lot Size</label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  value={bulkLotSize}
+                  onChange={(e) => setBulkLotSize(parseInt(e.target.value, 10) || 0)}
+                  placeholder="e.g. 25 for Nifty, 15 for Bank Nifty"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 font-mono focus:outline-hidden focus:border-indigo-500"
+                />
+                <p className="text-[10px] text-slate-505">Applied to every option contract created in this bulk import.</p>
+              </div>
+
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
                 <button
                   type="button"
@@ -931,6 +979,20 @@ export default function SymbolsListView({
                     min={1}
                     value={editStrikePriceDiff}
                     onChange={(e) => setEditStrikePriceDiff(parseInt(e.target.value, 10) || 0)}
+                    className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              )}
+
+              {editInstrumentClass === 'OPTION' && (
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Lot Size</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={editLotSize}
+                    onChange={(e) => setEditLotSize(parseInt(e.target.value, 10) || 0)}
                     className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
                   />
                 </div>

@@ -423,6 +423,10 @@ export default function App() {
       offset: number;
       optionType: 'CE' | 'PE';
       expiry: string;
+    },
+    sizing?: {
+      lotSize?: number | null;
+      noOfLots?: number;
     }
   ) => {
     try {
@@ -443,7 +447,12 @@ export default function App() {
         backtest_date: newStrat.backtestDate,
         backtest_speed: newStrat.backtestSpeed,
         use_full_amount: newStrat.useFullAmount,
+        no_of_lots: sizing?.noOfLots ?? newStrat.noOfLots ?? 1,
       };
+
+      if (sizing?.lotSize != null && Number(sizing.lotSize) > 0) {
+        payload.lot_size = Number(sizing.lotSize);
+      }
 
       if (symbolControl?.enabled) {
         payload.symbol_control = {
@@ -458,13 +467,24 @@ export default function App() {
         // 2. Resolve UserSymbol for static target symbol
         let userSymbolId = '';
         let instrumentToken = '';
-        const existingSymbol = symbols.find(s => s.ticker === symbol);
-        if (existingSymbol) {
+        const byTicker = symbols.find(s => s.ticker === symbol);
+        if (byTicker?.id) {
+          userSymbolId = byTicker.id;
+          instrumentToken = byTicker.instrumentToken || '';
+          if (byTicker.lotSize != null && !(Number(payload.lot_size) > 0)) {
+            payload.lot_size = Number(byTicker.lotSize);
+          }
+        }
+
+        if (!userSymbolId) {
           const rawSymbols = await api.symbols.list();
           const found = rawSymbols.items.find(s => s.symbol === symbol);
           if (found) {
             userSymbolId = found._id;
             instrumentToken = found.instrument_token;
+            if (found.lot_size != null && !(Number(payload.lot_size) > 0)) {
+              payload.lot_size = Number(found.lot_size);
+            }
           }
         }
 
@@ -537,6 +557,9 @@ export default function App() {
         ...((newSym.instrumentClass === 'INDEX' || newSym.instrumentClass === 'EQUITY') &&
         newSym.strikePriceDiff
           ? { strike_price_diff: newSym.strikePriceDiff }
+          : {}),
+        ...(newSym.instrumentClass === 'OPTION' && newSym.lotSize
+          ? { lot_size: newSym.lotSize }
           : {}),
       });
       const mapped = mapSymbol(res.data);

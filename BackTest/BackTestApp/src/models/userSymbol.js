@@ -42,6 +42,11 @@ const userSymbolSchema = new mongoose.Schema({
     type: Number,
     default: null,
   },
+  /** Contract lot size for OPTION symbols (e.g. 25, 50, 75). Required for OPTION. */
+  lot_size: {
+    type: Number,
+    default: null,
+  },
   added_at: {
     type: Date,
     default: Date.now,
@@ -59,6 +64,11 @@ userSymbolSchema.pre("validate", function (next) {
       return next(
         new Error("strike_price_diff is required for EQUITY/INDEX symbols and must be > 0")
       );
+    }
+  }
+  if (cls === "OPTION") {
+    if (this.lot_size == null || !(Number(this.lot_size) > 0)) {
+      return next(new Error("lot_size is required for OPTION symbols and must be > 0"));
     }
   }
   next();

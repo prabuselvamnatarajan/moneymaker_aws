@@ -30,7 +30,8 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     let { 
         account_id, 
         use_full_amount = false, 
-        quantity = 1, 
+        quantity = 1,
+        no_of_lots = 1,
         lot_size, 
         instrument_token, 
         product = "D", 
@@ -44,64 +45,43 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         commission_rate = 0
     } = strategy_details;
 
-    if (use_full_amount) {
-        if (transaction_type === "BUY") {
-            // Check if we are closing a SHORT position
-            let shortQty = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
-            if (shortQty > 0) {
-                quantity = shortQty;
-            } else {
-                // Opening a LONG position
-                let current_acc_balance = await getAccountBalanceFromRedis(account_id);
-                let maxAffordableValue = current_acc_balance;
-                if (commission_type === "FLAT") {
-                    maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
-                } else if (commission_type === "PERCENTAGE") {
-                    maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
-                }
-                maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+    const lot = Number(lot_size) > 0 ? Number(lot_size) : null;
+    const lots = Number(no_of_lots) >= 1 ? Math.floor(Number(no_of_lots)) : 1;
 
-                if (lot_size) {
-                    quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
-                } else {
-                    quantity = Math.floor(maxAffordableValue / ltp);
-                }
-            }
-        } else if (transaction_type === "SELL") {
-            // Check if we are closing a LONG position
-            let boughtQty = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
-            if (boughtQty > 0) {
-                quantity = boughtQty;
-            } else {
-                // Opening a SHORT position
-                let current_acc_balance = await getAccountBalanceFromRedis(account_id);
-                let maxAffordableValue = current_acc_balance;
-                if (commission_type === "FLAT") {
-                    maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
-                } else if (commission_type === "PERCENTAGE") {
-                    maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
-                }
-                maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
-
-                if (lot_size) {
-                    quantity = Math.floor(maxAffordableValue / (ltp * lot_size)) * lot_size;
-                } else {
-                    quantity = Math.floor(maxAffordableValue / ltp);
-                }
-            }
+    const computeAffordableQty = async () => {
+        let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+        let maxAffordableValue = current_acc_balance;
+        if (commission_type === "FLAT") {
+            maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
+        } else if (commission_type === "PERCENTAGE") {
+            maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
         }
-    } else {
-        // If not use_full_amount, fetch correct quantity for exits
-        if (transaction_type === "BUY") {
-            let shortQty = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
-            if (shortQty > 0) {
-                quantity = shortQty;
-            }
-        } else if (transaction_type === "SELL") {
-            let boughtQty = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
-            if (boughtQty > 0) {
-                quantity = boughtQty;
-            }
+        maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+        if (lot) {
+            return Math.floor(maxAffordableValue / (ltp * lot)) * lot;
+        }
+        return Math.floor(maxAffordableValue / ltp);
+    };
+
+    if (transaction_type === "BUY") {
+        // Closing a SHORT takes priority
+        let shortQty = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+        if (shortQty > 0) {
+            quantity = shortQty;
+        } else if (use_full_amount) {
+            quantity = await computeAffordableQty();
+        } else if (lot) {
+            quantity = lots * lot;
+        }
+    } else if (transaction_type === "SELL") {
+        // Closing a LONG takes priority
+        let boughtQty = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
+        if (boughtQty > 0) {
+            quantity = boughtQty;
+        } else if (use_full_amount) {
+            quantity = await computeAffordableQty();
+        } else if (lot) {
+            quantity = lots * lot;
         }
     }
 

@@ -60,6 +60,7 @@ export default function StrategyDetailsView({
   const [editBacktestDate, setEditBacktestDate] = useState('');
   const [editBacktestSpeed, setEditBacktestSpeed] = useState<number>(1000);
   const [editUseFullAmount, setEditUseFullAmount] = useState(false);
+  const [editNoOfLots, setEditNoOfLots] = useState<number>(1);
 
   const handleOpenEdit = (strat: Strategy) => {
     setEditingStrategy(strat);
@@ -68,6 +69,7 @@ export default function StrategyDetailsView({
     setEditBacktestDate(strat.backtestDate || '');
     setEditBacktestSpeed(strat.backtestSpeed || 1000);
     setEditUseFullAmount(strat.useFullAmount || false);
+    setEditNoOfLots(strat.noOfLots || 1);
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -80,6 +82,7 @@ export default function StrategyDetailsView({
         backtest_date: editingStrategy.mode === 'backtest' ? editBacktestDate : undefined,
         backtest_speed: editingStrategy.mode === 'backtest' ? editBacktestSpeed : undefined,
         use_full_amount: editUseFullAmount,
+        ...(editingStrategy.lotSize != null ? { no_of_lots: editNoOfLots } : {}),
       });
       setEditingStrategy(null);
     } catch (err) {
@@ -640,6 +643,33 @@ export default function StrategyDetailsView({
                   Allocate Full Account Buying Power
                 </label>
               </div>
+
+              {editingStrategy.lotSize != null && Number(editingStrategy.lotSize) > 0 && (
+                <div className="grid grid-cols-2 gap-3 border border-amber-950/40 bg-amber-950/10 p-3 rounded-lg">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-amber-400 uppercase font-mono tracking-wider font-bold">Lot Size</label>
+                    <input
+                      type="number"
+                      readOnly
+                      value={editingStrategy.lotSize}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono opacity-80 cursor-not-allowed"
+                    />
+                  </div>
+                  {!editUseFullAmount && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-amber-400 uppercase font-mono tracking-wider font-bold">No. of Lots</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        value={editNoOfLots}
+                        onChange={(e) => setEditNoOfLots(parseInt(e.target.value, 10) || 1)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
                 <button

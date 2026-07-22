@@ -40,6 +40,12 @@ export const createSymbol = async (userId, symbolData) => {
       throw new Error("strike_price_diff is required for EQUITY/INDEX symbols and must be > 0");
     }
   }
+  if (instrumentClass === "OPTION") {
+    const lotSize = Number(symbolData.lot_size);
+    if (!(lotSize > 0)) {
+      throw new Error("lot_size is required for OPTION symbols and must be > 0");
+    }
+  }
 
   const symbol = new UserSymbol({
     ...symbolData,
@@ -126,6 +132,15 @@ export const updateSymbol = async (userId, id, updateData) => {
         : Number(oldSymbol.strike_price_diff);
     if (!(diff > 0)) {
       throw new Error("strike_price_diff is required for EQUITY/INDEX symbols and must be > 0");
+    }
+  }
+  if (nextClass === "OPTION") {
+    const lotSize =
+      updateData.lot_size !== undefined
+        ? Number(updateData.lot_size)
+        : Number(oldSymbol.lot_size);
+    if (!(lotSize > 0)) {
+      throw new Error("lot_size is required for OPTION symbols and must be > 0");
     }
   }
 
@@ -271,7 +286,11 @@ export const syncAllActiveSymbolsToRedis = async () => {
 };
 
 export const bulkCreateSymbols = async (userId, bulkData) => {
-  const { symbol: underlyingSymbol, range_count, range_option, option_type, expiry } = bulkData;
+  const { symbol: underlyingSymbol, range_count, range_option, option_type, expiry, lot_size } = bulkData;
+  const lotSize = Number(lot_size);
+  if (!(lotSize > 0)) {
+    throw new Error("lot_size is required for bulk OPTION create and must be > 0");
+  }
 
   const {
     resolveBulkOptionSelections,
@@ -309,11 +328,16 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
       optionData,
       item.strike_price,
       item.expiry,
-      typeLabel
+      typeLabel,
+      lotSize
     );
     if (!before) {
       const created = await UserSymbol.findById(ensured.user_symbol_id);
       if (created) addedSymbols.push(created);
+    } else {
+      // Existing record may have received an updated lot_size
+      const updated = await UserSymbol.findById(ensured.user_symbol_id);
+      if (updated) addedSymbols.push(updated);
     }
   };
 
@@ -330,7 +354,10 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
   }
 
   await syncAllActiveSymbolsToRedis();
-  return addedSymbols;
+  return {
+    message: `Added ${addedSymbols.length} option symbol(s)`,
+    data: addedSymbols,
+  };
 };
 
 export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {

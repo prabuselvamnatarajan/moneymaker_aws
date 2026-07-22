@@ -53,6 +53,7 @@ export function mapSymbol(backendSym: any): SymbolData {
     isActive: backendSym.is_active !== false,
     strikePriceDiff:
       backendSym.strike_price_diff != null ? Number(backendSym.strike_price_diff) : null,
+    lotSize: backendSym.lot_size != null ? Number(backendSym.lot_size) : null,
   };
 }
 
@@ -194,6 +195,8 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     description: backendDeployment.notes || 'Algorithmic deployment workload.',
     accountId: backendDeployment.account_id ? String(backendDeployment.account_id) : undefined,
     useFullAmount: !!backendDeployment.use_full_amount,
+    lotSize: backendDeployment.lot_size != null ? Number(backendDeployment.lot_size) : null,
+    noOfLots: backendDeployment.no_of_lots != null ? Number(backendDeployment.no_of_lots) : 1,
     symbolControl: sc
       ? {
           enabled: !!sc.enabled,

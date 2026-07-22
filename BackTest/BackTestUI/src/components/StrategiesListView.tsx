@@ -28,6 +28,10 @@ interface StrategiesListViewProps {
       offset: number;
       optionType: 'CE' | 'PE';
       expiry: string;
+    },
+    sizing?: {
+      lotSize?: number | null;
+      noOfLots?: number;
     }
   ) => void;
   onUpdateStrategyStatus: (id: string, status: 'active' | 'paused' | 'stopped') => void;
@@ -69,6 +73,7 @@ export default function StrategiesListView({
   const [editBacktestDate, setEditBacktestDate] = useState('');
   const [editBacktestSpeed, setEditBacktestSpeed] = useState<number>(1000);
   const [editUseFullAmount, setEditUseFullAmount] = useState(false);
+  const [editNoOfLots, setEditNoOfLots] = useState<number>(1);
 
   const handleOpenEdit = (strat: Strategy) => {
     setEditingStrategy(strat);
@@ -77,6 +82,7 @@ export default function StrategiesListView({
     setEditBacktestDate(strat.backtestDate || '');
     setEditBacktestSpeed(strat.backtestSpeed || 1000);
     setEditUseFullAmount(strat.useFullAmount || false);
+    setEditNoOfLots(strat.noOfLots || 1);
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -89,6 +95,7 @@ export default function StrategiesListView({
         backtest_date: editingStrategy.mode === 'backtest' ? editBacktestDate : undefined,
         backtest_speed: editingStrategy.mode === 'backtest' ? editBacktestSpeed : undefined,
         use_full_amount: editUseFullAmount,
+        ...(editingStrategy.lotSize != null ? { no_of_lots: editNoOfLots } : {}),
       });
       setEditingStrategy(null);
     } catch (err) {
@@ -122,12 +129,14 @@ export default function StrategiesListView({
   const [deploymentName, setDeploymentName] = useState('');
   const [description, setDescription] = useState('');
   const [mode, setMode] = useState<'live' | 'paper' | 'backtest'>('live');
-  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
+  const [selectedSymbolId, setSelectedSymbolId] = useState('');
   const [initialStatus, setInitialStatus] = useState<'active' | 'paused' | 'stopped'>('active');
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [backtestDate, setBacktestDate] = useState(new Date().toISOString().slice(0, 10));
   const [backtestSpeed, setBacktestSpeed] = useState(1000);
   const [useFullAmount, setUseFullAmount] = useState(false);
+  const [noOfLots, setNoOfLots] = useState(1);
+  const [dynamicLotSize, setDynamicLotSize] = useState(50);
   const [dynamicSymbol, setDynamicSymbol] = useState(false);
   const [underlyingSymbolId, setUnderlyingSymbolId] = useState('');
   const [moneyness, setMoneyness] = useState<'ITM' | 'ATM' | 'OTM'>('ITM');
@@ -139,6 +148,15 @@ export default function StrategiesListView({
   const underlyingCandidates = symbols.filter(
     (s) => s.isActive && String(s.instrumentClass || '').toUpperCase() !== 'OPTION'
   );
+
+  const activeSymbols = symbols.filter((s) => s.isActive);
+  const selectedSymbol = activeSymbols.find((s) => s.id === selectedSymbolId);
+  const selectedLotSize = selectedSymbol?.lotSize != null ? Number(selectedSymbol.lotSize) : null;
+  const showLotSizing =
+    dynamicSymbol ||
+    (selectedSymbol != null &&
+      (String(selectedSymbol.instrumentClass || '').toUpperCase() === 'OPTION' ||
+        selectedLotSize != null && selectedLotSize > 0));
 
   // Computed metrics
   const visibleStrategies = strategies.filter(s => s.name.toLowerCase() !== 'manual');
@@ -157,24 +175,23 @@ export default function StrategiesListView({
     s.symbols.some(sym => sym.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const handleSymbolToggle = (ticker: string) => {
-    setSelectedSymbols(prev => 
-      prev.includes(ticker) 
-        ? prev.filter(t => t !== ticker) 
-        : [...prev, ticker]
-    );
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!deploymentName || !selectedAccountId || !selectedStrategyId) return;
     if (dynamicSymbol && !underlyingSymbolId) return;
     if (dynamicSymbol && !/^\d{4}-\d{2}-\d{2}$/.test(optionExpiry)) return;
-    if (!dynamicSymbol && selectedSymbols.length === 0) return;
+    if (dynamicSymbol && !(dynamicLotSize > 0)) return;
+    if (!dynamicSymbol && !selectedSymbolId) return;
+    if (showLotSizing && !useFullAmount && !(noOfLots >= 1)) return;
 
     const found = strategyDefinitions.find(s => s._id === selectedStrategyId);
     const targetStrategyName = found ? found.strategy_name : 'Algorithmic Strategy';
     const underlying = underlyingCandidates.find((s) => s.id === underlyingSymbolId);
+    const resolvedLotSize = dynamicSymbol
+      ? dynamicLotSize
+      : selectedLotSize != null && selectedLotSize > 0
+        ? selectedLotSize
+        : null;
 
     const newStrat: Strategy = {
       id: `STRAT-0${strategies.length + 1}`,
@@ -188,16 +205,18 @@ export default function StrategiesListView({
       openPositions: 0,
       symbols: dynamicSymbol
         ? [underlying?.ticker || 'DYNAMIC']
-        : selectedSymbols.length > 0
-          ? selectedSymbols
+        : selectedSymbol
+          ? [selectedSymbol.ticker]
           : ['NSE_INDEX|Nifty 50'],
       description: description || `Deployed ${targetStrategyName} bot workload.`,
       backtestDate: mode === 'backtest' ? backtestDate : undefined,
       backtestSpeed: mode === 'backtest' ? backtestSpeed : undefined,
       useFullAmount: useFullAmount,
+      lotSize: resolvedLotSize,
+      noOfLots: showLotSizing ? noOfLots : 1,
     };
 
-    const targetSymbol = selectedSymbols.length > 0 ? selectedSymbols[0] : 'NSE_INDEX|Nifty 50';
+    const targetSymbol = selectedSymbol?.ticker || 'NSE_INDEX|Nifty 50';
     onAddStrategy(
       newStrat,
       selectedAccountId,
@@ -212,18 +231,24 @@ export default function StrategiesListView({
             optionType,
             expiry: optionExpiry,
           }
-        : undefined
+        : undefined,
+      {
+        lotSize: resolvedLotSize,
+        noOfLots: showLotSizing ? noOfLots : 1,
+      }
     );
     
     // Reset Form
     setDeploymentName('');
     setDescription('');
     setMode('live');
-    setSelectedSymbols([]);
+    setSelectedSymbolId('');
     setInitialStatus('active');
     setSelectedAccountId('');
     setSelectedStrategyId('');
     setUseFullAmount(false);
+    setNoOfLots(1);
+    setDynamicLotSize(50);
     setDynamicSymbol(false);
     setUnderlyingSymbolId('');
     setMoneyness('ITM');
@@ -612,20 +637,6 @@ export default function StrategiesListView({
                 </div>
               )}
 
-              {/* Checkbox for Use Full Amount */}
-              <div className="flex items-center gap-2 py-1">
-                <input
-                  id="chk-use-full-amount"
-                  type="checkbox"
-                  checked={useFullAmount}
-                  onChange={(e) => setUseFullAmount(e.target.checked)}
-                  className="w-4 h-4 rounded-sm bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                />
-                <label htmlFor="chk-use-full-amount" className="text-[11px] text-slate-350 select-none cursor-pointer font-bold font-sans">
-                  Use Full Account Balance for Allocation
-                </label>
-              </div>
-
               <div className="flex items-center gap-2 py-1">
                 <input
                   id="chk-dynamic-symbol"
@@ -711,30 +722,81 @@ export default function StrategiesListView({
                   </p>
                 </div>
               ) : (
-              /* Targeted Market Symbols */
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Targeted Market Symbols</label>
-                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-950 rounded border border-slate-800 max-h-24 overflow-y-auto font-sans">
-                  {symbols.filter(sym => sym.isActive).map(sym => {
-                    const isChecked = selectedSymbols.includes(sym.ticker);
-                    return (
-                      <button
-                        type="button"
-                        key={sym.ticker}
-                        onClick={() => handleSymbolToggle(sym.ticker)}
-                        className={`px-2 py-1 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
-                          isChecked 
-                            ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30' 
-                            : 'bg-slate-900 text-slate-500 border-slate-850 hover:text-slate-300'
-                        }`}
-                      >
-                        {sym.ticker}
-                      </button>
-                    );
-                  })}
-                </div>
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Target Symbol</label>
+                <select
+                  required
+                  value={selectedSymbolId}
+                  onChange={(e) => {
+                    setSelectedSymbolId(e.target.value);
+                    setNoOfLots(1);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                >
+                  <option value="">Select active symbol...</option>
+                  {activeSymbols.map((sym) => (
+                    <option key={sym.id || sym.ticker} value={sym.id}>
+                      {sym.ticker}
+                      {sym.instrumentClass ? ` [${sym.instrumentClass}]` : ''}
+                      {sym.lotSize != null ? ` (lot=${sym.lotSize})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
               )}
+
+              {showLotSizing && (
+                <div className="grid grid-cols-2 gap-3 border border-amber-950/40 bg-amber-950/10 p-3 rounded-lg">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-amber-400 uppercase font-mono tracking-wider font-bold">Lot Size</label>
+                    <input
+                      type="number"
+                      readOnly={!dynamicSymbol}
+                      min={1}
+                      value={dynamicSymbol ? dynamicLotSize : (selectedLotSize || '')}
+                      onChange={(e) => {
+                        if (dynamicSymbol) setDynamicLotSize(parseInt(e.target.value, 10) || 0);
+                      }}
+                      className={`w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono ${
+                        dynamicSymbol ? '' : 'opacity-80 cursor-not-allowed'
+                      }`}
+                    />
+                    {!dynamicSymbol && (
+                      <p className="text-[10px] text-slate-500">Prefilled from UserSymbol (read-only).</p>
+                    )}
+                  </div>
+                  {!useFullAmount && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-amber-400 uppercase font-mono tracking-wider font-bold">No. of Lots</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        value={noOfLots}
+                        onChange={(e) => setNoOfLots(parseInt(e.target.value, 10) || 1)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono"
+                      />
+                      <p className="text-[10px] text-slate-500">
+                        Order qty = {(dynamicSymbol ? dynamicLotSize : selectedLotSize) || 0} × {noOfLots}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Checkbox for Use Full Amount — below symbol / lot sizing */}
+              <div className="flex items-center gap-2 py-1">
+                <input
+                  id="chk-use-full-amount"
+                  type="checkbox"
+                  checked={useFullAmount}
+                  onChange={(e) => setUseFullAmount(e.target.checked)}
+                  className="w-4 h-4 rounded-sm bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="chk-use-full-amount" className="text-[11px] text-slate-350 select-none cursor-pointer font-bold font-sans">
+                  Use Full Account Balance for Allocation
+                </label>
+              </div>
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
                 <button
@@ -835,6 +897,33 @@ export default function StrategiesListView({
                   Allocate Full Account Buying Power
                 </label>
               </div>
+
+              {editingStrategy.lotSize != null && Number(editingStrategy.lotSize) > 0 && (
+                <div className="grid grid-cols-2 gap-3 border border-amber-950/40 bg-amber-950/10 p-3 rounded-lg">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-amber-400 uppercase font-mono tracking-wider font-bold">Lot Size</label>
+                    <input
+                      type="number"
+                      readOnly
+                      value={editingStrategy.lotSize}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono opacity-80 cursor-not-allowed"
+                    />
+                  </div>
+                  {!editUseFullAmount && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-amber-400 uppercase font-mono tracking-wider font-bold">No. of Lots</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        value={editNoOfLots}
+                        onChange={(e) => setEditNoOfLots(parseInt(e.target.value, 10) || 1)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
                 <button

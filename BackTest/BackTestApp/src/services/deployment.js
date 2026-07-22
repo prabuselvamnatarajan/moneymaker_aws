@@ -18,7 +18,15 @@ import {
   resolveExpiryDate,
 } from "./optionSymbolResolver.js";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "symbol_control"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "symbol_control"];
+
+const normalizeNoOfLots = (value) => {
+  const n = Number(value);
+  if (!(n >= 1) || !Number.isFinite(n)) {
+    throw new Error("no_of_lots must be an integer >= 1");
+  }
+  return Math.floor(n);
+};
 
 const hasOpenPosition = async (deploymentId) => {
   const openPos = await Position.findOne({
@@ -213,6 +221,16 @@ const applyResolvedOptionToDeployment = async (deployment, resolved, referenceSt
   deployment.user_symbol_id = resolved.user_symbol_id;
   deployment.instrument_token = resolved.instrument_token;
   deployment.symbol = resolved.symbol;
+  if (Number(resolved.lot_size) > 0) {
+    deployment.lot_size = Number(resolved.lot_size);
+  } else if (Number(deployment.lot_size) > 0) {
+    // Keep existing snapshot; ensure option record has it if missing
+    const optionSym = await UserSymbol.findById(resolved.user_symbol_id);
+    if (optionSym && !(Number(optionSym.lot_size) > 0)) {
+      optionSym.lot_size = deployment.lot_size;
+      await optionSym.save();
+    }
+  }
   deployment.symbol_control.last_resolved_strike =
     referenceStrike != null ? referenceStrike : resolved.atm_strike;
   deployment.symbol_control.last_resolved_at = new Date();
@@ -296,6 +314,7 @@ export const resolveDeploymentSymbol = async (deploymentId, options = {}) => {
       expiry: sc.expiry,
       ltp: safeLtp,
       ensureAdjacent: true,
+      lotSize: Number(deployment.lot_size) > 0 ? Number(deployment.lot_size) : null,
     });
 
     // Conflict check: another RUNNING/SCHEDULED deployment on same strategy+account+new token
@@ -399,6 +418,11 @@ const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
     throw new Error("Underlying symbol must have strike_price_diff > 0");
   }
 
+  const lotSize = Number(deploymentData.lot_size);
+  if (!(lotSize > 0)) {
+    throw new Error("lot_size is required for dynamic option deployments and must be > 0");
+  }
+
   const expiryDate = resolveExpiryDate(sc.expiry);
 
   if (!underlying.is_active) {
@@ -415,6 +439,7 @@ const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
     optionType: sc.option_type,
     expiry: expiryDate,
     ensureAdjacent: true,
+    lotSize,
   });
 
   // Adjacent options are created/activated by resolveOptionSymbol; keep Redis watch set current
@@ -432,6 +457,7 @@ const prepareSymbolControlOnCreate = async (userId, deploymentData) => {
     user_symbol_id: resolved.user_symbol_id,
     instrument_token: resolved.instrument_token,
     symbol: resolved.symbol,
+    lot_size: Number(resolved.lot_size) > 0 ? Number(resolved.lot_size) : lotSize,
     symbol_control: {
       enabled: true,
       underlying_user_symbol_id: underlying._id,
@@ -647,8 +673,27 @@ export const createDeployment = async (userId, deploymentData) => {
     if (!symbol.is_active) {
       throw new Error("Cannot associate an inactive symbol to deployment");
     }
+
+    const symbolClass = String(symbol.instrument_class || "").toUpperCase();
+    if (symbolClass === "OPTION") {
+      const lotFromSymbol = Number(symbol.lot_size);
+      const lotFromPayload = Number(prepared.lot_size);
+      const lotSize = lotFromSymbol > 0 ? lotFromSymbol : lotFromPayload;
+      if (!(lotSize > 0)) {
+        throw new Error("OPTION symbol is missing lot_size; set lot_size on the UserSymbol before deploying");
+      }
+      prepared.lot_size = lotSize;
+    } else if (!(Number(prepared.lot_size) > 0)) {
+      prepared.lot_size = null;
+    }
   } else {
     throw new Error("user_symbol_id is required (or enable symbol_control to auto-resolve)");
+  }
+
+  if (prepared.no_of_lots !== undefined && prepared.no_of_lots !== null) {
+    prepared.no_of_lots = normalizeNoOfLots(prepared.no_of_lots);
+  } else {
+    prepared.no_of_lots = 1;
   }
 
   const deployment = new Deployment({ ...prepared, user_id: userId });
@@ -703,6 +748,10 @@ export const updateDeployment = async (userId, id, updateData) => {
 
   if (Object.keys(sanitizedUpdate).length === 0 && !updateData.symbol_control) {
     throw new Error("No valid fields provided for update");
+  }
+
+  if (sanitizedUpdate.no_of_lots !== undefined) {
+    sanitizedUpdate.no_of_lots = normalizeNoOfLots(sanitizedUpdate.no_of_lots);
   }
 
   const existing = await Deployment.findOne({ _id: id, user_id: userId });
@@ -1217,6 +1266,8 @@ export const syncAllDeploymentsToRedis = async () => {
         strategy_mode: dep.strategy_mode,
         is_internal_broker: dep.account_id.broker_id ? dep.account_id.broker_id.is_internal : false,
         use_full_amount: dep.use_full_amount || false,
+        lot_size: Number(dep.lot_size) > 0 ? Number(dep.lot_size) : undefined,
+        no_of_lots: Number(dep.no_of_lots) >= 1 ? Number(dep.no_of_lots) : 1,
         commission_type: dep.account_id.commission_type || "PERCENTAGE",
         commission_rate: dep.account_id.commission_rate || 0,
         target_pts: dep.strategy_id.target_pts !== undefined ? dep.strategy_id.target_pts : 500,
