@@ -53,8 +53,9 @@ async function updateBacktestExcursions(position, currentTradeTime, TradeModel) 
   const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
   
   let ticks = [];
+  const baseDataDir = process.env.EXPORTED_DATA_DIR || process.env.SHARED_DIR || path.join(process.cwd(), "..", "exportedData");
   for (const d of dates) {
-    let filePath = path.join(process.cwd(), "..", "exportedData", d, `${sanitizedSymbol}.json`);
+    let filePath = path.join(baseDataDir, d, `${sanitizedSymbol}.json`);
     try {
       await fs.access(filePath);
     } catch (err) {
@@ -63,14 +64,8 @@ async function updateBacktestExcursions(position, currentTradeTime, TradeModel) 
         await fs.access(fallbackPath);
         filePath = fallbackPath;
       } catch (fallbackErr) {
-        const absolutePath = path.join("/home/prabu/Desktop/Work Folder/MoneyMaker GitLab AWS/BackTest/exportedData", d, `${sanitizedSymbol}.json`);
-        try {
-          await fs.access(absolutePath);
-          filePath = absolutePath;
-        } catch (absErr) {
-          console.warn(`[updateBacktestExcursions] Ticks file not found for ${symbol} on ${d}.`);
-          continue;
-        }
+        console.warn(`[updateBacktestExcursions] Ticks file not found for ${symbol} on ${d} (checked ${filePath} and ${fallbackPath}).`);
+        continue;
       }
     }
 

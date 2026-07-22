@@ -1,0 +1,4 @@
+# Project Guidelines & Rules
+
+- **No Hardcoded Absolute Host Paths**: NEVER hardcode local host absolute machine paths (e.g., `/home/prabu/...`, `/Users/...`, `C:\Users\...`) in application source code, Docker configuration files, scripts, mount bindings, or fallback logic. Always use dynamic paths, environment variables (e.g., `process.env.SHARED_DIR`), or relative paths from `process.cwd()`.
+- **Fail Loud & Fast On Errors**: NEVER use silent fallbacks or hardcoded local directory fallback chains that mask underlying path configuration or container mount failures. If a required service, file, directory, or mount binding is missing or fails, throw an explicit, descriptive error immediately (fail loud) so that deployment or container configuration issues in production or IDC environments are surfaced right away.
