@@ -17,6 +17,43 @@ if (redisUrl) {
   redisClient.connect().catch(err => console.error("Failed to connect Redis in WebSocket service:", err));
 }
 
+function tokenMatchesSubscription(subscribedTokens, instrumentToken) {
+  if (subscribedTokens.has(instrumentToken)) return true;
+
+  const suffix = instrumentToken.includes('|')
+    ? instrumentToken.split('|')[1]
+    : instrumentToken;
+  if (subscribedTokens.has(suffix)) return true;
+
+  for (const token of subscribedTokens) {
+    if (!token) continue;
+    if (token === instrumentToken) return true;
+    const tokenSuffix = token.includes('|') ? token.split('|')[1] : token;
+    const tokenPrefix = token.includes('|') ? token.split('|')[0] : null;
+    const msgPrefix = instrumentToken.includes('|') ? instrumentToken.split('|')[0] : null;
+    if (tokenPrefix && msgPrefix) {
+      if (tokenPrefix === msgPrefix && tokenSuffix === suffix) return true;
+    } else if (tokenSuffix === suffix) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function refreshUserSubscriptions(userId) {
+  try {
+    const symbolsList = await UserSymbol.find({ user_id: userId, is_active: true });
+    const tokens = new Set(symbolsList.map((s) => s.instrument_token));
+    for (const [, client] of activeSockets.entries()) {
+      if (client.userId === userId) {
+        client.subscribedTokens = tokens;
+      }
+    }
+  } catch (err) {
+    console.error(`[WS] Failed to refresh subscriptions for user ${userId}:`, err.message);
+  }
+}
+
 export function initWebSocketServer(server) {
   wss = new WebSocketServer({ noServer: true });
 
@@ -150,6 +187,21 @@ async function initRedisSubscriber() {
       console.error("[WS Redis Sub] Error parsing Redis subscription message:", err);
     }
   });
+
+  await redisSubscriber.subscribe('symbol_updates', (message) => {
+    try {
+      const payload = JSON.parse(message);
+      const { userId, action } = payload;
+      if (!userId || !action) return;
+      if (action === 'subscribe' || action === 'unsubscribe' || action === 'update') {
+        refreshUserSubscriptions(userId).catch((err) => {
+          console.error(`[WS Redis Sub] symbol_updates refresh failed for ${userId}:`, err.message);
+        });
+      }
+    } catch (err) {
+      console.error("[WS Redis Sub] Error parsing symbol_updates message:", err);
+    }
+  });
 }
 
 function extractLtp(feed) {
@@ -261,7 +313,7 @@ async function initKafkaConsumer() {
         const cleanToken = instrumentToken.includes('|') ? instrumentToken.split('|')[1] : instrumentToken;
 
         for (const [socketId, client] of activeSockets.entries()) {
-          if (client.subscribedTokens.has(instrumentToken) || client.subscribedTokens.has(cleanToken)) {
+          if (tokenMatchesSubscription(client.subscribedTokens, instrumentToken)) {
             if (client.ws.readyState === client.ws.OPEN) {
               client.ws.send(outboundMsg);
             }

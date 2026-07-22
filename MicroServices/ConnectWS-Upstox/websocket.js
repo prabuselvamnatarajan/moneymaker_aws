@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 import { Kafka } from 'kafkajs';
 import protobuf from 'protobufjs';
 import { createClient } from 'redis';
-import { getOrgAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
+import { getOrgAccessTokenFromRedis, invalidateOrgAccessToken } from './redis_utils/AuthoriseUpstoxClient.js';
 
 // Initialize global variables
 let protobufRoot = null;
@@ -17,8 +17,27 @@ const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',')
 let reconnectAttempt = 0;
 let reconnectTimer = null;
 const MAX_RECONNECT_DELAY_MS = 60000;
+let orgTokenInvalidated = false;
+
+async function handleUpstoxAuthFailure(reason) {
+  if (orgTokenInvalidated) return;
+  orgTokenInvalidated = true;
+  console.error(`[WS Upstox] ${reason} Clearing stale Org/Admin token — re-authenticate via Brokers page.`);
+  try {
+    await invalidateOrgAccessToken();
+  } catch (err) {
+    console.error('[WS Upstox] Failed to invalidate Org/Admin token:', err.message);
+  }
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
 
 function scheduleReconnect(reason) {
+  if (orgTokenInvalidated) {
+    return;
+  }
   if (activeSymbols.size === 0) {
     return;
   }
@@ -54,6 +73,7 @@ async function ensureWSConnection() {
     try {
       console.log(`[WS Upstox] Auto-initiating new WebSocket market data connection using Org/Admin access token...`);
       const access_token = await getOrgAccessTokenFromRedis();
+      orgTokenInvalidated = false;
       await get_WS_URL({ access_token });
     } catch (err) {
       const message = err.message || String(err);
@@ -223,6 +243,8 @@ async function initRedisSubscriber() {
       try {
         const payload = JSON.parse(message);
         console.log('[WS Upstox Redis Sub] Received broker_update event:', payload);
+        orgTokenInvalidated = false;
+        reconnectAttempt = 0;
         if (!activeWS || activeWS.readyState !== WebSocket.OPEN) {
           console.log('[WS Upstox] Broker update received & WS connection not open. Auto-initiating connection...');
           await ensureWSConnection();
@@ -257,10 +279,10 @@ async function get_WS_URL({ access_token, symbol = [] }) {
 
     console.log('[WS Upstox] Initiating WebSocket connection to Upstox feed');
     activeWS = ws;
-    connectWebSocket({ ws, symbol }).catch((err) => {
+    connectWebSocket({ ws, symbol }).catch(async (err) => {
       const message = err.message || String(err);
       if (message.includes('401')) {
-        console.error('[WS Upstox] Connection error: Upstox access token missing or expired — re-authenticate via Brokers page.');
+        await handleUpstoxAuthFailure('Connection error: Upstox access token rejected (401).');
       } else {
         console.error('[WS Upstox] Connection error in connectWebSocket:', message);
       }
@@ -365,18 +387,18 @@ const connectWebSocket = async ({ ws, symbol = [] }) => {
 
     });
 
-    ws.on("error", (error) => {
+    ws.on("error", async (error) => {
       const message = error.message || String(error);
       if (message.includes('401')) {
-        console.error('[WS Upstox] Upstox access token missing or expired — re-authenticate via Brokers page.');
+        await handleUpstoxAuthFailure('Upstox rejected the access token (401).');
       } else {
         console.log("error:", error);
+        scheduleReconnect('connection_error');
       }
       if (activeWS === ws) {
         activeWS = null;
         subscribedSymbols.clear();
       }
-      scheduleReconnect('connection_error');
       reject(error);
     });
   });

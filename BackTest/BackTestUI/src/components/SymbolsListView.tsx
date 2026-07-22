@@ -183,9 +183,7 @@ export default function SymbolsListView({
   const handleToggleActive = async (id: string, isActive: boolean) => {
     setTogglingId(id);
     try {
-      onToggleSymbolActive(id, isActive);
-      // Allow the parent API call to process, then re-fetch server-filtered table
-      await new Promise(r => setTimeout(r, 400));
+      await onToggleSymbolActive(id, isActive);
       await fetchTableData();
     } finally {
       setTogglingId(null);

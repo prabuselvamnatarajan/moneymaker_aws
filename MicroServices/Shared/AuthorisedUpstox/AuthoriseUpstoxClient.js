@@ -255,11 +255,75 @@ async function invalidateUserAccessToken(userId) {
     }
 }
 
+async function publishBrokerUpdated(userId) {
+    if (!userId) return;
+    try {
+        await ensureRedisString();
+        const client = redisClientInstance.getClient();
+        const payload = JSON.stringify({
+            event: 'broker_updated',
+            userId: String(userId),
+            brokerId: 'upstox',
+        });
+        await client.publish('broker_updates', payload);
+    } catch (err) {
+        console.error('[AuthoriseUpstox] Failed to publish broker_updates after token invalidation:', err.message);
+    }
+}
+
+/**
+ * Clear org/admin feed tokens after Upstox rejects them (e.g. WS 401 while JWT exp still valid).
+ */
+async function invalidateOrgAccessToken() {
+    await ensureRedisString();
+
+    for (const key of [
+        `${DEFAULT_REDIS_KEY}:admin`,
+        `${DEFAULT_REDIS_KEY}:org`,
+        DEFAULT_REDIS_KEY,
+    ]) {
+        await deleteExpiredToken(key);
+    }
+    authorisedClient = null;
+
+    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+    if (!mongoUri) return;
+
+    try {
+        const { MongoClient } = await import('mongodb');
+        const client = new MongoClient(mongoUri);
+        await client.connect();
+        try {
+            const db = client.db('BacktestApp');
+            const adminRole = await db.collection('roles').findOne({ name: 'admin' });
+            if (!adminRole) return;
+
+            const adminUser = await db.collection('users').findOne({
+                roles: { $in: [adminRole._id, adminRole._id.toString()] },
+            });
+            if (!adminUser) return;
+
+            const userIds = [adminUser._id.toString(), String(adminUser._id)];
+            await db.collection('brokers').updateMany(
+                { user_id: { $in: userIds }, external_broker_id: 'upstox' },
+                { $set: { access_token: '' } }
+            );
+            console.warn('[AuthoriseUpstox] Cleared invalid Org/Admin Upstox access_token in MongoDB.');
+            await publishBrokerUpdated(adminUser._id.toString());
+        } finally {
+            await client.close();
+        }
+    } catch (err) {
+        console.error('[AuthoriseUpstox] Failed to clear Org/Admin token:', err.message);
+    }
+}
+
 export {
     getAuthorisedClient,
     resetAuthorisedClient,
     getAccessTokenFromRedis,
     getOrgAccessTokenFromRedis,
     invalidateUserAccessToken,
+    invalidateOrgAccessToken,
 };
 
