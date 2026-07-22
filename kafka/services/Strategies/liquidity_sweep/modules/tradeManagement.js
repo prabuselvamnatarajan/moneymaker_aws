@@ -114,12 +114,11 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         strategy_details.execution_time = new Date(timestamp).toISOString();
     }
 
-    const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
     return {
         quantity,
         product,
         validity,
-        price: (order_type === 'MARKET' && isLive) ? 0 : ltp,
+        price: ltp,
         tag: tag ? tag.replace(/[^a-zA-Z0-9_-]/g, '_') : '',
         instrument_token,
         order_type,

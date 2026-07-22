@@ -7,7 +7,7 @@ const port = process.env.PORT || 80;
 app.use(cors());
 app.use(express.json());
 
-import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance } from './dependency.js';
+import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance, buildBrokerOrderPayload } from './dependency.js';
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 
@@ -17,6 +17,10 @@ app.post('/', async (req, res) => {
 
         if (!body.instrument_token || body.price === undefined || body.quantity === undefined || !body.transaction_type || !body.strategy_details || !body.strategy_details.user_id) {
             return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
+        }
+
+        if (body.price === null || body.price <= 0) {
+            console.warn(`⚠️ Warning: Incoming order price is missing or zero (${body.price}). BackTestApp will attempt LTP fallback.`);
         }
 
         const { strategy_details = {}, ...filteredBody } = body;
@@ -33,8 +37,9 @@ app.post('/', async (req, res) => {
             // Throws 401 if token missing/expired — no silent fallback.
             const access_token = await getAccessTokenFromRedis(strategy_details.user_id);
 
-            filteredBody.order_type === 'MARKET' && (filteredBody.price = 0);
-            result = await placeOrders(access_token, JSON.stringify(filteredBody));
+            // Zero MARKET price only for the broker payload; keep original body.price for ledger/analysis.
+            const brokerPayload = buildBrokerOrderPayload(filteredBody);
+            result = await placeOrders(access_token, JSON.stringify(brokerPayload));
 
             try {
                 orderResponse = await triggerBackTestApp(body);

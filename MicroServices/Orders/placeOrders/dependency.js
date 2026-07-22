@@ -87,6 +87,14 @@ async function storeOrderDetails(symbol, order_details) {
     await producer.disconnect();
 }
 
+function buildBrokerOrderPayload(orderFields) {
+    const payload = { ...orderFields };
+    if (payload.order_type === 'MARKET') {
+        payload.price = 0;
+    }
+    return payload;
+}
+
 async function placeOrders(access_token, body) {
     const url = `${base_url}/order/place`;
     const headers = {
@@ -120,10 +128,11 @@ async function triggerBackTestApp(body) {
 
     try {
         let { strategy_details = {} } = body;
-        const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
 
         let price = body.price;
-        if (!isLive && (price === 0 || price === '0' || price === undefined || price === null)) {
+        // Resolve missing/zero price via LTP in all modes so live MARKET orders
+        // still record a usable execution price for deployment analysis.
+        if (price === 0 || price === '0' || price === undefined || price === null) {
             const ltpInfo = await fetchLTP(body.instrument_token, strategy_details.user_id);
             if (ltpInfo && ltpInfo.ltp) {
                 price = ltpInfo.ltp;
@@ -185,6 +194,7 @@ async function getLiveAccountBalance(userId) {
 
 
 export {
+  buildBrokerOrderPayload,
   placeOrders,
   storeOrderDetails,
   triggerBackTestApp,
