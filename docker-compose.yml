@@ -153,7 +153,6 @@ services:
       - app-net
     volumes:
       - redis_data:/data
-      - ./redis.conf:/usr/local/etc/redis/redis.conf
     environment:
       - REDIS_ARGS=--requirepass myStrongRedisPassword --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
