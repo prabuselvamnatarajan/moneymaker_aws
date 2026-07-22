@@ -18,6 +18,7 @@ target/
 .env
 .env.local
 *.env.*
+upstock-login.env
 
 # Editors
 .vscode/
