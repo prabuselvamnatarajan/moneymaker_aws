@@ -49,5 +49,8 @@ if ! docker info | grep -q "Swarm: active"; then
   sleep 3
 fi
 
+. "$ROOT/scripts/ensure_swarm_deploy_ready.sh"
+ensure_swarm_deploy_ready
+
 echo "Deploying MoneyMaker stack..."
 docker stack deploy --detach=false --compose-file docker-compose.yml moneymaker
