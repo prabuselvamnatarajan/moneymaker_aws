@@ -432,11 +432,15 @@ export default function StrategiesListView({
                   <div className="flex items-center gap-2 mt-4">
                     <span className="text-[9px] text-slate-500 uppercase tracking-wider font-mono">Target Asset Classes:</span>
                     <div className="flex flex-wrap gap-1.5">
-                      {strat.symbols.map(sym => (
-                        <span key={sym} className="text-[10px] font-mono text-indigo-300 bg-indigo-500/5 border border-indigo-500/10 px-2 py-0.5 rounded-sm">
-                          {sym}
-                        </span>
-                      ))}
+                      {strat.symbols.map(sym => {
+                        const matchedSym = symbols.find(s => s.ticker === sym || s.instrumentToken === sym);
+                        const displayName = matchedSym ? (matchedSym.name || matchedSym.ticker) : sym;
+                        return (
+                          <span key={sym} className="text-[10px] font-mono text-indigo-300 bg-indigo-500/5 border border-indigo-500/10 px-2 py-0.5 rounded-sm" title={sym}>
+                            {displayName}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -536,8 +540,7 @@ export default function StrategiesListView({
                     .filter(s => s.strategy_name.toLowerCase() !== 'manual')
                     .map(s => (
                       <option key={s._id} value={s._id}>{s.strategy_name}</option>
-                    ))
-                  }
+                    ))}
                 </select>
               </div>
 
@@ -658,12 +661,12 @@ export default function StrategiesListView({
                       required
                       value={underlyingSymbolId}
                       onChange={(e) => setUnderlyingSymbolId(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                      className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                     >
                       <option value="">Select active non-OPTION symbol...</option>
                       {underlyingCandidates.map((sym) => (
                         <option key={sym.id || sym.ticker} value={sym.id}>
-                          {sym.ticker}
+                          {sym.name || sym.ticker} ({sym.ticker})
                           {sym.instrumentClass ? ` [${sym.instrumentClass}]` : ''}
                           {sym.strikePriceDiff != null ? ` (diff=${sym.strikePriceDiff})` : ''}
                         </option>
@@ -676,7 +679,7 @@ export default function StrategiesListView({
                       <select
                         value={moneyness}
                         onChange={(e) => setMoneyness(e.target.value as any)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200"
+                        className="w-full bg-slate-955 border border-slate-800 rounded-md p-2 text-xs text-slate-200"
                       >
                         <option value="ITM">ITM</option>
                         <option value="ATM">ATM</option>
@@ -692,7 +695,7 @@ export default function StrategiesListView({
                         disabled={moneyness === 'ATM'}
                         value={offset}
                         onChange={(e) => setOffset(parseInt(e.target.value, 10) || 1)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono disabled:opacity-50"
+                        className="w-full bg-slate-955 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono disabled:opacity-50"
                       />
                     </div>
                     <div className="space-y-1">
@@ -700,7 +703,7 @@ export default function StrategiesListView({
                       <select
                         value={optionType}
                         onChange={(e) => setOptionType(e.target.value as any)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-200"
+                        className="w-full bg-slate-955 border border-slate-800 rounded-md p-2 text-xs text-slate-200"
                       >
                         <option value="CE">CE (Call)</option>
                         <option value="PE">PE (Put)</option>
@@ -713,11 +716,11 @@ export default function StrategiesListView({
                         required
                         value={optionExpiry}
                         onChange={(e) => setOptionExpiry(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono"
+                        className="w-full bg-slate-955 border border-slate-800 rounded-md p-2 text-xs text-slate-100 font-mono"
                       />
                     </div>
                   </div>
-                  <p className="text-[10px] text-slate-500">
+                  <p className="text-[10px] text-slate-505">
                     Option symbol is resolved from the chain (e.g. ITM-1 CE) and remapped when the underlying LTP crosses a strike grid level—only while the position is flat.
                   </p>
                 </div>
@@ -731,12 +734,12 @@ export default function StrategiesListView({
                     setSelectedSymbolId(e.target.value);
                     setNoOfLots(1);
                   }}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
+                  className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                 >
                   <option value="">Select active symbol...</option>
                   {activeSymbols.map((sym) => (
                     <option key={sym.id || sym.ticker} value={sym.id}>
-                      {sym.ticker}
+                      {sym.name || sym.ticker} ({sym.ticker})
                       {sym.instrumentClass ? ` [${sym.instrumentClass}]` : ''}
                       {sym.lotSize != null ? ` (lot=${sym.lotSize})` : ''}
                     </option>

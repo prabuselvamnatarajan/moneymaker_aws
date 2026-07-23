@@ -435,7 +435,7 @@ export default function GlobalTransactionsView({
 
             {/* Symbols Multi-select */}
             <div className="space-y-1 text-xs">
-              <label className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-bold">Asset Tickers</label>
+              <label className="text-[10px] text-slate-500 uppercase font-mono tracking-wider font-bold">Asset Symbols</label>
               <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto bg-slate-900 p-1.5 rounded border border-slate-800 font-mono">
                 {symbols.map(sym => {
                   const isChecked = filters.symbols.includes(sym.ticker);
@@ -456,9 +456,10 @@ export default function GlobalTransactionsView({
                           ? 'bg-indigo-600/10 text-indigo-400 border-indigo-500/25' 
                           : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
                       }`}
+                      title={sym.ticker}
                     >
                       {isChecked && <Check className="w-2.5 h-2.5" />}
-                      {sym.ticker}
+                      {sym.name || sym.ticker}
                     </button>
                   );
                 })}
@@ -567,12 +568,16 @@ export default function GlobalTransactionsView({
             );
           })}
 
-          {filters.symbols.map(sym => (
-            <span key={sym} className="px-2 py-0.5 rounded-sm bg-indigo-950 text-indigo-400 font-mono text-[10px] flex items-center gap-1">
-              Symbol: {sym}
-              <button onClick={() => handleRemoveChip('symbols', sym)} className="hover:text-white"><X className="w-3 h-3" /></button>
-            </span>
-          ))}
+          {filters.symbols.map(sym => {
+            const matchedSym = symbols.find(s => s.ticker === sym || s.instrumentToken === sym);
+            const displayName = matchedSym ? (matchedSym.name || matchedSym.ticker) : sym;
+            return (
+              <span key={sym} className="px-2 py-0.5 rounded-sm bg-indigo-950 text-indigo-400 font-mono text-[10px] flex items-center gap-1">
+                Symbol: {displayName}
+                <button onClick={() => handleRemoveChip('symbols', sym)} className="hover:text-white"><X className="w-3 h-3" /></button>
+              </span>
+            );
+          })}
 
           {filters.types.map(type => (
             <span key={type} className="px-2 py-0.5 rounded-sm bg-indigo-950 text-indigo-400 font-mono text-[10px] flex items-center gap-1">

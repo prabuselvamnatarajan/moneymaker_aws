@@ -656,7 +656,7 @@ export default function DashboardView({
                     >
                       {symbols.filter(sym => sym.isActive).map(sym => (
                         <option key={sym.ticker} value={sym.ticker}>
-                          {sym.ticker}
+                          {sym.name || sym.ticker} ({sym.ticker})
                         </option>
                       ))}
                     </select>

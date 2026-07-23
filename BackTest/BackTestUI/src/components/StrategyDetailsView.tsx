@@ -438,9 +438,9 @@ export default function StrategyDetailsView({
                   key={sym.ticker}
                   className="p-3 bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-between hover:border-slate-700 transition-colors"
                 >
-                  <div className="font-mono min-w-0 flex-1">
-                    <span className="text-xs font-bold text-slate-100 truncate block">{sym.ticker}</span>
-                    <span className="text-[10px] text-slate-400 block font-sans truncate">{sym.name}</span>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs font-bold text-slate-100 truncate block">{sym.name || sym.ticker}</span>
+                    <span className="text-[10px] text-slate-400 block font-mono truncate">{sym.ticker}</span>
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
