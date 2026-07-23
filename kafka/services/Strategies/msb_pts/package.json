@@ -5,7 +5,7 @@
   "main": "MSB.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --import ./__tests__/register-loader.mjs --test __tests__/MSB.test.js",
     "start": "node server.js"
   },
   "author": "",

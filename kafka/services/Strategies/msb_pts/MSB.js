@@ -11,18 +11,24 @@ import { logger } from '/app/utils/logUtils.js';
 async function triggerOrder(requestBody) {
     if (!requestBody || requestBody.quantity <= 0) {
         logger.warn('Order quantity is zero or negative, skipping order trigger.');
-        return;
+        return false;
     }
     const placeOrderApi = process.env.PLACEORDER_API;
-    if (placeOrderApi) {
-        try {
-            const res = await axios.post(placeOrderApi, requestBody);
-            logger.debug('Order API response:', res.data);
-        } catch (err) {
-            logger.error('Order API error:', err.message);
-        }
-    } else {
+    if (!placeOrderApi) {
         logger.error('PLACEORDER_API env variable not set');
+        return false;
+    }
+    try {
+        const res = await axios.post(placeOrderApi, requestBody);
+        if (res.status >= 200 && res.status < 300) {
+            logger.debug('Order API response:', res.data);
+            return true;
+        }
+        logger.error(`Order API non-success status: ${res.status}`);
+        return false;
+    } catch (err) {
+        logger.error('Order API error:', err.message);
+        return false;
     }
 }
 
@@ -170,9 +176,19 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
-                await triggerOrder(requestBody);
+                const orderPlaced = await triggerOrder(requestBody);
+                if (orderPlaced) {
+                    await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                    position = null;
+                    lastBuyPrice = null;
+                    lastSellPrice = null;
+                    closedByTargetOrSl = true;
+                } else {
+                    logger.warn('msb_pts: Target/SL SELL failed; keeping position for retry');
+                }
+            } else {
+                logger.warn(`msb_pts: Skipping Target/SL SELL due to zero/negative quantity: ${requestBody?.quantity}`);
             }
-            await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
         } else if (position.direction === "SHORT") {
             if (isTest) {
                 logger.info(`msb_pts Test: Closing Test SHORT position at ${ltp} via ${targetHit ? 'Target' : 'SL'} hit (entry: ${position.entryPrice})`);
@@ -181,15 +197,20 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
-                await triggerOrder(requestBody);
+                const orderPlaced = await triggerOrder(requestBody);
+                if (orderPlaced) {
+                    await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                    position = null;
+                    lastBuyPrice = null;
+                    lastSellPrice = null;
+                    closedByTargetOrSl = true;
+                } else {
+                    logger.warn('msb_pts: Target/SL BUY (cover short) failed; keeping position for retry');
+                }
+            } else {
+                logger.warn(`msb_pts: Skipping Target/SL BUY due to zero/negative quantity: ${requestBody?.quantity}`);
             }
-            await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
         }
-
-        position = null;
-        lastBuyPrice = null;
-        lastSellPrice = null;
-        closedByTargetOrSl = true;
     }
 
     // 2. Trend breakout logic
@@ -200,11 +221,15 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             logger.info(`msb_pts: Established initial trend UP at ${high}. Opening LONG position.`);
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
-                await triggerOrder(requestBody);
-                await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                position = { direction: "LONG", entryPrice: ltp };
-                lastBuyPrice = ltp;
-                closedByTargetOrSl = false;
+                const orderPlaced = await triggerOrder(requestBody);
+                if (orderPlaced) {
+                    await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                    position = { direction: "LONG", entryPrice: ltp };
+                    lastBuyPrice = ltp;
+                    closedByTargetOrSl = false;
+                } else {
+                    logger.warn('msb_pts: Initial BUY failed; not opening position');
+                }
             }
             prevHigh.high = high;
             prevHigh.low = low;
@@ -234,16 +259,27 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             if (closedByTargetOrSl) {
                 logger.info(`msb_pts: Skip duplicate exit order for LONG. Position already closed by Target/SL.`);
                 closedByTargetOrSl = false;
+                position = null;
+                lastBuyPrice = null;
             } else if (position && position.direction === "LONG") {
                 logger.info(`msb_pts: Closing LONG position at ${ltp} on trend break DOWN`);
                 let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
-                    await triggerOrder(requestBody);
+                    const orderPlaced = await triggerOrder(requestBody);
+                    if (orderPlaced) {
+                        await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                        position = null;
+                        lastBuyPrice = null;
+                    } else {
+                        logger.warn('msb_pts: Trend-break SELL failed; keeping position for retry');
+                    }
+                } else {
+                    logger.warn(`msb_pts: Skipping trend-break SELL due to zero/negative quantity: ${requestBody?.quantity}`);
                 }
-                await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+            } else {
+                position = null;
+                lastBuyPrice = null;
             }
-            position = null;
-            lastBuyPrice = null;
 
             prevLow.high = high;
             prevLow.low = low;
@@ -264,26 +300,43 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             if (closedByTargetOrSl) {
                 logger.info(`msb_pts: Skip duplicate exit order for SHORT. Position already closed by Target/SL.`);
                 closedByTargetOrSl = false;
+                position = null;
+                lastSellPrice = null;
             } else if (position && position.direction === "SHORT") {
                 logger.info(`msb_pts: Closing SHORT position at ${ltp} on trend break UP`);
                 let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
-                    await triggerOrder(requestBody);
+                    const orderPlaced = await triggerOrder(requestBody);
+                    if (orderPlaced) {
+                        await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                        position = null;
+                        lastSellPrice = null;
+                    } else {
+                        logger.warn('msb_pts: Trend-break short cover failed; keeping position for retry');
+                    }
+                } else {
+                    logger.warn(`msb_pts: Skipping short cover due to zero/negative quantity: ${requestBody?.quantity}`);
                 }
-                await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+            } else {
+                position = null;
+                lastSellPrice = null;
             }
-            position = null;
-            lastSellPrice = null;
 
-            // Open LONG position (entry signal)
-            logger.info(`msb_pts: Opening LONG position at ${ltp} on trend break UP`);
-            let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
-            if (requestBody && requestBody.quantity > 0) {
-                await triggerOrder(requestBody);
-                await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                position = { direction: "LONG", entryPrice: ltp };
-                lastBuyPrice = ltp;
-                closedByTargetOrSl = false;
+            // Open LONG position (entry signal) only when flat
+            if (!position) {
+                logger.info(`msb_pts: Opening LONG position at ${ltp} on trend break UP`);
+                let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+                if (requestBody && requestBody.quantity > 0) {
+                    const orderPlaced = await triggerOrder(requestBody);
+                    if (orderPlaced) {
+                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                        position = { direction: "LONG", entryPrice: ltp };
+                        lastBuyPrice = ltp;
+                        closedByTargetOrSl = false;
+                    } else {
+                        logger.warn('msb_pts: BUY order failed; not opening LONG position');
+                    }
+                }
             }
 
             prevHigh.high = high;

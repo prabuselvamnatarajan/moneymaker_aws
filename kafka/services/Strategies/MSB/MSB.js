@@ -5,18 +5,24 @@ import { logger } from '/app/utils/logUtils.js';
 async function triggerOrder(requestBody) {
     if (!requestBody || requestBody.quantity <= 0) {
         logger.warn('Order quantity is zero or negative, skipping order trigger.');
-        return;
+        return false;
     }
     const placeOrderApi = process.env.PLACEORDER_API;
-    if (placeOrderApi) {
-        try {
-            const res = await axios.post(placeOrderApi, requestBody);
-            logger.debug('Order API response:', res.data);
-        } catch (err) {
-            logger.error('Order API error:', err.message);
-        }
-    } else {
+    if (!placeOrderApi) {
         logger.error('PLACEORDER_API env variable not set');
+        return false;
+    }
+    try {
+        const res = await axios.post(placeOrderApi, requestBody);
+        if (res.status >= 200 && res.status < 300) {
+            logger.debug('Order API response:', res.data);
+            return true;
+        }
+        logger.error(`Order API non-success status: ${res.status}`);
+        return false;
+    } catch (err) {
+        logger.error('Order API error:', err.message);
+        return false;
     }
 }
 
@@ -43,15 +49,9 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     const lots = Number(no_of_lots) >= 1 ? Math.floor(Number(no_of_lots)) : 1;
 
     if (transaction_type === "SELL") {
-        // Exit long: always prefer Redis holdings
+        // Exit long: only sell when Redis holdings exist (never invent qty)
         const boughtQty = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
-        if (boughtQty > 0) {
-            quantity = boughtQty;
-        } else if (lot) {
-            // Lot-sized strategies must not invent a SELL without holdings
-            quantity = 0;
-        }
-        // else: keep default quantity (legacy equity behavior)
+        quantity = boughtQty > 0 ? boughtQty : 0;
     } else if (transaction_type === "BUY") {
         if (use_full_amount) {
             let current_acc_balance = await getAccountBalanceFromRedis(account_id);
@@ -120,11 +120,21 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 logger.info(`MSB: Closing Live long position at ${low}`);
             }
 
-            let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
-            if (requestBody && requestBody.quantity > 0) {
-                await triggerOrder(requestBody);
+            const holdings = await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id);
+            if (holdings <= 0) {
+                logger.warn('MSB: Skipping SELL — no holdings in Redis');
             } else {
-                logger.warn(`MSB: Skipping SELL order due to zero/negative quantity: ${requestBody?.quantity}`);
+                let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
+                if (requestBody && requestBody.quantity > 0) {
+                    const orderPlaced = await triggerOrder(requestBody);
+                    if (orderPlaced) {
+                        await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                    } else {
+                        logger.warn('MSB: SELL order failed; leaving bought_quantity unchanged for retry');
+                    }
+                } else {
+                    logger.warn(`MSB: Skipping SELL order due to zero/negative quantity: ${requestBody?.quantity}`);
+                }
             }
         }
         else {
@@ -149,8 +159,12 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
 
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
-                await triggerOrder(requestBody);
-                await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                const orderPlaced = await triggerOrder(requestBody);
+                if (orderPlaced) {
+                    await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                } else {
+                    logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                }
             } else {
                 logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
             }
