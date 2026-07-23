@@ -360,36 +360,35 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
   };
 };
 
+const resolveExportedDataDir = () => {
+  if (process.env.EXPORTED_DATA_DIR) return process.env.EXPORTED_DATA_DIR;
+  const sharedRoot = process.env.SHARED_DIR || "/shared";
+  return path.join(sharedRoot, "exportedData");
+};
+
 export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
   const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
-  const candidatePaths = [
-    path.join(process.cwd(), "..", "exportedData", date, `${sanitizedSymbol}.json`),
-    path.join("/shared", "exportedData", date, `${sanitizedSymbol}.json`),
-    // Legacy ExportToFile bug wrote to /shared/{date}/ instead of /shared/exportedData/{date}/
-    path.join("/shared", date, `${sanitizedSymbol}.json`),
-  ];
+  const filePath = path.join(resolveExportedDataDir(), date, `${sanitizedSymbol}.json`);
 
-  let data = null;
-  let emptyFallback = null;
-  for (const candidate of candidatePaths) {
-    try {
-      const fileContent = await fs.readFile(candidate, "utf8");
-      const parsed = JSON.parse(fileContent);
-      if (!Array.isArray(parsed)) continue;
-      // Skip empty/truncated placeholders so a usable legacy copy can win
-      if (parsed.length === 0) {
-        if (!emptyFallback) emptyFallback = parsed;
-        continue;
-      }
-      data = parsed;
-      break;
-    } catch (err) {
-      // try next candidate (missing, unreadable, or corrupt JSON)
-    }
+  let data;
+  try {
+    const fileContent = await fs.readFile(filePath, "utf8");
+    data = JSON.parse(fileContent);
+  } catch (err) {
+    const error = new Error(
+      `Candle data not found or unreadable for ${symbol} on ${date} at ${filePath}: ${err.message}`
+    );
+    error.statusCode = err.code === "ENOENT" ? 404 : 500;
+    throw error;
   }
-  if (!data) data = emptyFallback;
 
-  if (!Array.isArray(data)) return { symbol, date, timeframe, data: [] };
+  if (!Array.isArray(data)) {
+    const error = new Error(
+      `Candle data at ${filePath} must be a JSON array (got ${data === null ? "null" : typeof data})`
+    );
+    error.statusCode = 500;
+    throw error;
+  }
 
   const intervalMs = { "1m": 60000, "5m": 300000, "15m": 900000 }[timeframe] || 60000;
   const IST_OFFSET_MS = 19800000; // +5:30 in ms
@@ -456,30 +455,24 @@ export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
 export const getAvailableBacktestDates = async () => {
   const dates = new Set();
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-  
-  const checkDir = async (dirPath, { requireJson = false } = {}) => {
-    try {
-      const files = await fs.readdir(dirPath);
-      for (const file of files) {
-        if (!dateRegex.test(file)) continue;
-        const full = path.join(dirPath, file);
-        try {
-          const stat = await fs.stat(full);
-          if (!stat.isDirectory()) continue;
-          if (requireJson) {
-            const entries = await fs.readdir(full);
-            if (!entries.some((e) => e.endsWith(".json"))) continue;
-          }
-          dates.add(file);
-        } catch (e) {}
-      }
-    } catch (err) {}
-  };
+  const exportedDataDir = resolveExportedDataDir();
 
-  await checkDir(path.join(process.cwd(), "..", "exportedData"));
-  await checkDir("/shared/exportedData");
-  // Legacy ExportToFile folders under /shared/{date} — only if they contain export JSON
-  await checkDir("/shared", { requireJson: true });
+  try {
+    const files = await fs.readdir(exportedDataDir);
+    for (const file of files) {
+      if (!dateRegex.test(file)) continue;
+      try {
+        const stat = await fs.stat(path.join(exportedDataDir, file));
+        if (stat.isDirectory()) dates.add(file);
+      } catch (e) {}
+    }
+  } catch (err) {
+    const error = new Error(
+      `Exported data directory not readable at ${exportedDataDir}: ${err.message}`
+    );
+    error.statusCode = err.code === "ENOENT" ? 404 : 500;
+    throw error;
+  }
 
   return Array.from(dates).sort((a, b) => b.localeCompare(a));
 };

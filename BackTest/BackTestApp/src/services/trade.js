@@ -53,30 +53,21 @@ async function updateBacktestExcursions(position, currentTradeTime, TradeModel) 
   const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
   
   let ticks = [];
-  const baseDataDir = process.env.EXPORTED_DATA_DIR || process.env.SHARED_DIR || path.join(process.cwd(), "..", "exportedData");
+  const sharedRoot = process.env.SHARED_DIR || "/shared";
+  const exportedDataDir = process.env.EXPORTED_DATA_DIR || path.join(sharedRoot, "exportedData");
   for (const d of dates) {
-    let filePath = path.join(baseDataDir, d, `${sanitizedSymbol}.json`);
-    try {
-      await fs.access(filePath);
-    } catch (err) {
-      const fallbackPath = path.join("/shared", "exportedData", d, `${sanitizedSymbol}.json`);
-      try {
-        await fs.access(fallbackPath);
-        filePath = fallbackPath;
-      } catch (fallbackErr) {
-        console.warn(`[updateBacktestExcursions] Ticks file not found for ${symbol} on ${d} (checked ${filePath} and ${fallbackPath}).`);
-        continue;
-      }
-    }
-
+    const filePath = path.join(exportedDataDir, d, `${sanitizedSymbol}.json`);
     try {
       const fileContent = await fs.readFile(filePath, "utf8");
       const dayTicks = JSON.parse(fileContent);
-      if (Array.isArray(dayTicks)) {
-        ticks = ticks.concat(dayTicks);
+      if (!Array.isArray(dayTicks)) {
+        throw new Error(`expected JSON array at ${filePath}`);
       }
+      ticks = ticks.concat(dayTicks);
     } catch (err) {
-      console.error(`[updateBacktestExcursions] Error reading/parsing ticks file for ${d}: ${err.message}`);
+      throw new Error(
+        `[updateBacktestExcursions] Tick data not found or unreadable for ${symbol} on ${d} at ${filePath}: ${err.message}`
+      );
     }
   }
 

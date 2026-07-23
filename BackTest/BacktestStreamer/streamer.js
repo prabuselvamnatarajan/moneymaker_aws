@@ -29,17 +29,17 @@ wss.on('connection', ws => {
             return;
         }
         let sanitised_SymbolName = sanitize(symbolName);
-        let filePath = path.join(SHARED_DIR, 'exportedData', date, `${sanitised_SymbolName}.json`);
+        const filePath = path.join(SHARED_DIR, 'exportedData', date, `${sanitised_SymbolName}.json`);
         if (!fs.existsSync(filePath)) {
-            const fallbackPath = path.join(SHARED_DIR, date, `${sanitised_SymbolName}.json`);
-            if (fs.existsSync(fallbackPath)) {
-                filePath = fallbackPath;
-            }
+            ws.send(JSON.stringify({
+                error: `Tick data not found for ${symbolName} on ${date} at ${filePath}`
+            }));
+            return;
         }
         try {
             const data = await getSourceData('local_file', filePath);
             if (!Array.isArray(data)) {
-                ws.send(JSON.stringify({ error: 'Data format error' }));
+                ws.send(JSON.stringify({ error: `Data format error at ${filePath}: expected JSON array` }));
                 return;
             }
             // Stream data one by one
