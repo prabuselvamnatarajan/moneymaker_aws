@@ -18,7 +18,33 @@ import {
   resolveExpiryDate,
 } from "./optionSymbolResolver.js";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "symbol_control"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframe", "symbol_control"];
+
+const ALLOWED_TIMEFRAMES = ["1m", "3m", "5m", "15m"];
+
+const normalizeTimeframe = (tf) => {
+  if (!tf) return "1m";
+  const str = String(tf).trim().toLowerCase();
+  const map = {
+    "1m": "1m",
+    "1minute": "1m",
+    "1_minute": "1m",
+    "3m": "3m",
+    "3minute": "3m",
+    "3_minute": "3m",
+    "5m": "5m",
+    "5minute": "5m",
+    "5_minute": "5m",
+    "15m": "15m",
+    "15minute": "15m",
+    "15_minute": "15m",
+  };
+  const normalized = map[str];
+  if (!normalized || !ALLOWED_TIMEFRAMES.includes(normalized)) {
+    throw new Error(`Invalid timeframe: '${tf}'. Allowed values are 1m (1minute), 3m (3minute), 5m (5minute), 15m (15minute).`);
+  }
+  return normalized;
+};
 
 const normalizeNoOfLots = (value) => {
   const n = Number(value);
@@ -696,6 +722,8 @@ export const createDeployment = async (userId, deploymentData) => {
     prepared.no_of_lots = 1;
   }
 
+  prepared.timeframe = normalizeTimeframe(prepared.timeframe);
+
   const deployment = new Deployment({ ...prepared, user_id: userId });
   const result = await deployment.save();
   await resetBacktestDeployment(result);
@@ -752,6 +780,10 @@ export const updateDeployment = async (userId, id, updateData) => {
 
   if (sanitizedUpdate.no_of_lots !== undefined) {
     sanitizedUpdate.no_of_lots = normalizeNoOfLots(sanitizedUpdate.no_of_lots);
+  }
+
+  if (sanitizedUpdate.timeframe !== undefined) {
+    sanitizedUpdate.timeframe = normalizeTimeframe(sanitizedUpdate.timeframe);
   }
 
   const existing = await Deployment.findOne({ _id: id, user_id: userId });
@@ -1256,6 +1288,7 @@ export const syncAllDeploymentsToRedis = async () => {
       newKeysData[key].push({
         name: dep.strategy_id.strategy_name,
         isTest: isTest,
+        timeframe: dep.timeframe || "1m",
         account_id: dep.account_id.account_id || dep.account_id._id.toString(),
         user_symbol_id: dep.user_symbol_id ? dep.user_symbol_id.toString() : undefined,
         instrument_token: dep.instrument_token,
