@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, TableProperties, Landmark, Cpu, LineChart, 
-  Clock, Globe, X, Layers, ChevronDown
+  Clock, Globe, X, Layers, ChevronDown, Search
 } from 'lucide-react';
 import { ViewScreen, Account, Strategy, SymbolData } from '../types';
 
@@ -46,6 +46,9 @@ export default function Sidebar({
   const activeStrategiesCount = strategies.filter(s => s.status === 'active' && s.name.toLowerCase() !== 'manual').length;
   const visibleDefinitions = strategyDefinitions.filter(s => s.strategy_name.toLowerCase() !== 'manual');
 
+  // Track symbol filter query
+  const [symbolQuery, setSymbolQuery] = useState('');
+
   // Track accordion expanded states
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => ({
     deployments: activeScreen === 'strategies-list' || activeScreen === 'strategy-detail',
@@ -84,6 +87,11 @@ export default function Sidebar({
     onClose();
   };
 
+  const filteredSymbols = symbols.filter(sym => 
+    (sym.name || sym.ticker).toLowerCase().includes(symbolQuery.toLowerCase()) ||
+    sym.ticker.toLowerCase().includes(symbolQuery.toLowerCase())
+  );
+
   return (
     <>
       {/* Mobile backdrop overlay */}
@@ -99,7 +107,7 @@ export default function Sidebar({
       <aside
         id="sidebar-container"
         className={`
-          fixed lg:sticky top-0 left-0 z-40 h-screen
+          fixed lg:sticky top-0 left-0 z-40 h-screen h-[100dvh] max-h-[100dvh]
           w-72 lg:w-64
           bg-slate-950 border-r border-slate-800 text-slate-100
           flex flex-col justify-between font-sans shrink-0
@@ -401,45 +409,75 @@ export default function Sidebar({
               
               <div 
                 className={`transition-all duration-300 ease-in-out overflow-hidden ${
-                  expandedSections.symbols ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+                  expandedSections.symbols ? 'max-h-[1500px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
                 }`}
               >
-                <div className="space-y-1 pl-3 py-1 border-l border-slate-800 ml-5">
-                  <button
-                    onClick={() => handleNav('symbols-list')}
-                    className={`w-full text-left px-3 py-1.5 rounded text-[11px] transition-colors flex items-center gap-2 cursor-pointer ${
-                      activeScreen === 'symbols-list'
-                        ? 'bg-slate-900 text-slate-100 font-bold border-l-2 border-indigo-500 pl-2'
-                        : 'text-slate-400 hover:bg-slate-900/30 hover:text-slate-200'
-                    }`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-655" />
-                    <span>Overview</span>
-                  </button>
-                  
-                  {symbols.map(sym => {
-                    const isSelected = activeScreen === 'symbol-detail' && selectedEntityId === sym.ticker;
-                    const isPositive = sym.change24h >= 0;
-                    return (
-                      <button
-                        key={sym.ticker}
-                        id={`sidebar-sym-${sym.ticker.replace('/', '-')}`}
-                        onClick={() => handleEntity('symbol', sym.ticker)}
-                        className={`w-full text-left px-3 py-1.5 rounded text-[11px] flex items-center justify-between transition-colors cursor-pointer ${
-                          isSelected 
-                            ? 'bg-slate-900 text-slate-100 font-bold border-l-2 border-indigo-500 pl-2' 
-                            : 'text-slate-400 hover:bg-slate-900/30 hover:text-slate-200'
-                        }`}
-                      >
-                        <span className="truncate font-sans font-medium" title={sym.name || sym.ticker}>
-                          {sym.name || sym.ticker}
-                        </span>
-                        <span className={`shrink-0 ml-1.5 text-[9px] font-mono ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
-                          {isPositive ? '+' : ''}{sym.change24h}%
-                        </span>
-                      </button>
-                    );
-                  })}
+                <div className="pl-3 py-1 border-l border-slate-800 ml-5 space-y-1">
+                  {symbols.length > 5 && (
+                    <div className="relative mb-2 pr-1">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-500 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={symbolQuery}
+                        onChange={(e) => setSymbolQuery(e.target.value)}
+                        placeholder="Search symbols..."
+                        className="w-full pl-8 pr-6 py-1 bg-slate-900 border border-slate-800 rounded text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+                      />
+                      {symbolQuery && (
+                        <button
+                          onClick={() => setSymbolQuery('')}
+                          className="absolute right-2 top-1 text-slate-500 hover:text-slate-300 text-xs px-1"
+                          title="Clear search"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="space-y-1 max-h-64 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                    <button
+                      onClick={() => handleNav('symbols-list')}
+                      className={`w-full text-left px-3 py-1.5 rounded text-[11px] transition-colors flex items-center gap-2 cursor-pointer ${
+                        activeScreen === 'symbols-list'
+                          ? 'bg-slate-900 text-slate-100 font-bold border-l-2 border-indigo-500 pl-2'
+                          : 'text-slate-400 hover:bg-slate-900/30 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-655" />
+                      <span>Overview</span>
+                    </button>
+                    
+                    {filteredSymbols.map(sym => {
+                      const isSelected = activeScreen === 'symbol-detail' && selectedEntityId === sym.ticker;
+                      const isPositive = sym.change24h >= 0;
+                      return (
+                        <button
+                          key={sym.ticker}
+                          id={`sidebar-sym-${sym.ticker.replace('/', '-')}`}
+                          onClick={() => handleEntity('symbol', sym.ticker)}
+                          className={`w-full text-left px-3 py-1.5 rounded text-[11px] flex items-center justify-between transition-colors cursor-pointer ${
+                            isSelected 
+                              ? 'bg-slate-900 text-slate-100 font-bold border-l-2 border-indigo-500 pl-2' 
+                              : 'text-slate-400 hover:bg-slate-900/30 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="truncate font-sans font-medium" title={sym.name || sym.ticker}>
+                            {sym.name || sym.ticker}
+                          </span>
+                          <span className={`shrink-0 ml-1.5 text-[9px] font-mono ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {isPositive ? '+' : ''}{sym.change24h}%
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    {filteredSymbols.length === 0 && (
+                      <div className="px-3 py-2 text-[10px] text-slate-500 italic">
+                        No symbols match "{symbolQuery}"
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

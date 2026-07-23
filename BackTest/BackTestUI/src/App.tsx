@@ -931,7 +931,23 @@ export default function App() {
             <div className="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center font-bold text-white text-xs">C</div>
             <span className="text-sm font-bold text-white uppercase tracking-tight">CobraTrades</span>
           </div>
-          <div className="w-9" />{/* Spacer to center title */}
+          {/* Mobile User Profile Button */}
+          <button
+            id="mobile-header-profile-btn"
+            onClick={() => {
+              setActiveScreen('profile');
+              setSelectedEntityId(null);
+            }}
+            className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-all cursor-pointer ${
+              activeScreen === 'profile'
+                ? 'bg-indigo-600 text-white ring-2 ring-indigo-400 shadow-md'
+                : 'bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+            }`}
+            aria-label="User Profile"
+            title="View User Profile"
+          >
+            {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('') : 'PS'}
+          </button>
         </header>
 
         <main id="main-content-scroll" className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
