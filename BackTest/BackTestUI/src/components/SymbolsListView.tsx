@@ -484,7 +484,7 @@ export default function SymbolsListView({
             <table className="w-full text-left text-xs divide-y divide-slate-800/60 select-none min-w-[900px]">
               <thead className="bg-slate-900/50 text-slate-500 uppercase font-semibold font-mono text-[10px] border-b border-slate-800">
                 <tr>
-                  <th className="p-4">Ticker / Asset Name</th>
+                  <th className="p-4">Asset Name / Ticker</th>
                   <th className="p-4">Exchange Platform</th>
                   <th className="p-4">Instrument Class</th>
                   <th className="p-4 font-mono">Lot Size</th>
@@ -517,12 +517,14 @@ export default function SymbolsListView({
                     <tr key={sym.id || sym.ticker} className="hover:bg-indigo-600/5 transition-colors">
                       <td className="p-4">
                         <div className="flex items-center gap-2.5">
-                          <span className="text-sm font-black font-mono text-slate-100 hover:text-indigo-400 cursor-pointer" onClick={() => onNavigateToEntity('symbol', sym.ticker)}>
-                            {sym.ticker}
+                          <span className="text-sm font-bold text-slate-100 hover:text-indigo-400 cursor-pointer" onClick={() => onNavigateToEntity('symbol', sym.ticker)} title={sym.name || sym.ticker}>
+                            {sym.name || sym.ticker}
                           </span>
-                          <span className="text-xs text-slate-400 truncate max-w-[150px] font-sans">
-                            {sym.name}
-                          </span>
+                          {sym.name && (
+                            <span className="text-xs text-slate-400 font-mono truncate max-w-[200px]" title={sym.ticker}>
+                              {sym.ticker}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="p-4 text-slate-400 font-mono font-medium">{sym.exchange}</td>
