@@ -193,7 +193,8 @@ export const selectStrikesByMoneyness = (chainItems, ltp, rangeOption, rangeCoun
 const formatSymbolName = (underlying, strike, type, expiry) => {
   const cleanUnderlying = underlying.includes("|") ? underlying.split("|")[1] : underlying;
   const cleanExpiry = expiry && expiry.includes("T") ? expiry.split("T")[0] : expiry;
-  return `${cleanUnderlying} ${cleanExpiry || ""} ${strike} ${type}`;
+  const expiryPart = cleanExpiry ? ` ${cleanExpiry}` : "";
+  return `${strike} ${type}${expiryPart} ${cleanUnderlying}`.replace(/\s+/g, " ").trim();
 };
 
 /**
