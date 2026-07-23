@@ -1,6 +1,7 @@
 import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
-import { getLatestOHLCByInterval, getLTP } from './utils.js';
+import { buildTimeframeCandle } from './candleBuilder.js';
+import { getLTP } from './utils.js';
 import { calculateLatency } from './utils/latencyUtil.js';
 import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
@@ -78,21 +79,20 @@ async function createConsumer() {
 
                 logger.debug(`Message content for ${symbol}:`, msg);
                 
-                let data = getLatestOHLCByInterval(msg, 'I1');
-                let ltp = getLTP(msg);
+                const timeframe = strategy_details.timeframe || '1m';
+                const existingCandleState = lastState?.candleState || null;
+                const { candle, newCandleState } = buildTimeframeCandle(msg, timeframe, existingCandleState);
 
-                if (!data || data.interval !== 'I1' || data.high === undefined || data.low === undefined || ltp === null) {
-                    logger.debug(`Skipping processing for symbol ${symbol}: incomplete or fallback I1 data`);
+                if (!candle || candle.high == null || candle.low == null || candle.ltp == null) {
+                    logger.debug(`Skipping processing for symbol ${symbol}: incomplete candle data (timeframe=${timeframe})`);
                     return;
                 }
 
-                logger.debug(`Processing data for symbol ${symbol}:`, data);
-                logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
-                data.ltp = ltp;
-                data.timestamp = msg.timestamp || (msg.fullFeed?.marketFF?.ltpc?.ltt || msg.fullFeed?.indexFF?.ltpc?.ltt ? new Date(parseInt(msg.fullFeed.marketFF?.ltpc?.ltt || msg.fullFeed.indexFF?.ltpc?.ltt)).toISOString() : new Date().toISOString());
+                logger.debug(`Processing ${timeframe} candle for symbol ${symbol}:`, candle);
+                candle.candleState = newCandleState;
 
                 // call the actual strategy function here
-                let newState = await MSB(lastState, data, symbol, strategy_details);
+                let newState = await MSB(lastState, candle, symbol, strategy_details);
 
                 await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState, strategy_details.deployment_id);
                 

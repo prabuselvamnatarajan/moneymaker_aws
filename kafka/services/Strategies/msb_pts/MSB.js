@@ -113,6 +113,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
 }
 
 async function MSB(prevData, currentData, symbol, strategy_details) {
+    const currentCandleState = currentData.candleState || prevData?.candleState;
     if (!prevData || Object.keys(prevData).length === 0 || !prevData.prevHigh || prevData.prevHigh.high === null || prevData.prevHigh.high === undefined || !prevData.prevLow || prevData.prevLow.high === null || prevData.prevLow.high === undefined) {
         // initialize
         let initialState = {
@@ -122,7 +123,8 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             lastBuyPrice: null,
             lastSellPrice: null,
             position: null,
-            closedByTargetOrSl: false
+            closedByTargetOrSl: false,
+            candleState: currentCandleState,
         };
         return initialState;
     }
@@ -350,7 +352,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
         }
     }
 
-    return { isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl };
+    return { isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl, candleState: currentCandleState };
 }
 
 export { MSB };

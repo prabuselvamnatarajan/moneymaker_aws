@@ -1,6 +1,7 @@
 import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
-import { getLatestOHLCByInterval, getLTP, getTickTimestamp, isValidI1Candle } from './utils.js';
+import { buildTimeframeCandle } from './candleBuilder.js';
+import { getLTP, getTickTimestamp } from './utils.js';
 import { calculateLatency } from './utils/latencyUtil.js';
 import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
@@ -78,21 +79,20 @@ async function createConsumer() {
 
                 logger.debug(`Message content for ${symbol}:`, msg);
                 
-                let data = getLatestOHLCByInterval(msg, 'I1');
-                let ltp = getLTP(msg);
+                const timeframe = strategy_details.timeframe || '1m';
+                const existingCandleState = lastState?.candleState || null;
+                const { candle, newCandleState } = buildTimeframeCandle(msg, timeframe, existingCandleState);
 
-                if (!isValidI1Candle(data, ltp)) {
-                    logger.warn(`Skipping ${symbol}: tick missing valid I1 OHLC or LTP (high=${data?.high}, low=${data?.low}, ltp=${ltp})`);
+                if (!candle || candle.high == null || candle.low == null || candle.ltp == null) {
+                    logger.warn(`Skipping ${symbol}: tick missing valid OHLC or LTP (timeframe=${timeframe})`);
                     return;
                 }
 
-                logger.debug(`Processing data for symbol ${symbol}:`, data);
-                logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
-                data.ltp = ltp;
-                data.timestamp = getTickTimestamp(msg);
+                logger.debug(`Processing ${timeframe} candle for symbol ${symbol}:`, candle);
+                candle.candleState = newCandleState;
 
                 // call the actual strategy function here
-                let newState = await MSB(lastState, data, symbol, strategy_details);
+                let newState = await MSB(lastState, candle, symbol, strategy_details);
 
                 await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState, strategy_details.deployment_id);
                 

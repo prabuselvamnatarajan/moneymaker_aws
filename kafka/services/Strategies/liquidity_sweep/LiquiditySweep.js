@@ -10,8 +10,8 @@ import { logSweepOutcome } from './modules/signalLogger.js';
 import { fetchPriorDayOHLC } from './modules/sessionInit.js';
 import { logger } from '/app/utils/logUtils.js';
 
-function createInitialState(tick, params) {
-    const levelInit = createInitialLevelState(tick, params);
+function createInitialState(tick, params, timeframe = '1m') {
+    const levelInit = createInitialLevelState(tick, params, timeframe);
     return {
         machineState: 'IDLE',
         tickBuffer: [],
@@ -44,7 +44,7 @@ function handleDataGap(state, tick, symbol, strategy_details) {
     };
 }
 
-async function maybeInitSessionLevels(state, tick, strategy_details, params) {
+async function maybeInitSessionLevels(state, tick, strategy_details, params, timeframe = '1m') {
     const sessionDate = getSessionDate(tick.timestamp);
     if (state.sessionMeta?.sessionDate === sessionDate && state.priorDayFetched) {
         return state;
@@ -56,7 +56,7 @@ async function maybeInitSessionLevels(state, tick, strategy_details, params) {
         tick
     );
 
-    const levelInit = createInitialLevelState(tick, params);
+    const levelInit = createInitialLevelState(tick, params, timeframe);
     return {
         ...state,
         ...levelInit,
@@ -102,6 +102,7 @@ async function attemptEntry(state, tick, symbol, strategy_details, params) {
 
 async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
     const params = resolveParams(strategy_details);
+    const timeframe = strategy_details?.timeframe || '1m';
     const previousLtp = prevState?.tickBuffer?.length
         ? prevState.tickBuffer[prevState.tickBuffer.length - 1].ltp
         : null;
@@ -113,11 +114,11 @@ async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
 
     let state = prevState && Object.keys(prevState).length > 0
         ? { ...prevState }
-        : createInitialState(tick, params);
+        : createInitialState(tick, params, timeframe);
 
     const sessionDate = getSessionDate(tick.timestamp);
     if (!state.priorDayFetched || state.sessionMeta?.sessionDate !== sessionDate) {
-        state = await maybeInitSessionLevels(state, tick, strategy_details, params);
+        state = await maybeInitSessionLevels(state, tick, strategy_details, params, timeframe);
     }
 
     if (isDataGap(tick.timestamp, state.lastLtt, params.gapThresholdSec)) {
@@ -125,7 +126,7 @@ async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
     }
     state.lastLtt = tick.timestamp;
 
-    state = updateLevels(state, tick, params);
+    state = updateLevels(state, tick, params, timeframe);
     state.activeLevels = getActiveLevels(state.levels);
 
     const enriched = enrichTick(tick, previousLtp, params);

@@ -107,7 +107,8 @@ function isValidState(prevData) {
 }
 
 async function MSB(prevData, currentData, symbol, strategy_details) {
-    const { high, low, ltp } = currentData;
+    const { high, low, ltp, candleState } = currentData;
+    const currentCandleState = candleState || prevData?.candleState;
 
     if (!isValidState(prevData)) {
         if (prevData) {
@@ -117,6 +118,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             isUp: null,
             prevHigh: { high, low },
             prevLow: { high, low },
+            candleState: currentCandleState,
         };
     }
 
@@ -192,7 +194,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
         }
     }
-    return { isUp, prevHigh, prevLow };
+    return { isUp, prevHigh, prevLow, candleState: currentCandleState };
 }
 
 export { MSB, isValidState };

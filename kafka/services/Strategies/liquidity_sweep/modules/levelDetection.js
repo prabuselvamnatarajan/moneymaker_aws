@@ -3,6 +3,7 @@
  */
 
 import { getSessionDate, getSessionOpenTs } from './sessionTime.js';
+import { timeframeToMs } from './timeframeUtil.js';
 
 function priceBucket(price, bucketSizePct) {
     if (!price || price <= 0) {
@@ -12,7 +13,8 @@ function priceBucket(price, bucketSizePct) {
     return Math.round(price / bucketSize) * bucketSize;
 }
 
-function createInitialLevelState(tick, params) {
+function createInitialLevelState(tick, params, timeframe = '1m') {
+    const intervalMs = timeframeToMs(timeframe);
     const sessionDate = getSessionDate(tick.timestamp);
     const sessionOpenTs = getSessionOpenTs(tick.timestamp);
     const ohlc1d = tick.ohlc1d || {};
@@ -37,7 +39,7 @@ function createInitialLevelState(tick, params) {
             buckets: {},
             bucketTimestamps: {},
             currentBar: {
-                ts: tick.ohlcI1?.ts || Math.floor(tick.timestamp / 60000) * 60000,
+                ts: tick.ohlcI1?.ts || Math.floor(tick.timestamp / intervalMs) * intervalMs,
                 high: tick.ltp,
                 low: tick.ltp,
                 close: tick.ltp,
@@ -95,8 +97,9 @@ function computeHvnLevels(volumeProfile, topN = 3) {
     return entries.slice(0, topN).map((e) => e.price);
 }
 
-function updateMinuteBar(volumeProfile, tick) {
-    const barTs = tick.ohlcI1?.ts || Math.floor(tick.timestamp / 60000) * 60000;
+function updateMinuteBar(volumeProfile, tick, timeframe = '1m') {
+    const intervalMs = timeframeToMs(timeframe);
+    const barTs = tick.ohlcI1?.ts || Math.floor(tick.timestamp / intervalMs) * intervalMs;
     const current = volumeProfile.currentBar;
 
     if (!current || current.ts !== barTs) {
@@ -152,12 +155,12 @@ function getActiveLevels(levels) {
     return result;
 }
 
-function updateLevels(state, tick, params) {
+function updateLevels(state, tick, params, timeframe = '1m') {
     let { levels, sessionMeta, volumeProfile } = state;
     const sessionDate = getSessionDate(tick.timestamp);
 
     if (!sessionMeta || sessionMeta.sessionDate !== sessionDate) {
-        const init = createInitialLevelState(tick, params);
+        const init = createInitialLevelState(tick, params, timeframe);
         return { ...state, ...init };
     }
 
@@ -179,7 +182,7 @@ function updateLevels(state, tick, params) {
     updateOpeningRange(levels, sessionMeta, tick);
     addVolumeToProfile(volumeProfile, tick, params);
 
-    const barClosed = updateMinuteBar(volumeProfile, tick);
+    const barClosed = updateMinuteBar(volumeProfile, tick, timeframe);
     if (barClosed) {
         pruneOldBuckets(volumeProfile, tick, params);
         levels.hvn = computeHvnLevels(volumeProfile, 3);
