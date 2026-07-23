@@ -361,8 +361,9 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
 };
 
 const resolveExportedDataDir = () => {
+  // Canonical layout: {SHARED_DIR}/exportedData/{yyyy-MM-dd}/{symbol}.json
   if (process.env.EXPORTED_DATA_DIR) return process.env.EXPORTED_DATA_DIR;
-  const sharedRoot = process.env.SHARED_DIR || "/shared";
+  const sharedRoot = process.env.SHARED_DIR || process.env.EXPORT_VOLUME_PATH || "/shared";
   return path.join(sharedRoot, "exportedData");
 };
 

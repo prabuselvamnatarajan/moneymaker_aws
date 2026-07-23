@@ -6,7 +6,10 @@ const { DateTime } = require('luxon');
 
 const uri = process.env.MONGO_URI;
 const dbName = process.env.DB_NAME;
-const EXPORT_VOLUME_PATH = process.env.EXPORT_VOLUME_PATH;
+// Canonical layout: {SHARED_DIR}/exportedData/{yyyy-MM-dd}/{symbol}.json
+// EXPORT_VOLUME_PATH kept as alias for older compose files.
+const SHARED_DIR = process.env.SHARED_DIR || process.env.EXPORT_VOLUME_PATH || '/shared';
+const EXPORTED_DATA_DIR = process.env.EXPORTED_DATA_DIR || path.join(SHARED_DIR, 'exportedData');
 
 // IST timezone
 const IST = 'Asia/Kolkata';
@@ -20,13 +23,7 @@ async function exportCollection(collectionName) {
 
     const todayIST = DateTime.now().setZone(IST);
     const dateFolder = todayIST.toFormat('yyyy-MM-dd');
-    // Must match BackTestApp/streamer readers: /shared/exportedData/{date}/
-    const exportPath = path.join(
-      EXPORT_VOLUME_PATH
-        ? path.join(EXPORT_VOLUME_PATH, 'exportedData')
-        : path.join(__dirname, 'exportedData'),
-      dateFolder
-    );
+    const exportPath = path.join(EXPORTED_DATA_DIR, dateFolder);
     fs.mkdirSync(exportPath, { recursive: true });
 
     const sanitizedCollectionName = collectionName.replace(/[^a-zA-Z0-9-_]/g, '_');

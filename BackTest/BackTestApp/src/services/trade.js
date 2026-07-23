@@ -53,8 +53,8 @@ async function updateBacktestExcursions(position, currentTradeTime, TradeModel) 
   const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
   
   let ticks = [];
-  const sharedRoot = process.env.SHARED_DIR || "/shared";
-  const exportedDataDir = process.env.EXPORTED_DATA_DIR || path.join(sharedRoot, "exportedData");
+  const exportedDataDir = process.env.EXPORTED_DATA_DIR
+    || path.join(process.env.SHARED_DIR || process.env.EXPORT_VOLUME_PATH || "/shared", "exportedData");
   for (const d of dates) {
     const filePath = path.join(exportedDataDir, d, `${sanitizedSymbol}.json`);
     try {

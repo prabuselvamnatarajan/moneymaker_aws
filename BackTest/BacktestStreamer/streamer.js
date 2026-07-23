@@ -3,9 +3,11 @@ const path = require('path');
 const fs = require('fs');
 const { getSourceData } = require('./sourceRetriever');
 
-// Assign env variables to constants
+// Canonical layout matches exporttofile:
+//   {SHARED_DIR}/exportedData/{yyyy-MM-dd}/{symbol}.json
 const PORT = process.env.PORT || 8085;
-const SHARED_DIR = process.env.SHARED_DIR || path.join(__dirname, '..');
+const SHARED_DIR = process.env.SHARED_DIR || '/shared';
+const EXPORTED_DATA_DIR = process.env.EXPORTED_DATA_DIR || path.join(SHARED_DIR, 'exportedData');
 
 const wss = new WebSocket.Server({ port: PORT });
 
@@ -28,8 +30,8 @@ wss.on('connection', ws => {
             ws.send(JSON.stringify({ error: 'Missing symbolName or date' }));
             return;
         }
-        let sanitised_SymbolName = sanitize(symbolName);
-        const filePath = path.join(SHARED_DIR, 'exportedData', date, `${sanitised_SymbolName}.json`);
+        const sanitised_SymbolName = sanitize(symbolName);
+        const filePath = path.join(EXPORTED_DATA_DIR, date, `${sanitised_SymbolName}.json`);
         if (!fs.existsSync(filePath)) {
             ws.send(JSON.stringify({
                 error: `Tick data not found for ${symbolName} on ${date} at ${filePath}`
@@ -61,3 +63,4 @@ wss.on('connection', ws => {
 });
 
 console.log(`WebSocket server started on ws://localhost:${PORT}`);
+console.log(`Reading exported ticks from ${EXPORTED_DATA_DIR}`);
