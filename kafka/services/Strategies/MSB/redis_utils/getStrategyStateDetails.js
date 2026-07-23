@@ -29,7 +29,7 @@ async function getMSBStrategyStateForSymbol(symbol, isTestMode = false, deployme
             return data;
         } catch (error) {
             logger.error(`Error fetching strategy details for symbol ${symbol} with redis key ${redisKey} from Redis:`, error.message);
-            return [];
+            return null;
         }
     } catch (error) {
         logger.error(`Error reading MSB strategy details for symbol ${symbol}:`, error.message);

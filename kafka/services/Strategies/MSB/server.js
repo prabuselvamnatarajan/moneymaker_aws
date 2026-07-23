@@ -1,6 +1,6 @@
 import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
-import { getLatestOHLCByInterval, getLTP } from './utils.js';
+import { getLatestOHLCByInterval, getLTP, getTickTimestamp, isValidI1Candle } from './utils.js';
 import { calculateLatency } from './utils/latencyUtil.js';
 import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
@@ -81,10 +81,15 @@ async function createConsumer() {
                 let data = getLatestOHLCByInterval(msg, 'I1');
                 let ltp = getLTP(msg);
 
+                if (!isValidI1Candle(data, ltp)) {
+                    logger.warn(`Skipping ${symbol}: tick missing valid I1 OHLC or LTP (high=${data?.high}, low=${data?.low}, ltp=${ltp})`);
+                    return;
+                }
+
                 logger.debug(`Processing data for symbol ${symbol}:`, data);
                 logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
                 data.ltp = ltp;
-                data.timestamp = msg.timestamp || (msg.fullFeed?.marketFF?.ltpc?.ltt || msg.fullFeed?.indexFF?.ltpc?.ltt ? new Date(parseInt(msg.fullFeed.marketFF?.ltpc?.ltt || msg.fullFeed.indexFF?.ltpc?.ltt)).toISOString() : new Date().toISOString());
+                data.timestamp = getTickTimestamp(msg);
 
                 // call the actual strategy function here
                 let newState = await MSB(lastState, data, symbol, strategy_details);

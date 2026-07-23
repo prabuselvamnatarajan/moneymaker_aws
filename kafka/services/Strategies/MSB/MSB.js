@@ -94,19 +94,34 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     return orderPayLoad;
 }
 
+function isValidSwing(swing) {
+    return swing
+        && typeof swing.high === 'number'
+        && typeof swing.low === 'number';
+}
+
+function isValidState(prevData) {
+    return prevData
+        && isValidSwing(prevData.prevHigh)
+        && isValidSwing(prevData.prevLow);
+}
+
 async function MSB(prevData, currentData, symbol, strategy_details) {
-    if ( !prevData ) {
-        // initialize
-        let initialState = {
+    const { high, low, ltp } = currentData;
+
+    if (!isValidState(prevData)) {
+        if (prevData) {
+            logger.warn('MSB: Recovering from invalid/empty strategy state — re-initializing swing points');
+        }
+        return {
             isUp: null,
-            prevHigh: { high: currentData.high, low: currentData.low },
-            prevLow: { high: currentData.high, low: currentData.low }
+            prevHigh: { high, low },
+            prevLow: { high, low },
         };
-        return initialState;
     }
+
     let { isUp, prevHigh, prevLow } = prevData;
     let { isTest } = strategy_details;
-    let { high, low, ltp } = currentData;
     if (isUp) {
         // check for break
         if (prevHigh.low > low) {
@@ -180,4 +195,4 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
     return { isUp, prevHigh, prevLow };
 }
 
-export { MSB };
+export { MSB, isValidState };

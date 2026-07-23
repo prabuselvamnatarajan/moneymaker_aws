@@ -94,6 +94,27 @@ describe('MSB buy/sell consistency', () => {
         assert.equal(store.bought[holdingsKey()] || 0, 0);
     });
 
+    it('recovers from empty prevHigh/prevLow state and places BUY on break', async () => {
+        const corruptState = { isUp: null, prevHigh: {}, prevLow: {} };
+        const recovered = await MSB(
+            corruptState,
+            candle({ high: 100, low: 99, ltp: 100 }),
+            SYMBOL,
+            strategyDetails()
+        );
+        assert.equal(recovered.prevHigh.high, 100);
+        assert.equal(recovered.prevLow.low, 99);
+
+        const afterBreak = await MSB(
+            recovered,
+            candle({ high: 101, low: 100, ltp: 101 }),
+            SYMBOL,
+            strategyDetails()
+        );
+        assert.equal(afterBreak.isUp, true);
+        assert.ok(store.bought[holdingsKey()] > 0);
+    });
+
     it('does not repeat SELL after holdings were cleared', async () => {
         let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
 
