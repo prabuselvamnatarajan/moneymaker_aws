@@ -40,6 +40,7 @@ export interface Strategy {
   useFullAmount?: boolean;
   lotSize?: number | null;
   noOfLots?: number;
+  timeframe?: string;
   symbolControl?: SymbolControlConfig;
 }
 
@@ -275,6 +276,7 @@ export interface Deployment {
   account_id: string;
   symbol: string;
   strategy_mode: string;
+  timeframe?: string;
   current_status: string;
   created_at: string;
 }

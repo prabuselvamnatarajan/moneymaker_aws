@@ -610,6 +610,7 @@ export const api = {
       use_full_amount?: boolean;
       lot_size?: number | null;
       no_of_lots?: number;
+      timeframe?: string;
       symbol_control?: {
         enabled: boolean;
         underlying_user_symbol_id?: string;
@@ -634,6 +635,7 @@ export const api = {
       backtest_speed?: number;
       use_full_amount?: boolean;
       no_of_lots?: number;
+      timeframe?: string;
     }) {
       const res = await fetch(`${BASE_URL}/deployments/${id}`, {
         method: 'PATCH',

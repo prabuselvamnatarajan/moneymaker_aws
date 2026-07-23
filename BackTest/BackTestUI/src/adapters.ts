@@ -197,6 +197,7 @@ export function mapDeployment(backendDeployment: any, metrics: any = null): Stra
     useFullAmount: !!backendDeployment.use_full_amount,
     lotSize: backendDeployment.lot_size != null ? Number(backendDeployment.lot_size) : null,
     noOfLots: backendDeployment.no_of_lots != null ? Number(backendDeployment.no_of_lots) : 1,
+    timeframe: backendDeployment.timeframe || '1m',
     symbolControl: sc
       ? {
           enabled: !!sc.enabled,
