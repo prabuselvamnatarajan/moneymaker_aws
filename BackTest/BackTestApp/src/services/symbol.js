@@ -363,6 +363,7 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
 export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
   const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
   let filePath = path.join(process.cwd(), "..", "exportedData", date, `${sanitizedSymbol}.json`);
+  const altRootPath = path.join("/shared", date, `${sanitizedSymbol}.json`);
   
   try {
     await fs.access(filePath);
@@ -372,6 +373,12 @@ export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
       await fs.access(fallbackPath);
       filePath = fallbackPath;
     } catch (fallbackErr) {
+      // Legacy ExportToFile bug wrote to /shared/{date}/ instead of /shared/exportedData/{date}/
+      try {
+        await fs.access(altRootPath);
+        filePath = altRootPath;
+      } catch (legacyErr) {
+      }
     }
   }
   
@@ -443,7 +450,8 @@ export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
     }
   }
 
-  return { symbol, date, timeframe, data: Object.values(buckets).sort((a, b) => a.time - b.time) };
+  const candleData = Object.values(buckets).sort((a, b) => a.time - b.time);
+  return { symbol, date, timeframe, data: candleData };
 };
 
 export const getAvailableBacktestDates = async () => {
@@ -466,6 +474,8 @@ export const getAvailableBacktestDates = async () => {
 
   await checkDir(path.join(process.cwd(), "..", "exportedData"));
   await checkDir("/shared/exportedData");
+  // Also surface legacy ExportToFile folders written under /shared/{date}
+  await checkDir("/shared");
 
   return Array.from(dates).sort((a, b) => b.localeCompare(a));
 };

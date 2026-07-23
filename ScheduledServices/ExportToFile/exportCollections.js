@@ -20,7 +20,13 @@ async function exportCollection(collectionName) {
 
     const todayIST = DateTime.now().setZone(IST);
     const dateFolder = todayIST.toFormat('yyyy-MM-dd');
-    const exportPath = path.join(EXPORT_VOLUME_PATH ? EXPORT_VOLUME_PATH : path.join(__dirname, 'exportedData'), dateFolder);
+    // Must match BackTestApp/streamer readers: /shared/exportedData/{date}/
+    const exportPath = path.join(
+      EXPORT_VOLUME_PATH
+        ? path.join(EXPORT_VOLUME_PATH, 'exportedData')
+        : path.join(__dirname, 'exportedData'),
+      dateFolder
+    );
     fs.mkdirSync(exportPath, { recursive: true });
 
     const sanitizedCollectionName = collectionName.replace(/[^a-zA-Z0-9-_]/g, '_');
