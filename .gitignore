@@ -18,6 +18,7 @@ target/
 .env
 .env.local
 *.env.*
+!.env.example
 upstock-login.env
 
 # Editors
