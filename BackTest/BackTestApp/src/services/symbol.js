@@ -362,33 +362,32 @@ export const bulkCreateSymbols = async (userId, bulkData) => {
 
 export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
   const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
-  let filePath = path.join(process.cwd(), "..", "exportedData", date, `${sanitizedSymbol}.json`);
-  const altRootPath = path.join("/shared", date, `${sanitizedSymbol}.json`);
-  
-  try {
-    await fs.access(filePath);
-  } catch (err) {
-    const fallbackPath = path.join("/shared", "exportedData", date, `${sanitizedSymbol}.json`);
+  const candidatePaths = [
+    path.join(process.cwd(), "..", "exportedData", date, `${sanitizedSymbol}.json`),
+    path.join("/shared", "exportedData", date, `${sanitizedSymbol}.json`),
+    // Legacy ExportToFile bug wrote to /shared/{date}/ instead of /shared/exportedData/{date}/
+    path.join("/shared", date, `${sanitizedSymbol}.json`),
+  ];
+
+  let data = null;
+  let emptyFallback = null;
+  for (const candidate of candidatePaths) {
     try {
-      await fs.access(fallbackPath);
-      filePath = fallbackPath;
-    } catch (fallbackErr) {
-      // Legacy ExportToFile bug wrote to /shared/{date}/ instead of /shared/exportedData/{date}/
-      try {
-        await fs.access(altRootPath);
-        filePath = altRootPath;
-      } catch (legacyErr) {
+      const fileContent = await fs.readFile(candidate, "utf8");
+      const parsed = JSON.parse(fileContent);
+      if (!Array.isArray(parsed)) continue;
+      // Skip empty/truncated placeholders so a usable legacy copy can win
+      if (parsed.length === 0) {
+        if (!emptyFallback) emptyFallback = parsed;
+        continue;
       }
+      data = parsed;
+      break;
+    } catch (err) {
+      // try next candidate (missing, unreadable, or corrupt JSON)
     }
   }
-  
-  let data;
-  try {
-    const fileContent = await fs.readFile(filePath, "utf8");
-    data = JSON.parse(fileContent);
-  } catch (err) {
-    return { symbol, date, timeframe, data: [] };
-  }
+  if (!data) data = emptyFallback;
 
   if (!Array.isArray(data)) return { symbol, date, timeframe, data: [] };
 
@@ -458,24 +457,29 @@ export const getAvailableBacktestDates = async () => {
   const dates = new Set();
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   
-  const checkDir = async (dirPath) => {
+  const checkDir = async (dirPath, { requireJson = false } = {}) => {
     try {
       const files = await fs.readdir(dirPath);
       for (const file of files) {
-        if (dateRegex.test(file)) {
-          try {
-            const stat = await fs.stat(path.join(dirPath, file));
-            if (stat.isDirectory()) dates.add(file);
-          } catch (e) {}
-        }
+        if (!dateRegex.test(file)) continue;
+        const full = path.join(dirPath, file);
+        try {
+          const stat = await fs.stat(full);
+          if (!stat.isDirectory()) continue;
+          if (requireJson) {
+            const entries = await fs.readdir(full);
+            if (!entries.some((e) => e.endsWith(".json"))) continue;
+          }
+          dates.add(file);
+        } catch (e) {}
       }
     } catch (err) {}
   };
 
   await checkDir(path.join(process.cwd(), "..", "exportedData"));
   await checkDir("/shared/exportedData");
-  // Also surface legacy ExportToFile folders written under /shared/{date}
-  await checkDir("/shared");
+  // Legacy ExportToFile folders under /shared/{date} — only if they contain export JSON
+  await checkDir("/shared", { requireJson: true });
 
   return Array.from(dates).sort((a, b) => b.localeCompare(a));
 };
