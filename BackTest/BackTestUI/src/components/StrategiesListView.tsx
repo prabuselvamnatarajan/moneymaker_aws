@@ -137,6 +137,7 @@ export default function StrategiesListView({
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [backtestDate, setBacktestDate] = useState(new Date().toISOString().slice(0, 10));
   const [backtestSpeed, setBacktestSpeed] = useState(1000);
+  const [timeframe, setTimeframe] = useState<'1m' | '3m' | '5m' | '15m'>('1m');
   const [useFullAmount, setUseFullAmount] = useState(false);
   const [noOfLots, setNoOfLots] = useState(1);
   const [dynamicLotSize, setDynamicLotSize] = useState(50);
@@ -250,6 +251,7 @@ export default function StrategiesListView({
     setInitialStatus('active');
     setSelectedAccountId('');
     setSelectedStrategyId('');
+    setTimeframe('1m');
     setUseFullAmount(false);
     setNoOfLots(1);
     setDynamicLotSize(50);
