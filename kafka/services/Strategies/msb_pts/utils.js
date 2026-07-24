@@ -1,35 +1,86 @@
 import { logger } from '/app/utils/logUtils.js';
 
-function getLatestOHLCByInterval(dataObject, interval) {
-  const feed = dataObject?.fullFeed?.marketFF || dataObject?.fullFeed?.indexFF || dataObject?.marketFF || dataObject?.indexFF;
-  const ohlcArray = feed?.marketOHLC?.ohlc || [];
-
-  logger.debug(`Extracted OHLC Array:`, ohlcArray);
-  // Filter only matching interval entries
-  const matchingOHLCs = ohlcArray.filter(item => item.interval === interval);
-
-  if (matchingOHLCs.length === 0) {
-    logger.warn(`No OHLC data found for interval: ${interval}`);
-    ohlcArray.forEach(item => logger.debug(`Available interval: ${item.interval}`));
-    let oneDayOHLC = ohlcArray.filter(item => item.interval === '1d');
-    if (oneDayOHLC.length > 0) {
-      return { ...oneDayOHLC[0] };
+function extractFeed(dataObject) {
+    const marketFF = dataObject?.fullFeed?.marketFF || dataObject?.marketFF;
+    const indexFF = dataObject?.fullFeed?.indexFF || dataObject?.indexFF;
+    if (marketFF?.ltpc || indexFF?.ltpc) {
+        return marketFF || indexFF;
     }
-    return {};
-  }
+    if (dataObject?.ltpc) {
+        return {
+            ltpc: dataObject.ltpc,
+            marketLevel: dataObject.marketLevel,
+            marketOHLC: dataObject.marketOHLC,
+            vtt: dataObject.vtt,
+            tbq: dataObject.tbq,
+            tsq: dataObject.tsq,
+            atp: dataObject.atp,
+        };
+    }
+    if (dataObject?.firstLevelWithGreeks?.ltpc) {
+        return dataObject.firstLevelWithGreeks;
+    }
+    return dataObject?.fullFeed?.marketFF
+        || dataObject?.fullFeed?.indexFF
+        || dataObject?.marketFF
+        || dataObject?.indexFF
+        || null;
+}
 
-  // Find the OHLC with the latest timestamp
-  const latestOHLC = matchingOHLCs.reduce((latest, current) => {
-    return Number(current.ts) > Number(latest.ts) ? current : latest;
-  });
+function getOhlcByInterval(feed, interval) {
+    const ohlcArray = feed?.marketOHLC?.ohlc || [];
+    const matching = ohlcArray.filter((item) => item.interval === interval);
+    if (matching.length === 0) {
+        return null;
+    }
+    return matching.reduce((latest, current) =>
+        Number(current.ts) > Number(latest.ts) ? current : latest
+    );
+}
 
-  return latestOHLC;
+function getLatestOHLCByInterval(dataObject, interval) {
+    const feed = extractFeed(dataObject);
+    if (!feed) {
+        logger.warn(`No feed found in tick payload for interval: ${interval}`);
+        return null;
+    }
+
+    const ohlcArray = feed.marketOHLC?.ohlc || [];
+    logger.debug('Extracted OHLC Array:', ohlcArray);
+
+    const ohlc = getOhlcByInterval(feed, interval);
+    if (ohlc) {
+        return { ...ohlc };
+    }
+
+    logger.warn(`No OHLC data found for interval: ${interval}`);
+    ohlcArray.forEach((item) => logger.debug(`Available interval: ${item.interval}`));
+    return null;
 }
 
 function getLTP(dataObject) {
-  const feed = dataObject?.fullFeed?.marketFF || dataObject?.fullFeed?.indexFF || dataObject?.marketFF || dataObject?.indexFF;
-  return feed?.ltpc?.ltp ?? null;
+    const feed = extractFeed(dataObject);
+    return feed?.ltpc?.ltp ?? null;
 }
 
+function getTickTimestamp(dataObject) {
+    if (dataObject?.timestamp) {
+        const parsed = new Date(dataObject.timestamp).getTime();
+        if (!Number.isNaN(parsed)) {
+            return new Date(parsed).toISOString();
+        }
+    }
+    const feed = extractFeed(dataObject);
+    const ltt = feed?.ltpc?.ltt;
+    if (ltt != null) {
+        return new Date(parseInt(ltt, 10)).toISOString();
+    }
+    return new Date().toISOString();
+}
 
-export { getLatestOHLCByInterval, getLTP };
+export {
+    extractFeed,
+    getLatestOHLCByInterval,
+    getLTP,
+    getTickTimestamp,
+};
