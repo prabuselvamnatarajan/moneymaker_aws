@@ -3,7 +3,11 @@
  */
 
 import { getSessionDate, getSessionOpenTs } from './sessionTime.js';
-import { timeframeToMs } from './timeframeUtil.js';
+import {
+    timeframeToMs,
+    resolveAtrLookbackBars,
+    normalizeAtrTo1m,
+} from './timeframeUtil.js';
 
 function priceBucket(price, bucketSizePct) {
     if (!price || price <= 0) {
@@ -13,11 +17,15 @@ function priceBucket(price, bucketSizePct) {
     return Math.round(price / bucketSize) * bucketSize;
 }
 
-function createInitialLevelState(tick, params, timeframe = '1m') {
+function createInitialLevelState(tick, params, timeframe) {
+    if (!timeframe) {
+        throw new Error('timeframe is required for level state');
+    }
     const intervalMs = timeframeToMs(timeframe);
     const sessionDate = getSessionDate(tick.timestamp);
     const sessionOpenTs = getSessionOpenTs(tick.timestamp);
     const ohlc1d = tick.ohlc1d || {};
+    const barTs = Math.floor(tick.timestamp / intervalMs) * intervalMs;
 
     return {
         levels: {
@@ -36,16 +44,18 @@ function createInitialLevelState(tick, params, timeframe = '1m') {
             vwapDenominator: tick.ltq || 1,
         },
         volumeProfile: {
+            interval: timeframe,
             buckets: {},
             bucketTimestamps: {},
             currentBar: {
-                ts: tick.ohlcI1?.ts || Math.floor(tick.timestamp / intervalMs) * intervalMs,
+                // Bucket from tick time (ltpc.ltt → tick.timestamp), never I1 OHLC
+                ts: barTs,
                 high: tick.ltp,
                 low: tick.ltp,
                 close: tick.ltp,
                 volume: tick.ltq || 0,
             },
-            lastBarTs: tick.ohlcI1?.ts || 0,
+            lastBarTs: barTs,
             minuteBars: [],
         },
     };
@@ -97,10 +107,21 @@ function computeHvnLevels(volumeProfile, topN = 3) {
     return entries.slice(0, topN).map((e) => e.price);
 }
 
-function updateMinuteBar(volumeProfile, tick, timeframe = '1m') {
+function assertVolumeProfileInterval(volumeProfile, timeframe) {
+    if (!volumeProfile) return;
+    if (volumeProfile.interval && volumeProfile.interval !== timeframe) {
+        throw new Error(
+            `volumeProfile.interval mismatch: state=${volumeProfile.interval} deployment=${timeframe}`
+        );
+    }
+}
+
+function updateMinuteBar(volumeProfile, tick, timeframe) {
     const intervalMs = timeframeToMs(timeframe);
-    const barTs = tick.ohlcI1?.ts || Math.floor(tick.timestamp / intervalMs) * intervalMs;
+    // Construct TF bars from tick LTT/timestamp only — do not use I1 OHLC ts
+    const barTs = Math.floor(tick.timestamp / intervalMs) * intervalMs;
     const current = volumeProfile.currentBar;
+    volumeProfile.interval = timeframe;
 
     if (!current || current.ts !== barTs) {
         if (current && current.ts) {
@@ -155,7 +176,11 @@ function getActiveLevels(levels) {
     return result;
 }
 
-function updateLevels(state, tick, params, timeframe = '1m') {
+function updateLevels(state, tick, params, timeframe) {
+    if (!timeframe) {
+        throw new Error('timeframe is required for updateLevels');
+    }
+
     let { levels, sessionMeta, volumeProfile } = state;
     const sessionDate = getSessionDate(tick.timestamp);
 
@@ -164,10 +189,13 @@ function updateLevels(state, tick, params, timeframe = '1m') {
         return { ...state, ...init };
     }
 
+    assertVolumeProfileInterval(volumeProfile, timeframe);
+
     levels = { ...levels };
     sessionMeta = { ...sessionMeta };
     volumeProfile = {
         ...volumeProfile,
+        interval: timeframe,
         buckets: { ...(volumeProfile.buckets || {}) },
         bucketTimestamps: { ...(volumeProfile.bucketTimestamps || {}) },
         minuteBars: [...(volumeProfile.minuteBars || [])],
@@ -188,7 +216,10 @@ function updateLevels(state, tick, params, timeframe = '1m') {
         levels.hvn = computeHvnLevels(volumeProfile, 3);
     }
 
-    const sessionAtr = computeSessionAtr(volumeProfile.minuteBars, params.atrLookbackBars);
+    const lookbackBars = resolveAtrLookbackBars(timeframe, params.atrLookbackBars);
+    const rawAtr = computeSessionAtr(volumeProfile.minuteBars, lookbackBars);
+    // Filters compare against 1m-tuned atrLowPct/atrHighPct — normalize magnitude
+    const sessionAtr = normalizeAtrTo1m(rawAtr, timeframe);
 
     return {
         ...state,
@@ -196,6 +227,7 @@ function updateLevels(state, tick, params, timeframe = '1m') {
         sessionMeta,
         volumeProfile,
         sessionAtr,
+        timeframe,
     };
 }
 
@@ -206,4 +238,6 @@ export {
     getSessionDate,
     computeSessionAtr,
     priceBucket,
+    normalizeAtrTo1m,
+    resolveAtrLookbackBars,
 };

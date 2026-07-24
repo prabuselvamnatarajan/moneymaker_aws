@@ -77,6 +77,24 @@ describe('tickParser', () => {
         assert.equal(tick.ltp, 22050);
         assert.equal(tick.feedType, 'market');
     });
+
+    it('prefers ltpc.ltt over server-injected timestamp for bar time', () => {
+        const ltt = 1720236005000;
+        const tick = parseTick({
+            timestamp: '2020-01-01T00:00:00.000Z',
+            fullFeed: {
+                marketFF: {
+                    ltpc: { ltp: 1000, ltq: 10, ltt },
+                    marketLevel: {
+                        bidAskQuote: [{ bidP: 999, askP: 1001, bidQ: 1, askQ: 1 }],
+                    },
+                },
+            },
+        });
+        assert.equal(tick.timestamp, ltt);
+        assert.equal(tick.ltt, ltt);
+        assert.equal(tick.ohlcI1, undefined);
+    });
 });
 
 describe('tickDelta', () => {

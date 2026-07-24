@@ -5,7 +5,7 @@
   "main": "LiquiditySweep.js",
   "type": "module",
   "scripts": {
-    "test": "node --test __tests__/**/*.test.js",
+    "test": "node --test __tests__/liquiditySweep.test.js __tests__/levelDetection.timeframe.test.js",
     "start": "node server.js"
   },
   "author": "",

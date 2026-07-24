@@ -79,7 +79,9 @@ function parseTick(dataObject, previousLtp = null) {
     const ltpc = feed.ltpc;
     const ltp = ltpc.ltp ?? null;
     const ltq = Number(ltpc.ltq) || 0;
-    const ltt = Number(ltpc.ltt) || Date.now();
+    // Upstox LTPC.ltt = last traded time (ms epoch). Prefer over server timestamps.
+    const rawLtt = Number(ltpc.ltt);
+    const ltt = Number.isFinite(rawLtt) && rawLtt > 0 ? rawLtt : null;
     const cp = ltpc.cp ?? null;
 
     const quotes = feed.marketLevel?.bidAskQuote || [];
@@ -96,17 +98,20 @@ function parseTick(dataObject, previousLtp = null) {
     }
 
     let tickTimestamp = ltt;
-    if (dataObject && dataObject.timestamp) {
+    if (!tickTimestamp && dataObject && dataObject.timestamp) {
         const parsedTs = new Date(dataObject.timestamp).getTime();
-        if (!isNaN(parsedTs)) {
+        if (!isNaN(parsedTs) && parsedTs > 0) {
             tickTimestamp = parsedTs;
         }
+    }
+    if (!tickTimestamp) {
+        tickTimestamp = Date.now();
     }
 
     return {
         ltp,
         ltq,
-        ltt,
+        ltt: ltt || tickTimestamp,
         cp,
         bestBid,
         bestAsk,
@@ -116,7 +121,7 @@ function parseTick(dataObject, previousLtp = null) {
         tbq: feed.tbq != null ? Number(feed.tbq) : null,
         tsq: feed.tsq != null ? Number(feed.tsq) : null,
         atp: feed.atp ?? null,
-        ohlcI1: getOhlcByInterval(feed, 'I1'),
+        // Prior-day levels only — timeframe bars are built from tick LTP/LTT, not I1
         ohlc1d: getOhlcByInterval(feed, '1d'),
         feedType,
         confidence,

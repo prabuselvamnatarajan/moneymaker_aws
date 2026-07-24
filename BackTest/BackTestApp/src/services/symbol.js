@@ -391,7 +391,7 @@ export const getSymbolCandles = async (symbol, date, timeframe = "1m") => {
     throw error;
   }
 
-  const intervalMs = { "1m": 60000, "5m": 300000, "15m": 900000 }[timeframe] || 60000;
+  const intervalMs = { "1m": 60000, "3m": 180000, "5m": 300000, "15m": 900000 }[timeframe] || 60000;
   const IST_OFFSET_MS = 19800000; // +5:30 in ms
   const OPEN_MS  = (9 * 60 + 15) * 60000;   // 09:15 in ms-of-day
   const CLOSE_MS = (15 * 60 + 30) * 60000;   // 15:30 in ms-of-day

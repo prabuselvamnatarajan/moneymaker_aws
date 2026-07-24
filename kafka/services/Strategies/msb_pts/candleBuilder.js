@@ -5,7 +5,9 @@ import { extractFeed } from './utils.js';
  * Throws explicit error if timeframe is unsupported (Fail Loud & Fast).
  */
 export function timeframeToMs(timeframe) {
-  if (!timeframe) return 60000;
+  if (timeframe == null || timeframe === '') {
+    throw new Error('timeframe is required');
+  }
   const str = String(timeframe).trim().toLowerCase();
   const map = {
     '1m': 60000,
@@ -29,11 +31,36 @@ export function timeframeToMs(timeframe) {
 }
 
 /**
- * Build / update aggregated timeframe candle from tick message.
- * @param {Object} msg - Raw tick payload
+ * Resolve exchange tick time in ms.
+ * Prefer ltpc.ltt (Upstox LTPC.last traded time) over any server-side timestamp.
+ * @see MicroServices/ConnectWS-Upstox/MarketDataFeed.proto LTPC { ltp, ltt, ltq, cp }
+ */
+export function resolveTickTimestampMs(msg, feed = null) {
+  const resolvedFeed = feed || extractFeed(msg);
+  const rawLtt = resolvedFeed?.ltpc?.ltt;
+  if (rawLtt != null && rawLtt !== '') {
+    const ltt = typeof rawLtt === 'number' ? rawLtt : parseInt(rawLtt, 10);
+    if (Number.isFinite(ltt) && ltt > 0) {
+      return ltt;
+    }
+  }
+  if (msg?.timestamp) {
+    const parsed = new Date(msg.timestamp).getTime();
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  throw new Error('Tick missing ltpc.ltt and usable timestamp');
+}
+
+/**
+ * Build / update aggregated timeframe candle from tick LTP/LTT only.
+ * Does not use marketOHLC / I1 — OHLC is constructed purely from consecutive ticks.
+ *
+ * @param {Object} msg - Raw tick payload (fullFeed / ltpc / firstLevelWithGreeks)
  * @param {string} timeframe - Target timeframe (e.g. '1m', '3m', '5m', '15m')
  * @param {Object|null} existingCandleState - Existing candle state from deployment strategy state
- * @returns {{ candle: Object, newCandleState: Object }}
+ * @returns {{ candle: Object|null, newCandleState: Object|null }}
  */
 export function buildTimeframeCandle(msg, timeframe, existingCandleState = null) {
   const feed = extractFeed(msg);
@@ -42,47 +69,37 @@ export function buildTimeframeCandle(msg, timeframe, existingCandleState = null)
     return { candle: null, newCandleState: existingCandleState };
   }
 
-  let timestampMs;
-  if (msg?.timestamp) {
-    const parsed = new Date(msg.timestamp).getTime();
-    timestampMs = !Number.isNaN(parsed) ? parsed : Date.now();
-  } else if (feed?.ltpc?.ltt) {
-    timestampMs = parseInt(feed.ltpc.ltt, 10);
-  } else {
-    timestampMs = Date.now();
-  }
-
+  const timestampMs = resolveTickTimestampMs(msg, feed);
   const intervalMs = timeframeToMs(timeframe);
   const bucketStartMs = Math.floor(timestampMs / intervalMs) * intervalMs;
   const isoTimestamp = new Date(timestampMs).toISOString();
 
-  // Extract I1 candle from feed if available
-  const ohlcArray = feed?.marketOHLC?.ohlc || [];
-  const i1 = ohlcArray.find((item) => item.interval === 'I1');
-  const i1High = (i1 && typeof i1.high === 'number') ? i1.high : ltp;
-  const i1Low = (i1 && typeof i1.low === 'number') ? i1.low : ltp;
-  const i1Open = (i1 && typeof i1.open === 'number') ? i1.open : ltp;
+  const timeframeChanged = existingCandleState
+    && existingCandleState.interval
+    && existingCandleState.interval !== timeframe;
+  const bucketChanged = !existingCandleState
+    || existingCandleState.bucketStartMs !== bucketStartMs
+    || timeframeChanged;
 
   let newCandleState;
-  if (!existingCandleState || existingCandleState.bucketStartMs !== bucketStartMs) {
-    // New bucket
+  if (bucketChanged) {
     newCandleState = {
       bucketStartMs,
-      open: i1Open,
-      high: Math.max(ltp, i1High),
-      low: Math.min(ltp, i1Low),
+      open: ltp,
+      high: ltp,
+      low: ltp,
       close: ltp,
       timestamp: isoTimestamp,
       interval: timeframe,
     };
   } else {
-    // Same bucket
     newCandleState = {
       ...existingCandleState,
-      high: Math.max(existingCandleState.high, ltp, i1High),
-      low: Math.min(existingCandleState.low, ltp, i1Low),
+      high: Math.max(existingCandleState.high, ltp),
+      low: Math.min(existingCandleState.low, ltp),
       close: ltp,
       timestamp: isoTimestamp,
+      interval: timeframe,
     };
   }
 

@@ -10,7 +10,7 @@ import { logSweepOutcome } from './modules/signalLogger.js';
 import { fetchPriorDayOHLC } from './modules/sessionInit.js';
 import { logger } from '/app/utils/logUtils.js';
 
-function createInitialState(tick, params, timeframe = '1m') {
+function createInitialState(tick, params, timeframe, stateEpoch) {
     const levelInit = createInitialLevelState(tick, params, timeframe);
     return {
         machineState: 'IDLE',
@@ -25,6 +25,8 @@ function createInitialState(tick, params, timeframe = '1m') {
         lastLtt: tick.timestamp,
         sessionAtr: null,
         priorDayFetched: false,
+        timeframe,
+        state_epoch: stateEpoch,
     };
 }
 
@@ -44,7 +46,7 @@ function handleDataGap(state, tick, symbol, strategy_details) {
     };
 }
 
-async function maybeInitSessionLevels(state, tick, strategy_details, params, timeframe = '1m') {
+async function maybeInitSessionLevels(state, tick, strategy_details, params, timeframe) {
     const sessionDate = getSessionDate(tick.timestamp);
     if (state.sessionMeta?.sessionDate === sessionDate && state.priorDayFetched) {
         return state;
@@ -102,19 +104,43 @@ async function attemptEntry(state, tick, symbol, strategy_details, params) {
 
 async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
     const params = resolveParams(strategy_details);
-    const timeframe = strategy_details?.timeframe || '1m';
-    const previousLtp = prevState?.tickBuffer?.length
-        ? prevState.tickBuffer[prevState.tickBuffer.length - 1].ltp
+    const timeframe = strategy_details?.timeframe;
+    if (!timeframe) {
+        throw new Error(`timeframe missing on strategy_details for ${symbol}`);
+    }
+    const stateEpoch = strategy_details.state_epoch;
+    if (stateEpoch == null || !Number.isFinite(Number(stateEpoch))) {
+        throw new Error(`state_epoch missing on strategy_details for ${symbol}`);
+    }
+
+    // Discard Redis state written before a timeframe reset (stale/missing epoch or timeframe)
+    let usablePrev = prevState && Object.keys(prevState).length > 0 ? prevState : null;
+    if (usablePrev) {
+        if (usablePrev.state_epoch == null || Number(usablePrev.state_epoch) !== Number(stateEpoch)) {
+            logger.error(
+                `[liquidity_sweep] Discarding stale Redis state for ${symbol}: state_epoch=${usablePrev.state_epoch} message_epoch=${stateEpoch}`
+            );
+            usablePrev = null;
+        } else if (usablePrev.timeframe && usablePrev.timeframe !== timeframe) {
+            logger.error(
+                `[liquidity_sweep] Discarding stale Redis state for ${symbol}: state_tf=${usablePrev.timeframe} deployment_tf=${timeframe}`
+            );
+            usablePrev = null;
+        }
+    }
+
+    const previousLtp = usablePrev?.tickBuffer?.length
+        ? usablePrev.tickBuffer[usablePrev.tickBuffer.length - 1].ltp
         : null;
 
     const tick = parseTick(rawMsg, previousLtp);
     if (!tick || tick.ltp == null) {
-        return prevState || {};
+        throw new Error(`Tick missing LTP for ${symbol}`);
     }
 
-    let state = prevState && Object.keys(prevState).length > 0
-        ? { ...prevState }
-        : createInitialState(tick, params, timeframe);
+    let state = usablePrev
+        ? { ...usablePrev, timeframe, state_epoch: Number(stateEpoch) }
+        : createInitialState(tick, params, timeframe, Number(stateEpoch));
 
     const sessionDate = getSessionDate(tick.timestamp);
     if (!state.priorDayFetched || state.sessionMeta?.sessionDate !== sessionDate) {

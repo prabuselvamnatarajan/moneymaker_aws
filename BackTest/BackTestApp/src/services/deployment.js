@@ -613,6 +613,125 @@ const resetBacktestDeployment = async (deployment) => {
 
 const LIQUIDITY_SWEEP_STRATEGY = "liquidity_sweep";
 
+const STATE_EPOCH_KEY_PREFIX = "deployment_state_epoch:";
+
+const getStateEpochKey = (deploymentId) => `${STATE_EPOCH_KEY_PREFIX}${deploymentId}`;
+
+/**
+ * Ensure a deployment has a Redis state_epoch (used to invalidate in-flight ticks after TF change).
+ * Fails loudly if Redis is unavailable.
+ */
+const ensureDeploymentStateEpoch = async (client, deploymentId) => {
+  const key = getStateEpochKey(deploymentId);
+  const existing = await client.get(key);
+  if (existing == null || existing === "") {
+    await client.set(key, "1");
+    return 1;
+  }
+  const epoch = Number(existing);
+  if (!Number.isFinite(epoch)) {
+    throw new Error(`Invalid ${key} value: ${existing}`);
+  }
+  return epoch;
+};
+
+/**
+ * Bump state_epoch so strategy consumers refuse writes from pre-reset Kafka messages.
+ */
+const bumpDeploymentStateEpoch = async (client, deploymentId) => {
+  const key = getStateEpochKey(deploymentId);
+  // Ensure key exists then incr — INCR on missing key starts at 1 in Redis, but we want bump from current
+  await ensureDeploymentStateEpoch(client, deploymentId);
+  const epoch = await client.incr(key);
+  console.log(`[Reset] Bumped state_epoch for deployment ${deploymentId} → ${epoch}`);
+  return epoch;
+};
+
+/**
+ * Clear Redis strategy runtime state for a deployment (candleState / swings / volume profile).
+ * Used when timeframe changes so engines do not keep evaluating under stale bucket semantics.
+ * Does not wipe Mongo positions/trades — only Redis keys matching the deployment id.
+ * Fails loudly if REDIS_URL is unset or Redis operations fail.
+ */
+const resetDeploymentStrategyRuntimeState = async (deployment, { bumpEpoch = false } = {}) => {
+  const deploymentIdStr = deployment._id.toString();
+  const symbol = deployment.symbol;
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) {
+    throw new Error("REDIS_URL is required to reset deployment strategy runtime state");
+  }
+
+  let strategyName = deployment.strategy_id?.strategy_name;
+  if (!strategyName && deployment.strategy_id) {
+    const strategy = await Strategy.findById(deployment.strategy_id);
+    strategyName = strategy?.strategy_name;
+  }
+
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    await client.connect();
+
+    if (bumpEpoch) {
+      await bumpDeploymentStateEpoch(client, deploymentIdStr);
+    } else {
+      await ensureDeploymentStateEpoch(client, deploymentIdStr);
+    }
+
+    // Prefer precise strategy state keys when strategy name is known
+    if (strategyName) {
+      for (const mode of ["backtest", "live"]) {
+        const stateKey = `strategies:${strategyName}:${mode}:${deploymentIdStr}:${symbol}`;
+        if (strategyName === LIQUIDITY_SWEEP_STRATEGY) {
+          let state = null;
+          try {
+            if (typeof client.json?.get === "function") {
+              state = await client.json.get(stateKey);
+            } else {
+              const raw = await client.get(stateKey);
+              state = raw ? JSON.parse(raw) : null;
+            }
+          } catch (err) {
+            console.warn(`[Reset] Could not read strategy state ${stateKey}: ${err.message}`);
+          }
+          if (state?.machineState === "IN_POSITION" && deployment.account_id) {
+            const account = await Account.findById(deployment.account_id);
+            const accountIdStr = account?.account_id || account?._id?.toString();
+            if (accountIdStr) {
+              const openKey = `liquidity_sweep:open:${accountIdStr}`;
+              const val = await client.decr(openKey);
+              if (val < 0) {
+                await client.set(openKey, "0");
+              }
+            }
+          }
+        }
+        await client.del(stateKey);
+        console.log(`[Reset] Cleared strategy state key after timeframe change: ${stateKey}`);
+      }
+    }
+
+    // Also clear any other deployment-scoped strategy keys (candleState, bought qty cache, etc.)
+    // Preserve the epoch key so consumers can still validate freshness.
+    let cursor = 0;
+    const pattern = `*${deploymentIdStr}*`;
+    const epochKey = getStateEpochKey(deploymentIdStr);
+    do {
+      const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+      cursor = reply.cursor;
+      const keys = (reply.keys || []).filter((k) => k !== epochKey);
+      if (keys.length > 0) {
+        await client.del(keys);
+        console.log(`[Reset] Deleted runtime keys for deployment ${deploymentIdStr}:`, keys);
+      }
+    } while (cursor !== 0);
+  } finally {
+    if (client) {
+      await client.disconnect();
+    }
+  }
+};
+
 const resetLiquiditySweepRuntimeState = async (deployment) => {
   let strategyName = deployment.strategy_id?.strategy_name;
   if (!strategyName && deployment.strategy_id) {
@@ -622,67 +741,7 @@ const resetLiquiditySweepRuntimeState = async (deployment) => {
   if (strategyName !== LIQUIDITY_SWEEP_STRATEGY) {
     return;
   }
-
-  const deploymentIdStr = deployment._id.toString();
-  const symbol = deployment.symbol;
-  const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl) {
-    return;
-  }
-
-  let client;
-  try {
-    client = createClient({ url: redisUrl });
-    await client.connect();
-
-    for (const mode of ["backtest", "live"]) {
-      const stateKey = `strategies:${LIQUIDITY_SWEEP_STRATEGY}:${mode}:${deploymentIdStr}:${symbol}`;
-      let state = null;
-      try {
-        if (typeof client.json?.get === "function") {
-          state = await client.json.get(stateKey);
-        } else {
-          const raw = await client.get(stateKey);
-          state = raw ? JSON.parse(raw) : null;
-        }
-      } catch (err) {
-        console.warn(`[Reset] Could not read strategy state ${stateKey}: ${err.message}`);
-      }
-
-      if (state?.machineState === "IN_POSITION" && deployment.account_id) {
-        const account = await Account.findById(deployment.account_id);
-        const accountIdStr = account?.account_id || account?._id?.toString();
-        if (accountIdStr) {
-          const openKey = `liquidity_sweep:open:${accountIdStr}`;
-          const val = await client.decr(openKey);
-          if (val < 0) {
-            await client.set(openKey, "0");
-          }
-          console.log(`[Reset] Decremented liquidity_sweep open counter for account ${accountIdStr}`);
-        }
-      }
-
-      await client.del(stateKey);
-    }
-
-    let cursor = 0;
-    const pattern = `*${deploymentIdStr}*`;
-    do {
-      const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
-      cursor = reply.cursor;
-      const keys = reply.keys;
-      if (keys && keys.length > 0) {
-        await client.del(keys);
-        console.log(`[Reset] Deleted runtime keys for deployment ${deploymentIdStr}:`, keys);
-      }
-    } while (cursor !== 0);
-  } catch (err) {
-    console.error(`[Reset] Error resetting liquidity_sweep runtime state: ${err.message}`);
-  } finally {
-    if (client) {
-      await client.disconnect();
-    }
-  }
+  await resetDeploymentStrategyRuntimeState(deployment, { bumpEpoch: false });
 };
 
 export const createDeployment = async (userId, deploymentData) => {
@@ -786,9 +845,16 @@ export const updateDeployment = async (userId, id, updateData) => {
     sanitizedUpdate.timeframe = normalizeTimeframe(sanitizedUpdate.timeframe);
   }
 
-  const existing = await Deployment.findOne({ _id: id, user_id: userId });
+  const existing = await Deployment.findOne({ _id: id, user_id: userId }).populate("strategy_id");
   if (!existing) {
     throw new Error("Deployment not found");
+  }
+
+  const timeframeChanged = sanitizedUpdate.timeframe !== undefined
+    && (existing.timeframe || "1m") !== sanitizedUpdate.timeframe;
+
+  if (timeframeChanged && (await hasOpenPosition(existing._id))) {
+    throw new Error("Cannot change timeframe while deployment has an open position. Close the position or stop the deployment first.");
   }
 
   if (updateData.symbol_control) {
@@ -840,7 +906,13 @@ export const updateDeployment = async (userId, id, updateData) => {
     }
   }
 
-  await syncAllDeploymentsToRedis();
+  if (timeframeChanged) {
+    // Bump epoch first, then drop candle/swing state so in-flight ticks cannot write stale state back
+    await resetDeploymentStrategyRuntimeState(existing, { bumpEpoch: true });
+  }
+
+  // After TF change, sync must publish the new state_epoch or ticks will be stuck failing assertFreshStateEpoch
+  await syncAllDeploymentsToRedis({ failLoud: timeframeChanged });
   await syncControlledDeploymentsIndex();
   return updated;
 };
@@ -1252,9 +1324,12 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
   };
 };;
 
-export const syncAllDeploymentsToRedis = async () => {
+export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
+    if (failLoud) {
+      throw new Error("REDIS_URL is required to sync deployments to Redis");
+    }
     console.warn("⚠️ REDIS_URL not set, skipping deployment sync to Redis");
     return;
   }
@@ -1285,16 +1360,23 @@ export const syncAllDeploymentsToRedis = async () => {
         newKeysData[key] = [];
       }
 
+      const deploymentIdStr = dep._id.toString();
+      const stateEpoch = await ensureDeploymentStateEpoch(client, deploymentIdStr);
+      if (!dep.timeframe) {
+        throw new Error(`RUNNING deployment ${deploymentIdStr} is missing required timeframe`);
+      }
+
       newKeysData[key].push({
         name: dep.strategy_id.strategy_name,
         isTest: isTest,
-        timeframe: dep.timeframe || "1m",
+        timeframe: dep.timeframe,
+        state_epoch: stateEpoch,
         account_id: dep.account_id.account_id || dep.account_id._id.toString(),
         user_symbol_id: dep.user_symbol_id ? dep.user_symbol_id.toString() : undefined,
         instrument_token: dep.instrument_token,
         symbol: dep.symbol,
         strategy_id: dep.strategy_id._id.toString(),
-        deployment_id: dep._id.toString(),
+        deployment_id: deploymentIdStr,
         user_id: dep.user_id.toString(),
         strategy_mode: dep.strategy_mode,
         is_internal_broker: dep.account_id.broker_id ? dep.account_id.broker_id.is_internal : false,
@@ -1326,6 +1408,9 @@ export const syncAllDeploymentsToRedis = async () => {
         console.log(`[Sync] Synced account balance for ${accountId} to Redis: ${dep.account_id.current_balance}`);
       } catch (err) {
         console.error(`[Sync] Failed to sync account balance for ${accountId} to Redis: ${err.message}`);
+        if (failLoud) {
+          throw err;
+        }
       }
     }
 
@@ -1353,6 +1438,9 @@ export const syncAllDeploymentsToRedis = async () => {
 
   } catch (error) {
     console.error("❌ Failed to sync deployments to Redis:", error.message);
+    if (failLoud) {
+      throw error;
+    }
   } finally {
     if (client) {
       await client.disconnect();
@@ -1364,6 +1452,9 @@ export const syncAllDeploymentsToRedis = async () => {
     await syncControlledDeploymentsIndex();
   } catch (err) {
     console.error("[SymbolControl] Index sync after deployment Redis sync failed:", err.message);
+    if (failLoud) {
+      throw err;
+    }
   }
 };
 
