@@ -1,7 +1,6 @@
 import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
 import { buildTimeframeCandle } from './candleBuilder.js';
-import { getLTP, getTickTimestamp } from './utils.js';
 import { calculateLatency } from './utils/latencyUtil.js';
 import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted, assertFreshStateEpoch } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
@@ -107,7 +106,9 @@ async function createConsumer() {
                 const { candle, newCandleState } = buildTimeframeCandle(msg, timeframe, existingCandleState);
 
                 if (!candle || candle.high == null || candle.low == null || candle.ltp == null) {
-                    throw new Error(`Tick missing valid LTP for ${symbol} (timeframe=${timeframe})`);
+                    // Soft-skip bad/incomplete ticks — do not fatal the consumer
+                    logger.warn(`Skipping ${symbol}: tick missing valid LTP/ltt (timeframe=${timeframe})`);
+                    return;
                 }
 
                 logger.debug(`Processing ${timeframe} candle for symbol ${symbol}:`, candle);

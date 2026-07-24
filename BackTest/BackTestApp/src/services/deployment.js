@@ -1362,14 +1362,16 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
 
       const deploymentIdStr = dep._id.toString();
       const stateEpoch = await ensureDeploymentStateEpoch(client, deploymentIdStr);
+      // Legacy docs may lack timeframe — default to 1m so sync/smoke never aborts the whole Redis publish
+      const timeframe = dep.timeframe || "1m";
       if (!dep.timeframe) {
-        throw new Error(`RUNNING deployment ${deploymentIdStr} is missing required timeframe`);
+        console.warn(`[Sync] RUNNING deployment ${deploymentIdStr} missing timeframe; defaulting to 1m`);
       }
 
       newKeysData[key].push({
         name: dep.strategy_id.strategy_name,
         isTest: isTest,
-        timeframe: dep.timeframe,
+        timeframe,
         state_epoch: stateEpoch,
         account_id: dep.account_id.account_id || dep.account_id._id.toString(),
         user_symbol_id: dep.user_symbol_id ? dep.user_symbol_id.toString() : undefined,

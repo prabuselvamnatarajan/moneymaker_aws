@@ -129,6 +129,11 @@ async function createConsumer() {
                     logger.error(err.message);
                     return;
                 }
+                if (err?.name === 'BadTickError') {
+                    // Soft-skip bad/incomplete ticks — only config/epoch bugs are fatal
+                    logger.warn(err.message);
+                    return;
+                }
                 logger.error(`Fatal error processing message for ${symbol}:`, err);
                 process.exit(1);
             }

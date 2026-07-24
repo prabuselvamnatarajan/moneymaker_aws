@@ -1,4 +1,32 @@
-import { extractFeed } from './utils.js';
+/**
+ * Local extractFeed — kept here so candleBuilder tests run without Docker /app logger.
+ */
+function extractFeed(dataObject) {
+  const marketFF = dataObject?.fullFeed?.marketFF || dataObject?.marketFF;
+  const indexFF = dataObject?.fullFeed?.indexFF || dataObject?.indexFF;
+  if (marketFF?.ltpc || indexFF?.ltpc) {
+    return marketFF || indexFF;
+  }
+  if (dataObject?.ltpc) {
+    return {
+      ltpc: dataObject.ltpc,
+      marketLevel: dataObject.marketLevel,
+      marketOHLC: dataObject.marketOHLC,
+      vtt: dataObject.vtt,
+      tbq: dataObject.tbq,
+      tsq: dataObject.tsq,
+      atp: dataObject.atp,
+    };
+  }
+  if (dataObject?.firstLevelWithGreeks?.ltpc) {
+    return dataObject.firstLevelWithGreeks;
+  }
+  return dataObject?.fullFeed?.marketFF
+    || dataObject?.fullFeed?.indexFF
+    || dataObject?.marketFF
+    || dataObject?.indexFF
+    || null;
+}
 
 /**
  * Convert timeframe string to milliseconds.
@@ -57,6 +85,9 @@ export function resolveTickTimestampMs(msg, feed = null) {
  * Build / update aggregated timeframe candle from tick LTP/LTT only.
  * Does not use marketOHLC / I1 — OHLC is constructed purely from consecutive ticks.
  *
+ * Soft-skips incomplete ticks (missing LTP or ltt/timestamp) by returning candle=null.
+ * Unsupported timeframe still throws (config error).
+ *
  * @param {Object} msg - Raw tick payload (fullFeed / ltpc / firstLevelWithGreeks)
  * @param {string} timeframe - Target timeframe (e.g. '1m', '3m', '5m', '15m')
  * @param {Object|null} existingCandleState - Existing candle state from deployment strategy state
@@ -66,10 +97,17 @@ export function buildTimeframeCandle(msg, timeframe, existingCandleState = null)
   const feed = extractFeed(msg);
   const ltp = feed?.ltpc?.ltp ?? msg?.ltp ?? null;
   if (ltp == null || typeof ltp !== 'number' || Number.isNaN(ltp)) {
+    // Soft-skip: incomplete tick data must not crash the consumer
     return { candle: null, newCandleState: existingCandleState };
   }
 
-  const timestampMs = resolveTickTimestampMs(msg, feed);
+  let timestampMs;
+  try {
+    timestampMs = resolveTickTimestampMs(msg, feed);
+  } catch {
+    // Soft-skip: missing ltt/timestamp — caller should log and continue
+    return { candle: null, newCandleState: existingCandleState };
+  }
   const intervalMs = timeframeToMs(timeframe);
   const bucketStartMs = Math.floor(timestampMs / intervalMs) * intervalMs;
   const isoTimestamp = new Date(timestampMs).toISOString();

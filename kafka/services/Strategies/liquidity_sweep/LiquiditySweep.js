@@ -135,7 +135,10 @@ async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
 
     const tick = parseTick(rawMsg, previousLtp);
     if (!tick || tick.ltp == null) {
-        throw new Error(`Tick missing LTP for ${symbol}`);
+        // Soft-skip: incomplete tick — server must not process.exit
+        const err = new Error(`Tick missing LTP for ${symbol}`);
+        err.name = 'BadTickError';
+        throw err;
     }
 
     let state = usablePrev

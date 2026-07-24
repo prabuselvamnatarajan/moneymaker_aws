@@ -33,6 +33,24 @@ connectDB().then(async () => {
     console.error("⚠️ Failed to migrate existing strategies:", err.message);
   }
   try {
+    const Deployment = (await import("./models/deployment.js")).default;
+    const tfResult = await Deployment.updateMany(
+      {
+        $or: [
+          { timeframe: { $exists: false } },
+          { timeframe: null },
+          { timeframe: "" },
+        ],
+      },
+      { $set: { timeframe: "1m" } }
+    );
+    if (tfResult.modifiedCount > 0) {
+      console.log(`✅ Migrated ${tfResult.modifiedCount} existing deployments to default timeframe 1m`);
+    }
+  } catch (err) {
+    console.error("⚠️ Failed to migrate existing deployment timeframes:", err.message);
+  }
+  try {
     const { syncAllDeploymentsToRedis } = await import("./services/deployment.js");
     await syncAllDeploymentsToRedis();
     console.log("✅ Initial deployment sync to Redis completed");

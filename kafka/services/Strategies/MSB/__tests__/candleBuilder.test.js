@@ -28,6 +28,64 @@ describe('CandleBuilder Multi-Timeframe Tests', () => {
         );
     });
 
+    it('soft-skips buildTimeframeCandle when LTP is missing (no throw)', () => {
+        const existing = {
+            bucketStartMs: 1720236000000,
+            open: 100,
+            high: 110,
+            low: 90,
+            close: 105,
+            timestamp: '2024-07-06T03:20:00.000Z',
+            interval: '5m',
+        };
+        const res = buildTimeframeCandle({ ltpc: { ltt: 1720236005000 } }, '5m', existing);
+        assert.equal(res.candle, null);
+        assert.equal(res.newCandleState, existing);
+    });
+
+    it('soft-skips buildTimeframeCandle when ltt/timestamp missing (no throw)', () => {
+        const existing = {
+            bucketStartMs: 1720236000000,
+            open: 100,
+            high: 110,
+            low: 90,
+            close: 105,
+            timestamp: '2024-07-06T03:20:00.000Z',
+            interval: '5m',
+        };
+        const res = buildTimeframeCandle({ ltpc: { ltp: 100 } }, '5m', existing);
+        assert.equal(res.candle, null);
+        assert.equal(res.newCandleState, existing);
+    });
+
+    it('still fails loud on unsupported timeframe (config error)', () => {
+        assert.throws(
+            () => buildTimeframeCandle({ ltpc: { ltp: 100, ltt: 1720236005000 } }, '2m', null),
+            /Unsupported timeframe/
+        );
+    });
+
+    it('5m smoke: builds candle then resets cleanly when TF changes to 1m', () => {
+        const ts = 1720236005000;
+        const tick = { ltpc: { ltp: 22100, ltt: ts } };
+        const fiveMin = buildTimeframeCandle(tick, '5m', null);
+        assert.equal(fiveMin.candle.interval, '5m');
+        assert.equal(fiveMin.newCandleState.bucketStartMs, Math.floor(ts / 300000) * 300000);
+
+        // Simulate TF change with no open position: prior candleState discarded via interval mismatch
+        const afterTfChange = buildTimeframeCandle(
+            { ltpc: { ltp: 22200, ltt: ts } },
+            '1m',
+            fiveMin.newCandleState
+        );
+        assert.equal(afterTfChange.newCandleState.interval, '1m');
+        // Must restart OHLC from new tick, not keep 5m open/high/low
+        assert.equal(afterTfChange.candle.open, 22200);
+        assert.equal(afterTfChange.candle.high, 22200);
+        assert.equal(afterTfChange.candle.low, 22200);
+        assert.equal(afterTfChange.candle.close, 22200);
+    });
+
     it('prefers ltpc.ltt over server timestamp', () => {
         const ltt = 1720236005000;
         const msg = {
