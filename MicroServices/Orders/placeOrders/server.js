@@ -10,6 +10,7 @@ app.use(express.json());
 import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance, buildBrokerOrderPayload } from './dependency.js';
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
+import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js';
 
 app.post('/', async (req, res) => {
     try {
@@ -41,9 +42,11 @@ app.post('/', async (req, res) => {
             const brokerPayload = buildBrokerOrderPayload(filteredBody);
             result = await placeOrders(access_token, JSON.stringify(brokerPayload));
 
+            let ledgerClosingBalance = null;
             try {
                 orderResponse = await triggerBackTestApp(body);
                 let { data: { closing_balance } = {} } = orderResponse || {};
+                ledgerClosingBalance = closing_balance;
                 if (closing_balance !== undefined && closing_balance !== null) {
                     await setAccountBalanceToRedis(strategy_details.account_id, closing_balance);
                 }
@@ -51,9 +54,25 @@ app.post('/', async (req, res) => {
                 console.error('Failed to record successful live trade in BackTestApp:', err);
             }
 
-            let new_balance = await getLiveAccountBalance(strategy_details.user_id);
-            if (new_balance !== undefined && new_balance !== null) {
-                await setAccountBalanceToRedis(strategy_details.account_id, new_balance);
+            // Live availableMargin can lag (CNC settlement) or read 0 right after SELL.
+            // Never wipe a positive ledger balance with a zero/failed live reading — that
+            // starves use_full_amount and stalls MSB after the first buy→sell cycle.
+            let liveBalance = null;
+            try {
+                liveBalance = await getLiveAccountBalance(strategy_details.user_id);
+            } catch (err) {
+                console.error('Failed to fetch live account balance after order (keeping ledger balance):', err.message || err);
+            }
+
+            const { balanceToStore, balanceSource } = resolveBalanceAfterLiveOrder(ledgerClosingBalance, liveBalance);
+
+            if (balanceToStore !== null) {
+                await setAccountBalanceToRedis(strategy_details.account_id, balanceToStore);
+                if (balanceSource === 'ledger_kept_over_zero_live') {
+                    console.warn(
+                        `Keeping ledger balance ${ledgerClosingBalance} for account ${strategy_details.account_id}; live availableMargin was ${liveBalance}`
+                    );
+                }
             }
         } else {
             orderResponse = await triggerBackTestApp(body);
