@@ -162,8 +162,21 @@ async function triggerBackTestApp(body) {
             headers,
             body: JSON.stringify(testAPIBody),
         });
-        const data = await res.json();
+        let data;
+        try {
+            data = await res.json();
+        } catch {
+            data = null;
+        }
         console.log('Response from BackTestApp:', data);
+        if (!res.ok) {
+            const message =
+                (data && (data.message || data.error)) ||
+                `BackTestApp createTrade failed with status ${res.status}`;
+            const err = new Error(message);
+            err.statusCode = res.status;
+            throw err;
+        }
         return data;
     } catch (err) {
         console.error('Error triggering BackTestApp:', err.message);

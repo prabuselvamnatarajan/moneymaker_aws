@@ -3,6 +3,11 @@
  */
 
 import { getSessionDate, getSessionOpenTs } from './sessionTime.js';
+import {
+    timeframeToMs,
+    resolveAtrLookbackBars,
+    normalizeAtrTo1m,
+} from './timeframeUtil.js';
 
 function priceBucket(price, bucketSizePct) {
     if (!price || price <= 0) {
@@ -12,10 +17,22 @@ function priceBucket(price, bucketSizePct) {
     return Math.round(price / bucketSize) * bucketSize;
 }
 
-function createInitialLevelState(tick, params) {
+function resolveBarTimestamp(tick) {
+    const raw = tick?.barTimestamp ?? tick?.ltt ?? tick?.timestamp;
+    const ts = Number(raw);
+    return Number.isFinite(ts) && ts > 0 ? ts : null;
+}
+
+function createInitialLevelState(tick, params, timeframe) {
+    if (!timeframe) {
+        throw new Error('timeframe is required for level state');
+    }
+    const intervalMs = timeframeToMs(timeframe);
     const sessionDate = getSessionDate(tick.timestamp);
     const sessionOpenTs = getSessionOpenTs(tick.timestamp);
     const ohlc1d = tick.ohlc1d || {};
+    const barTime = resolveBarTimestamp(tick) || tick.timestamp;
+    const barTs = Math.floor(barTime / intervalMs) * intervalMs;
 
     return {
         levels: {
@@ -34,16 +51,18 @@ function createInitialLevelState(tick, params) {
             vwapDenominator: tick.ltq || 1,
         },
         volumeProfile: {
+            interval: timeframe,
             buckets: {},
             bucketTimestamps: {},
             currentBar: {
-                ts: tick.ohlcI1?.ts || Math.floor(tick.timestamp / 60000) * 60000,
+                // Bucket from tick time (ltpc.ltt → tick.timestamp), never I1 OHLC
+                ts: barTs,
                 high: tick.ltp,
                 low: tick.ltp,
                 close: tick.ltp,
                 volume: tick.ltq || 0,
             },
-            lastBarTs: tick.ohlcI1?.ts || 0,
+            lastBarTs: barTs,
             minuteBars: [],
         },
     };
@@ -95,9 +114,27 @@ function computeHvnLevels(volumeProfile, topN = 3) {
     return entries.slice(0, topN).map((e) => e.price);
 }
 
-function updateMinuteBar(volumeProfile, tick) {
-    const barTs = tick.ohlcI1?.ts || Math.floor(tick.timestamp / 60000) * 60000;
+function assertVolumeProfileInterval(volumeProfile, timeframe) {
+    if (!volumeProfile) return false;
+    if (volumeProfile.interval && volumeProfile.interval !== timeframe) {
+        // Soft signal — caller resets profile instead of crashing the consumer
+        return false;
+    }
+    return true;
+}
+
+function updateMinuteBar(volumeProfile, tick, timeframe) {
+    const intervalMs = timeframeToMs(timeframe);
+    // Construct TF bars from trade time (barTimestamp/ltt) — do not use I1 OHLC ts
+    const barTime = resolveBarTimestamp(tick) || tick.timestamp;
+    const barTs = Math.floor(barTime / intervalMs) * intervalMs;
     const current = volumeProfile.currentBar;
+    volumeProfile.interval = timeframe;
+
+    // Ignore stale/out-of-order ticks that would rewind or corrupt the forming bar
+    if (current && Number.isFinite(current.ts) && barTs < current.ts) {
+        return false;
+    }
 
     if (!current || current.ts !== barTs) {
         if (current && current.ts) {
@@ -152,12 +189,22 @@ function getActiveLevels(levels) {
     return result;
 }
 
-function updateLevels(state, tick, params) {
+function updateLevels(state, tick, params, timeframe) {
+    if (!timeframe) {
+        throw new Error('timeframe is required for updateLevels');
+    }
+
     let { levels, sessionMeta, volumeProfile } = state;
     const sessionDate = getSessionDate(tick.timestamp);
 
     if (!sessionMeta || sessionMeta.sessionDate !== sessionDate) {
-        const init = createInitialLevelState(tick, params);
+        const init = createInitialLevelState(tick, params, timeframe);
+        return { ...state, ...init };
+    }
+
+    if (!assertVolumeProfileInterval(volumeProfile, timeframe)) {
+        // Interval mismatch after TF change — rebuild level state cleanly
+        const init = createInitialLevelState(tick, params, timeframe);
         return { ...state, ...init };
     }
 
@@ -165,6 +212,7 @@ function updateLevels(state, tick, params) {
     sessionMeta = { ...sessionMeta };
     volumeProfile = {
         ...volumeProfile,
+        interval: timeframe,
         buckets: { ...(volumeProfile.buckets || {}) },
         bucketTimestamps: { ...(volumeProfile.bucketTimestamps || {}) },
         minuteBars: [...(volumeProfile.minuteBars || [])],
@@ -179,13 +227,16 @@ function updateLevels(state, tick, params) {
     updateOpeningRange(levels, sessionMeta, tick);
     addVolumeToProfile(volumeProfile, tick, params);
 
-    const barClosed = updateMinuteBar(volumeProfile, tick);
+    const barClosed = updateMinuteBar(volumeProfile, tick, timeframe);
     if (barClosed) {
         pruneOldBuckets(volumeProfile, tick, params);
         levels.hvn = computeHvnLevels(volumeProfile, 3);
     }
 
-    const sessionAtr = computeSessionAtr(volumeProfile.minuteBars, params.atrLookbackBars);
+    const lookbackBars = resolveAtrLookbackBars(timeframe, params.atrLookbackBars);
+    const rawAtr = computeSessionAtr(volumeProfile.minuteBars, lookbackBars);
+    // Filters compare against 1m-tuned atrLowPct/atrHighPct — normalize magnitude
+    const sessionAtr = normalizeAtrTo1m(rawAtr, timeframe);
 
     return {
         ...state,
@@ -193,6 +244,7 @@ function updateLevels(state, tick, params) {
         sessionMeta,
         volumeProfile,
         sessionAtr,
+        timeframe,
     };
 }
 
@@ -203,4 +255,6 @@ export {
     getSessionDate,
     computeSessionAtr,
     priceBucket,
+    normalizeAtrTo1m,
+    resolveAtrLookbackBars,
 };

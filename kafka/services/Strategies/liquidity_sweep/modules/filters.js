@@ -43,7 +43,12 @@ function passesFilters(state, tick, params) {
     }
 
     const atr = state.sessionAtr;
-    if (atr != null && tick.ltp > 0) {
+    // Fail closed when ATR gate is configured but session ATR is not ready yet
+    // (e.g. after TF/epoch reset before enough bars close).
+    if (params.atrLowPct > 0 && (atr == null || !Number.isFinite(atr))) {
+        return { pass: false, reason: 'volatility_atr_unavailable' };
+    }
+    if (atr != null && Number.isFinite(atr) && tick.ltp > 0) {
         const atrPct = atr / tick.ltp;
         if (params.atrLowPct > 0 && atrPct < params.atrLowPct) {
             return { pass: false, reason: 'volatility_too_low' };

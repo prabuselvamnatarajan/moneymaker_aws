@@ -125,6 +125,10 @@ const positionSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  last_tick_at: {
+    type: Date,
+    default: null,
+  },
 });
 
 positionSchema.index({ deployment_id: 1, status: 1 });

@@ -61,6 +61,7 @@ export default function StrategyDetailsView({
   const [editBacktestSpeed, setEditBacktestSpeed] = useState<number>(1000);
   const [editUseFullAmount, setEditUseFullAmount] = useState(false);
   const [editNoOfLots, setEditNoOfLots] = useState<number>(1);
+  const [editTimeframe, setEditTimeframe] = useState<'1m' | '3m' | '5m' | '15m'>('1m');
 
   const handleOpenEdit = (strat: Strategy) => {
     setEditingStrategy(strat);
@@ -70,6 +71,7 @@ export default function StrategyDetailsView({
     setEditBacktestSpeed(strat.backtestSpeed || 1000);
     setEditUseFullAmount(strat.useFullAmount || false);
     setEditNoOfLots(strat.noOfLots || 1);
+    setEditTimeframe((strat.timeframe as '1m' | '3m' | '5m' | '15m') || '1m');
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -79,6 +81,7 @@ export default function StrategyDetailsView({
       await onEditStrategy(editingStrategy.id, {
         deployment_name: editName,
         notes: editDescription,
+        timeframe: editTimeframe,
         backtest_date: editingStrategy.mode === 'backtest' ? editBacktestDate : undefined,
         backtest_speed: editingStrategy.mode === 'backtest' ? editBacktestSpeed : undefined,
         use_full_amount: editUseFullAmount,
@@ -601,6 +604,20 @@ export default function StrategyDetailsView({
                   onChange={(e) => setEditDescription(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 h-20 resize-none"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Candle Timeframe</label>
+                <select
+                  value={editTimeframe}
+                  onChange={(e) => setEditTimeframe(e.target.value as '1m' | '3m' | '5m' | '15m')}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500 font-mono"
+                >
+                  <option value="1m">1 minute (1m)</option>
+                  <option value="3m">3 minute (3m)</option>
+                  <option value="5m">5 minute (5m)</option>
+                  <option value="15m">15 minute (15m)</option>
+                </select>
               </div>
 
               {editingStrategy.mode === 'backtest' && (

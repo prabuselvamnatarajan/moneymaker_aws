@@ -64,16 +64,20 @@ function getLTP(dataObject) {
 }
 
 function getTickTimestamp(dataObject) {
-    if (dataObject?.timestamp) {
-        const parsed = new Date(dataObject.timestamp).getTime();
-        if (!Number.isNaN(parsed)) {
-            return new Date(parsed).toISOString();
+    // Prefer Upstox LTPC.ltt (exchange last traded time) over server timestamp
+    const feed = extractFeed(dataObject);
+    const rawLtt = feed?.ltpc?.ltt;
+    if (rawLtt != null && rawLtt !== '') {
+        const ltt = typeof rawLtt === 'number' ? rawLtt : parseInt(rawLtt, 10);
+        if (Number.isFinite(ltt) && ltt > 0) {
+            return new Date(ltt).toISOString();
         }
     }
-    const feed = extractFeed(dataObject);
-    const ltt = feed?.ltpc?.ltt;
-    if (ltt != null) {
-        return new Date(parseInt(ltt, 10)).toISOString();
+    if (dataObject?.timestamp) {
+        const parsed = new Date(dataObject.timestamp).getTime();
+        if (!Number.isNaN(parsed) && parsed > 0) {
+            return new Date(parsed).toISOString();
+        }
     }
     return new Date().toISOString();
 }

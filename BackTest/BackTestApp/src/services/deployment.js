@@ -17,8 +17,37 @@ import {
   computeReferenceStrike,
   resolveExpiryDate,
 } from "./optionSymbolResolver.js";
+import { purgePositionsFromRedis, readLiveCache } from "../utils/positionRedis.js";
+import { sumOpenUnrealised, round2, resolveCloseExecutionTime } from "../utils/positionMath.js";
+import { completionKey as backtestCompletionKey } from "../utils/backtestCompletionUtil.js";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "symbol_control"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframe", "symbol_control"];
+
+const ALLOWED_TIMEFRAMES = ["1m", "3m", "5m", "15m"];
+
+const normalizeTimeframe = (tf) => {
+  if (!tf) return "1m";
+  const str = String(tf).trim().toLowerCase();
+  const map = {
+    "1m": "1m",
+    "1minute": "1m",
+    "1_minute": "1m",
+    "3m": "3m",
+    "3minute": "3m",
+    "3_minute": "3m",
+    "5m": "5m",
+    "5minute": "5m",
+    "5_minute": "5m",
+    "15m": "15m",
+    "15minute": "15m",
+    "15_minute": "15m",
+  };
+  const normalized = map[str];
+  if (!normalized || !ALLOWED_TIMEFRAMES.includes(normalized)) {
+    throw new Error(`Invalid timeframe: '${tf}'. Allowed values are 1m (1minute), 3m (3minute), 5m (5minute), 15m (15minute).`);
+  }
+  return normalized;
+};
 
 const normalizeNoOfLots = (value) => {
   const n = Number(value);
@@ -32,11 +61,26 @@ const hasOpenPosition = async (deploymentId) => {
   const openPos = await Position.findOne({
     deployment_id: deploymentId,
     status: "OPEN",
-    open_size: { $ne: 0 },
-  });
-  if (openPos) return true;
+  }).select("open_size");
+  if (openPos) {
+    return openPos.open_size !== 0;
+  }
+
+  // position_size is written in the same transaction as the Position document, so a
+  // non-zero counter with no OPEN position is drift. Reconcile it rather than leaving the
+  // deployment permanently unable to start, restart, or change timeframe.
   const dep = await Deployment.findById(deploymentId).select("position_size");
-  return !!(dep && dep.position_size !== 0);
+  if (!dep || dep.position_size === 0) {
+    return false;
+  }
+  console.warn(
+    `[Deployment] position_size=${dep.position_size} on ${deploymentId} with no OPEN position; reconciling to 0`
+  );
+  await Deployment.updateOne(
+    { _id: deploymentId },
+    { $set: { position_size: 0, average_entry_price: 0 } }
+  );
+  return false;
 };
 
 const subscribeSymbolToken = async (instrumentToken, userId) => {
@@ -493,6 +537,158 @@ const triggerBacktestIfNeeded = async (deployment) => {
   }
 };
 
+async function clearStrategyHoldingsKeys(deployment) {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl || !deployment?._id) return;
+  const deploymentId = deployment._id.toString();
+  const symbol = String(deployment.symbol || "").toUpperCase();
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    client.on("error", (err) => console.error(`[ForceClose] redis error: ${err.message}`));
+    await client.connect();
+    const keys = [
+      `bought_quantity:${deploymentId}:${symbol}`,
+      `bought_quantity:${deploymentId}:${deployment.symbol}`,
+      `short_quantity:${deploymentId}:${symbol}`,
+      `short_quantity:${deploymentId}:${deployment.symbol}`,
+    ];
+    for (const key of keys) {
+      await client.del(key).catch(() => {});
+    }
+  } catch (err) {
+    console.error(`[ForceClose] Failed clearing holdings keys for ${deploymentId}: ${err.message}`);
+  } finally {
+    if (client) await client.disconnect().catch(() => {});
+  }
+}
+
+/**
+ * Force-close any still-open positions at end of a backtest run via createTrade
+ * so realised P&L, ledger and account balance stay consistent.
+ *
+ * @param {Object} finalTick - { lastLtp, lastTickAt } from the streamer's done
+ *   signal. This is the authoritative end-of-data mark: the position tracker is
+ *   a separate consumer group that can still be behind the final ticks (or have
+ *   never seen a position opened right at the end), so its cache is only a
+ *   fallback.
+ */
+export const forceCloseOpenPositions = async (deployment, finalTick = {}) => {
+  if (!deployment?._id) return { closed: 0, skipped: 0, stillOpen: 0 };
+
+  const finalLtpRaw = Number(finalTick?.lastLtp);
+  const finalLtp = Number.isFinite(finalLtpRaw) && finalLtpRaw > 0 ? finalLtpRaw : null;
+  const finalTickAtRaw = Number(finalTick?.lastTickAt);
+  const finalTickAt =
+    Number.isFinite(finalTickAtRaw) && finalTickAtRaw > 0 ? new Date(finalTickAtRaw) : null;
+
+  const openPositions = await Position.find({
+    deployment_id: deployment._id,
+    status: "OPEN",
+    open_size: { $gt: 0 },
+  });
+
+  if (openPositions.length === 0) {
+    await clearStrategyHoldingsKeys(deployment);
+    return { closed: 0, skipped: 0, stillOpen: 0 };
+  }
+
+  const { createTrade } = await import("./trade.js");
+  let closed = 0;
+  let skipped = 0;
+
+  for (const pos of openPositions) {
+    const liveCache = await readLiveCache(pos._id.toString());
+    const cachedLtp = liveCache?.lastLtp > 0 ? liveCache.lastLtp : null;
+    const price = finalLtp || cachedLtp || pos.last_ltp;
+
+    if (!(price > 0) || !(pos.open_size > 0)) {
+      console.warn(
+        `[ForceClose] Skipping position ${pos._id} for deployment ${deployment._id}: missing last_ltp or open_size`
+      );
+      skipped += 1;
+      continue;
+    }
+
+    // Redis is ahead of Mongo between throttled tracker writes, so fold the
+    // freshest mark and excursions in before close accounting reads them.
+    if (cachedLtp) {
+      pos.last_ltp = cachedLtp;
+      if (typeof liveCache.unrealisedPnl === "number") {
+        pos.unrealised_pnl = liveCache.unrealisedPnl;
+      }
+      pos.max_up = Math.max(pos.max_up || 0, liveCache.maxUp || 0);
+      pos.max_down = Math.min(pos.max_down || 0, liveCache.maxDown || 0);
+      pos.max_up_pct = Math.max(pos.max_up_pct || 0, liveCache.maxUpPct || 0);
+      pos.max_down_pct = Math.min(pos.max_down_pct || 0, liveCache.maxDownPct || 0);
+      if (liveCache.lastTickAt > 0) {
+        pos.last_tick_at = new Date(liveCache.lastTickAt);
+      }
+    }
+
+    // The final replayed tick outranks the tracker cache. Excursions and
+    // realised P&L are folded in from the close price by finalizeClosePosition,
+    // so only the mark and its tick time are worth persisting here — the tick
+    // time is what dates the closing trade below.
+    if (finalLtp) {
+      pos.last_ltp = finalLtp;
+      if (finalTickAt) {
+        pos.last_tick_at = finalTickAt;
+      }
+    }
+
+    if (cachedLtp || finalLtp) {
+      await pos.save().catch(() => {});
+    }
+
+    const type_of_order = pos.direction === "LONG" ? "SELL" : "BUY";
+    const executionTime = resolveCloseExecutionTime(pos.opened_at, pos.last_tick_at);
+
+    try {
+      await createTrade({
+        user_id: deployment.user_id,
+        deployment_id: deployment._id,
+        account_id: deployment.account_id || pos.account_id,
+        strategy_id: deployment.strategy_id || pos.strategy_id,
+        user_symbol_id: deployment.user_symbol_id || pos.user_symbol_id,
+        instrument_token: deployment.instrument_token || pos.instrument_token,
+        symbol: pos.symbol || deployment.symbol,
+        type_of_order,
+        quantity: pos.open_size,
+        price,
+        execution_time: executionTime,
+        force_close: true,
+      });
+      closed += 1;
+      const priceSource = finalLtp ? "final-tick" : cachedLtp ? "live-cache" : "position";
+      console.log(
+        `[ForceClose] Closed ${pos.direction} position ${pos._id} qty=${pos.open_size} ` +
+          `@ ${price} (${priceSource}) for deployment ${deployment._id}`
+      );
+    } catch (err) {
+      skipped += 1;
+      console.error(
+        `[ForceClose] Failed to close position ${pos._id} for deployment ${deployment._id}: ${err.message}`
+      );
+    }
+  }
+
+  await clearStrategyHoldingsKeys(deployment);
+
+  const stillOpen = await Position.countDocuments({
+    deployment_id: deployment._id,
+    status: "OPEN",
+    open_size: { $gt: 0 },
+  });
+  if (stillOpen > 0) {
+    console.error(
+      `[ForceClose] CRITICAL: deployment ${deployment._id} still has ${stillOpen} OPEN position(s) after force-close`
+    );
+  }
+
+  return { closed, skipped, stillOpen };
+};
+
 const resetBacktestDeployment = async (deployment) => {
   if (deployment.strategy_mode !== "BACKTEST") {
     return;
@@ -502,15 +698,39 @@ const resetBacktestDeployment = async (deployment) => {
   const symbol = deployment.symbol;
 
   try {
-    // 1. Delete trades, ledgers and positions in MongoDB for this deployment
+    // 1. Purge Redis live/open index for positions before Mongo delete
+    const positionsToPurge = await Position.find({ deployment_id: deploymentId }).select("_id symbol").lean();
+    await purgePositionsFromRedis(positionsToPurge);
+
+    // Clear stale completion flag so the watcher cannot stop a brand-new run
+    const redisUrlForFlag = process.env.REDIS_URL;
+    if (redisUrlForFlag) {
+      let flagClient;
+      try {
+        flagClient = createClient({ url: redisUrlForFlag });
+        flagClient.on("error", (err) => console.error(`[Reset] redis error: ${err.message}`));
+        await flagClient.connect();
+        await flagClient.del(backtestCompletionKey(deploymentId.toString()));
+      } catch (err) {
+        console.warn(`[Reset] Failed clearing backtest_completed flag: ${err.message}`);
+      } finally {
+        if (flagClient) await flagClient.disconnect().catch(() => {});
+      }
+    }
+
+    // 2. Delete trades, ledgers and positions in MongoDB for this deployment
     const deletedTrades = await Trade.deleteMany({ deployment_id: deploymentId });
     const deletedLedgers = await Ledger.deleteMany({ deployment_id: deploymentId });
     const deletedPositions = await Position.deleteMany({ deployment_id: deploymentId });
     console.log(`[Reset] Deleted ${deletedTrades.deletedCount} trades, ${deletedLedgers.deletedCount} ledgers, and ${deletedPositions.deletedCount} positions for deployment ${deploymentId}`);
 
-    // Reset cached position state on deployment
+    // Reset cached position state on deployment. Clearing backtest_run_id matters:
+    // the deployment is already RUNNING here but triggerBacktestIfNeeded does not
+    // mint the new run id until later, and a late {done} from the previous run
+    // would otherwise match the old id and stop the run that is just starting.
     deployment.position_size = 0;
     deployment.average_entry_price = 0;
+    deployment.backtest_run_id = null;
     await deployment.save();
     console.log(`[Reset] Reset deployment cached position fields to 0`);
 
@@ -560,18 +780,23 @@ const resetBacktestDeployment = async (deployment) => {
 
         const deploymentIdStr = deploymentId.toString();
 
-        // Safe non-blocking SCAN loop to delete all keys containing the deployment ID
+        // Safe non-blocking SCAN loop to delete all keys containing the deployment ID.
+        // Preserve deployment_state_epoch so strategy consumers never see a missing epoch mid-reset.
         let cursor = 0;
         const pattern = `*${deploymentIdStr}*`;
+        const epochKey = getStateEpochKey(deploymentIdStr);
         do {
           const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
           cursor = reply.cursor;
-          const keys = reply.keys;
-          if (keys && keys.length > 0) {
+          const keys = (reply.keys || []).filter((k) => k !== epochKey);
+          if (keys.length > 0) {
             await client.del(keys);
             console.log(`[Reset] Deleted scanned keys for deployment ${deploymentIdStr}:`, keys);
           }
         } while (cursor !== 0);
+
+        // Ensure epoch exists before backtest ticks start flowing
+        await ensureDeploymentStateEpoch(client, deploymentIdStr);
       } catch (err) {
         console.error(`[Reset] Error clearing Redis keys: ${err.message}`);
       } finally {
@@ -587,76 +812,146 @@ const resetBacktestDeployment = async (deployment) => {
 
 const LIQUIDITY_SWEEP_STRATEGY = "liquidity_sweep";
 
-const resetLiquiditySweepRuntimeState = async (deployment) => {
-  let strategyName = deployment.strategy_id?.strategy_name;
-  if (!strategyName && deployment.strategy_id) {
-    const strategy = await Strategy.findById(deployment.strategy_id);
-    strategyName = strategy?.strategy_name;
+const resolveStrategyName = async (deployment) => {
+  const inlineName = deployment.strategy_id?.strategy_name;
+  if (inlineName) {
+    return inlineName;
   }
-  if (strategyName !== LIQUIDITY_SWEEP_STRATEGY) {
-    return;
+  if (!deployment.strategy_id) {
+    return undefined;
   }
+  const strategy = await Strategy.findById(deployment.strategy_id);
+  return strategy?.strategy_name;
+};
 
+const STATE_EPOCH_KEY_PREFIX = "deployment_state_epoch:";
+
+const getStateEpochKey = (deploymentId) => `${STATE_EPOCH_KEY_PREFIX}${deploymentId}`;
+
+/**
+ * Ensure a deployment has a Redis state_epoch (used to invalidate in-flight ticks after TF change).
+ * Fails loudly if Redis is unavailable.
+ */
+const ensureDeploymentStateEpoch = async (client, deploymentId) => {
+  const key = getStateEpochKey(deploymentId);
+  const existing = await client.get(key);
+  if (existing == null || existing === "") {
+    await client.set(key, "1");
+    return 1;
+  }
+  const epoch = Number(existing);
+  if (!Number.isFinite(epoch)) {
+    throw new Error(`Invalid ${key} value: ${existing}`);
+  }
+  return epoch;
+};
+
+/**
+ * Bump state_epoch so strategy consumers refuse writes from pre-reset Kafka messages.
+ */
+const bumpDeploymentStateEpoch = async (client, deploymentId) => {
+  const key = getStateEpochKey(deploymentId);
+  // Ensure key exists then incr — INCR on missing key starts at 1 in Redis, but we want bump from current
+  await ensureDeploymentStateEpoch(client, deploymentId);
+  const epoch = await client.incr(key);
+  console.log(`[Reset] Bumped state_epoch for deployment ${deploymentId} → ${epoch}`);
+  return epoch;
+};
+
+/**
+ * Clear Redis strategy runtime state for a deployment (candleState / swings / volume profile).
+ * Used when timeframe changes so engines do not keep evaluating under stale bucket semantics.
+ * Does not wipe Mongo positions/trades — only Redis keys matching the deployment id.
+ * Fails loudly if REDIS_URL is unset or Redis operations fail.
+ */
+const resetDeploymentStrategyRuntimeState = async (deployment, { bumpEpoch = false } = {}) => {
   const deploymentIdStr = deployment._id.toString();
   const symbol = deployment.symbol;
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
-    return;
+    throw new Error("REDIS_URL is required to reset deployment strategy runtime state");
   }
+
+  const strategyName = await resolveStrategyName(deployment);
 
   let client;
   try {
     client = createClient({ url: redisUrl });
     await client.connect();
 
-    for (const mode of ["backtest", "live"]) {
-      const stateKey = `strategies:${LIQUIDITY_SWEEP_STRATEGY}:${mode}:${deploymentIdStr}:${symbol}`;
-      let state = null;
-      try {
-        if (typeof client.json?.get === "function") {
-          state = await client.json.get(stateKey);
-        } else {
-          const raw = await client.get(stateKey);
-          state = raw ? JSON.parse(raw) : null;
-        }
-      } catch (err) {
-        console.warn(`[Reset] Could not read strategy state ${stateKey}: ${err.message}`);
-      }
-
-      if (state?.machineState === "IN_POSITION" && deployment.account_id) {
-        const account = await Account.findById(deployment.account_id);
-        const accountIdStr = account?.account_id || account?._id?.toString();
-        if (accountIdStr) {
-          const openKey = `liquidity_sweep:open:${accountIdStr}`;
-          const val = await client.decr(openKey);
-          if (val < 0) {
-            await client.set(openKey, "0");
-          }
-          console.log(`[Reset] Decremented liquidity_sweep open counter for account ${accountIdStr}`);
-        }
-      }
-
-      await client.del(stateKey);
+    if (bumpEpoch) {
+      await bumpDeploymentStateEpoch(client, deploymentIdStr);
+    } else {
+      await ensureDeploymentStateEpoch(client, deploymentIdStr);
     }
 
+    // Prefer precise strategy state keys when strategy name is known
+    if (strategyName) {
+      for (const mode of ["backtest", "live"]) {
+        const stateKey = `strategies:${strategyName}:${mode}:${deploymentIdStr}:${symbol}`;
+        if (strategyName === LIQUIDITY_SWEEP_STRATEGY) {
+          let state = null;
+          try {
+            if (typeof client.json?.get === "function") {
+              state = await client.json.get(stateKey);
+            } else {
+              const raw = await client.get(stateKey);
+              state = raw ? JSON.parse(raw) : null;
+            }
+          } catch (err) {
+            console.warn(`[Reset] Could not read strategy state ${stateKey}: ${err.message}`);
+          }
+          if (state?.machineState === "IN_POSITION" && deployment.account_id) {
+            const account = await Account.findById(deployment.account_id);
+            const accountIdStr = account?.account_id || account?._id?.toString();
+            if (accountIdStr) {
+              const openKey = `liquidity_sweep:open:${accountIdStr}`;
+              const val = await client.decr(openKey);
+              if (val < 0) {
+                await client.set(openKey, "0");
+              }
+            }
+          }
+        }
+        await client.del(stateKey);
+        console.log(`[Reset] Cleared strategy state key after timeframe change: ${stateKey}`);
+      }
+    }
+
+    // Also clear any other deployment-scoped strategy keys (candle/swing/volume profile, etc.).
+    // Preserve epoch + quantity caches: TF change is blocked while Mongo shows an open position,
+    // but position tracker can lag — wiping bought/short qty would orphan live holdings.
     let cursor = 0;
     const pattern = `*${deploymentIdStr}*`;
+    const epochKey = getStateEpochKey(deploymentIdStr);
+    const isProtectedKey = (k) =>
+      k === epochKey
+      || k.startsWith("bought_quantity:")
+      || k.startsWith("short_quantity:");
     do {
       const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
       cursor = reply.cursor;
-      const keys = reply.keys;
-      if (keys && keys.length > 0) {
+      const keys = (reply.keys || []).filter((k) => !isProtectedKey(k));
+      if (keys.length > 0) {
         await client.del(keys);
         console.log(`[Reset] Deleted runtime keys for deployment ${deploymentIdStr}:`, keys);
       }
     } while (cursor !== 0);
-  } catch (err) {
-    console.error(`[Reset] Error resetting liquidity_sweep runtime state: ${err.message}`);
   } finally {
     if (client) {
       await client.disconnect();
     }
   }
+};
+
+const resetLiquiditySweepRuntimeState = async (deployment) => {
+  if ((await resolveStrategyName(deployment)) !== LIQUIDITY_SWEEP_STRATEGY) {
+    return;
+  }
+  // Bump the epoch so a tick enriched just before the delete cannot write the
+  // pre-reset state back. transitionDeployment republishes the new epoch via
+  // syncAllDeploymentsToRedis before returning.
+  await resetDeploymentStrategyRuntimeState(deployment, { bumpEpoch: true });
 };
 
 export const createDeployment = async (userId, deploymentData) => {
@@ -695,6 +990,8 @@ export const createDeployment = async (userId, deploymentData) => {
   } else {
     prepared.no_of_lots = 1;
   }
+
+  prepared.timeframe = normalizeTimeframe(prepared.timeframe);
 
   const deployment = new Deployment({ ...prepared, user_id: userId });
   const result = await deployment.save();
@@ -754,9 +1051,21 @@ export const updateDeployment = async (userId, id, updateData) => {
     sanitizedUpdate.no_of_lots = normalizeNoOfLots(sanitizedUpdate.no_of_lots);
   }
 
-  const existing = await Deployment.findOne({ _id: id, user_id: userId });
+  if (sanitizedUpdate.timeframe !== undefined) {
+    sanitizedUpdate.timeframe = normalizeTimeframe(sanitizedUpdate.timeframe);
+  }
+
+  const existing = await Deployment.findOne({ _id: id, user_id: userId }).populate("strategy_id");
   if (!existing) {
     throw new Error("Deployment not found");
+  }
+
+  const previousTimeframe = existing.timeframe || "1m";
+  const timeframeChanged = sanitizedUpdate.timeframe !== undefined
+    && previousTimeframe !== sanitizedUpdate.timeframe;
+
+  if (timeframeChanged && (await hasOpenPosition(existing._id))) {
+    throw new Error("Cannot change timeframe while deployment has an open position. Close the position or stop the deployment first.");
   }
 
   if (updateData.symbol_control) {
@@ -800,16 +1109,48 @@ export const updateDeployment = async (userId, id, updateData) => {
     }
   );
 
-  if (updated && updated.symbol_control?.enabled && !updateData.skip_resolve) {
-    try {
-      await resolveDeploymentSymbol(updated._id, { force: false });
-    } catch (err) {
-      console.error(`[SymbolControl] Re-resolve on update failed for ${updated._id}:`, err.message);
+  try {
+    if (timeframeChanged) {
+      // Bump epoch + wipe candle/swing BEFORE any symbol-control sync that republishes Redis routing
+      await resetDeploymentStrategyRuntimeState(existing, { bumpEpoch: true });
     }
-  }
 
-  await syncAllDeploymentsToRedis();
-  await syncControlledDeploymentsIndex();
+    if (updated && updated.symbol_control?.enabled && !updateData.skip_resolve) {
+      try {
+        await resolveDeploymentSymbol(updated._id, { force: false });
+      } catch (err) {
+        console.error(`[SymbolControl] Re-resolve on update failed for ${updated._id}:`, err.message);
+      }
+    }
+
+    // After TF change, sync must publish the new state_epoch or ticks will be stuck failing assertFreshStateEpoch
+    await syncAllDeploymentsToRedis({ failLoud: timeframeChanged });
+    await syncControlledDeploymentsIndex();
+  } catch (err) {
+    if (timeframeChanged) {
+      // Roll back Mongo timeframe so UI/API and Redis routing cannot diverge permanently.
+      // Do NOT bump epoch again — forward path already advanced it; a second bump can
+      // leave activeStrategies advertising a stale epoch while Redis holds N+2.
+      try {
+        await Deployment.findOneAndUpdate(
+          { _id: id, user_id: userId },
+          { timeframe: previousTimeframe },
+          { runValidators: true }
+        );
+        try {
+          await syncAllDeploymentsToRedis({ failLoud: true });
+        } catch (syncErr) {
+          console.error(
+            `[Deployment] CRITICAL: timeframe rolled back for ${id} but Redis sync failed (${syncErr.message}). ` +
+            `Deployment may drop ticks until the next successful sync. Manual syncAllDeploymentsToRedis required.`
+          );
+        }
+      } catch (rollbackErr) {
+        console.error(`[Deployment] Timeframe rollback failed for ${id}:`, rollbackErr.message);
+      }
+    }
+    throw err;
+  }
   return updated;
 };
 
@@ -827,6 +1168,35 @@ export const deleteDeployment = async (userId, id) => {
 
   console.log(`[Deployment Service] Cascading delete complete for deployment ${deployment.deployment_name || deployment._id}: removed ${deletedTrades.deletedCount} trades, ${deletedPositions.deletedCount} positions, ${deletedLedger.deletedCount} ledger entries.`);
 
+  // Clean orphaned epoch + runtime Redis keys for this deployment
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    let client;
+    try {
+      client = createClient({ url: redisUrl });
+      await client.connect();
+      const deploymentIdStr = deployment._id.toString();
+      const epochKey = getStateEpochKey(deploymentIdStr);
+      let cursor = 0;
+      const pattern = `*${deploymentIdStr}*`;
+      do {
+        const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+        cursor = reply.cursor;
+        const keys = reply.keys || [];
+        if (keys.length > 0) {
+          await client.del(keys);
+        }
+      } while (cursor !== 0);
+      await client.del(epochKey);
+    } catch (err) {
+      console.error(`[Deployment] Failed to clean Redis keys on delete for ${deployment._id}:`, err.message);
+    } finally {
+      if (client) {
+        await client.disconnect();
+      }
+    }
+  }
+
   await syncAllDeploymentsToRedis();
   await syncControlledDeploymentsIndex();
   return deployment;
@@ -842,7 +1212,12 @@ const VALID_TRANSITIONS = {
   restart: { from: ["RUNNING", "PAUSED", "STOPPED", "COMPLETED"], to: "RUNNING" },
 };
 
-export const transitionDeployment = async (userId, id, action) => {
+/**
+ * @param {Object} options - { finalTick } forwarded to the backtest force-close
+ *   so it marks out at the last replayed tick. Only set by the completion
+ *   watcher; a manual stop has no end-of-data tick and falls back to the cache.
+ */
+export const transitionDeployment = async (userId, id, action, options = {}) => {
   if (!mongoose.isValidObjectId(id)) {
     return null;
   }
@@ -861,6 +1236,23 @@ export const transitionDeployment = async (userId, id, action) => {
       `Cannot ${action} deployment in status '${deployment.current_status}'. Allowed from: ${transition.from.join(", ")}`
     );
   }
+
+  // Only liquidity_sweep has its Redis runtime wiped on start|restart; MSB and msb_pts
+  // keep their state, so blocking them here would be a restriction without a purpose.
+  if (
+    (action === "start" || action === "restart")
+    && deployment.strategy_mode !== "BACKTEST"
+    && (await resolveStrategyName(deployment)) === LIQUIDITY_SWEEP_STRATEGY
+    && (await hasOpenPosition(deployment._id))
+  ) {
+    throw new Error(
+      `Cannot ${action} this deployment while it has an open position, because ${action} clears its liquidity_sweep runtime state. Flatten the position first.`
+    );
+  }
+
+  // Open backtest positions are flattened after the status flip is published, so
+  // an in-flight tick cannot make the strategy open a fresh position mid-flatten.
+  const shouldFlattenBacktest = action === "stop" && deployment.strategy_mode === "BACKTEST";
 
   deployment.current_status = transition.to;
 
@@ -933,6 +1325,23 @@ export const transitionDeployment = async (userId, id, action) => {
   await deployment.save();
   await triggerBacktestIfNeeded(deployment);
   await syncAllDeploymentsToRedis();
+
+  // STOPPED is now published, so the strategy will not act on further ticks.
+  // The stop itself has already committed, so a flatten failure is reported
+  // rather than thrown — it must not turn a successful stop into an API error.
+  if (shouldFlattenBacktest) {
+    try {
+      const flatten = await forceCloseOpenPositions(deployment, options.finalTick);
+      if (flatten.stillOpen > 0) {
+        console.error(
+          `[Deployment] Stopped ${deployment._id} with ${flatten.stillOpen} OPEN position(s) that could not be flattened`
+        );
+      }
+    } catch (err) {
+      console.error(`[Deployment] Force-close failed after stopping ${deployment._id}: ${err.message}`);
+    }
+  }
+
   return deployment;
 };
 
@@ -1022,11 +1431,23 @@ export const getDeploymentMetrics = async (userId, id) => {
     }
   }
 
+  // Realised comes from the trade walk, which only books P&L against closing
+  // quantity and also covers deployments whose trades predate Position tracking.
+  // Unrealised is open quantity only, so it can only come from OPEN positions.
+  const openPositions = await Position.find({
+    deployment_id: deployment._id,
+    status: "OPEN",
+  }).select("status realised_pnl unrealised_pnl");
+  const realisedPnl = round2(totalPnL);
+  const unrealisedPnl = sumOpenUnrealised(openPositions);
+
   return {
     deployment_id: deployment._id,
     current_status: deployment.current_status,
     total_trades: totalTrades,
-    total_pnl: parseFloat(totalPnL.toFixed(2)),
+    realised_pnl: realisedPnl,
+    unrealised_pnl: unrealisedPnl,
+    total_pnl: round2(realisedPnl + unrealisedPnl),
     wins,
     losses,
     win_rate: (wins + losses) > 0 ? ((wins / (wins + losses)) * 100).toFixed(2) + "%" : "0.00%",
@@ -1194,6 +1615,21 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
   // Calculate profitability factor
   const profitabilityFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
 
+  // Realised is the trade walk above: it books P&L against closing quantity only,
+  // already respects the date window, and reconciles with gross_profit/gross_loss
+  // and the tail of time_series by construction.
+  const realisedPnl = round2(totalPnL);
+
+  // Unrealised is a mark on currently open quantity, so it only belongs to a
+  // window that extends to now. A bounded historical window reports realised only.
+  const windowIncludesNow = !end || end.getTime() >= Date.now();
+  const openPositions = windowIncludesNow
+    ? await Position.find({ deployment_id: deployment._id, status: "OPEN" }).select(
+        "status realised_pnl unrealised_pnl"
+      )
+    : [];
+  const unrealisedPnl = sumOpenUnrealised(openPositions);
+
   return {
     deployment_id: deployment._id,
     deployment_name: deployment.deployment_name,
@@ -1205,7 +1641,9 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
     },
     metrics: {
       total_trades: totalTrades,
-      total_pnl: parseFloat(totalPnL.toFixed(2)),
+      realised_pnl: realisedPnl,
+      unrealised_pnl: unrealisedPnl,
+      total_pnl: round2(realisedPnl + unrealisedPnl),
       gross_profit: parseFloat(grossProfit.toFixed(2)),
       gross_loss: parseFloat(grossLoss.toFixed(2)),
       profitability_factor: profitabilityFactor === Infinity ? "Infinity" : parseFloat(profitabilityFactor.toFixed(2)),
@@ -1218,11 +1656,14 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
     time_series: timeSeriesData,
     intraday_trades: intradayTrades,
   };
-};;
+};
 
-export const syncAllDeploymentsToRedis = async () => {
+export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
+    if (failLoud) {
+      throw new Error("REDIS_URL is required to sync deployments to Redis");
+    }
     console.warn("⚠️ REDIS_URL not set, skipping deployment sync to Redis");
     return;
   }
@@ -1253,15 +1694,25 @@ export const syncAllDeploymentsToRedis = async () => {
         newKeysData[key] = [];
       }
 
+      const deploymentIdStr = dep._id.toString();
+      const stateEpoch = await ensureDeploymentStateEpoch(client, deploymentIdStr);
+      // Legacy docs may lack timeframe — default to 1m so sync/smoke never aborts the whole Redis publish
+      const timeframe = dep.timeframe || "1m";
+      if (!dep.timeframe) {
+        console.warn(`[Sync] RUNNING deployment ${deploymentIdStr} missing timeframe; defaulting to 1m`);
+      }
+
       newKeysData[key].push({
         name: dep.strategy_id.strategy_name,
         isTest: isTest,
+        timeframe,
+        state_epoch: stateEpoch,
         account_id: dep.account_id.account_id || dep.account_id._id.toString(),
         user_symbol_id: dep.user_symbol_id ? dep.user_symbol_id.toString() : undefined,
         instrument_token: dep.instrument_token,
         symbol: dep.symbol,
         strategy_id: dep.strategy_id._id.toString(),
-        deployment_id: dep._id.toString(),
+        deployment_id: deploymentIdStr,
         user_id: dep.user_id.toString(),
         strategy_mode: dep.strategy_mode,
         is_internal_broker: dep.account_id.broker_id ? dep.account_id.broker_id.is_internal : false,
@@ -1293,6 +1744,9 @@ export const syncAllDeploymentsToRedis = async () => {
         console.log(`[Sync] Synced account balance for ${accountId} to Redis: ${dep.account_id.current_balance}`);
       } catch (err) {
         console.error(`[Sync] Failed to sync account balance for ${accountId} to Redis: ${err.message}`);
+        if (failLoud) {
+          throw err;
+        }
       }
     }
 
@@ -1320,6 +1774,9 @@ export const syncAllDeploymentsToRedis = async () => {
 
   } catch (error) {
     console.error("❌ Failed to sync deployments to Redis:", error.message);
+    if (failLoud) {
+      throw error;
+    }
   } finally {
     if (client) {
       await client.disconnect();
@@ -1331,16 +1788,21 @@ export const syncAllDeploymentsToRedis = async () => {
     await syncControlledDeploymentsIndex();
   } catch (err) {
     console.error("[SymbolControl] Index sync after deployment Redis sync failed:", err.message);
+    if (failLoud) {
+      throw err;
+    }
   }
 };
 
-export const getDeploymentCandles = async (userId, id, timeframe = "1m") => {
+export const getDeploymentCandles = async (userId, id, timeframe) => {
   if (!mongoose.isValidObjectId(id)) return null;
   const deployment = await Deployment.findOne({ _id: id, user_id: userId });
   if (!deployment) return null;
 
   const symbol = deployment.symbol;
   const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
+  // Prefer explicit request TF, else deployment's configured candle timeframe
+  const resolvedTf = normalizeTimeframe(timeframe || deployment.timeframe || "1m");
 
-  return await getSymbolCandles(symbol, date, timeframe);
+  return await getSymbolCandles(symbol, date, resolvedTf);
 };

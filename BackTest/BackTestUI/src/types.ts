@@ -40,6 +40,7 @@ export interface Strategy {
   useFullAmount?: boolean;
   lotSize?: number | null;
   noOfLots?: number;
+  timeframe?: string;
   symbolControl?: SymbolControlConfig;
 }
 
@@ -173,6 +174,8 @@ export interface DeploymentAnalysis {
   };
   metrics: {
     total_trades: number;
+    realised_pnl: number;
+    unrealised_pnl: number;
     total_pnl: number;
     gross_profit: number;
     gross_loss: number;
@@ -275,6 +278,7 @@ export interface Deployment {
   account_id: string;
   symbol: string;
   strategy_mode: string;
+  timeframe?: string;
   current_status: string;
   created_at: string;
 }

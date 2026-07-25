@@ -8,10 +8,11 @@ import { passesFilters } from './modules/filters.js';
 import { tryExecuteEntry, manageOpenPosition } from './modules/tradeManagement.js';
 import { logSweepOutcome } from './modules/signalLogger.js';
 import { fetchPriorDayOHLC } from './modules/sessionInit.js';
+import { decrementOpenPositions } from './redis_utils/concurrency.js';
 import { logger } from '/app/utils/logUtils.js';
 
-function createInitialState(tick, params) {
-    const levelInit = createInitialLevelState(tick, params);
+function createInitialState(tick, params, timeframe, stateEpoch) {
+    const levelInit = createInitialLevelState(tick, params, timeframe);
     return {
         machineState: 'IDLE',
         tickBuffer: [],
@@ -25,6 +26,8 @@ function createInitialState(tick, params) {
         lastLtt: tick.timestamp,
         sessionAtr: null,
         priorDayFetched: false,
+        timeframe,
+        state_epoch: stateEpoch,
     };
 }
 
@@ -44,7 +47,7 @@ function handleDataGap(state, tick, symbol, strategy_details) {
     };
 }
 
-async function maybeInitSessionLevels(state, tick, strategy_details, params) {
+async function maybeInitSessionLevels(state, tick, strategy_details, params, timeframe) {
     const sessionDate = getSessionDate(tick.timestamp);
     if (state.sessionMeta?.sessionDate === sessionDate && state.priorDayFetched) {
         return state;
@@ -56,7 +59,7 @@ async function maybeInitSessionLevels(state, tick, strategy_details, params) {
         tick
     );
 
-    const levelInit = createInitialLevelState(tick, params);
+    const levelInit = createInitialLevelState(tick, params, timeframe);
     return {
         ...state,
         ...levelInit,
@@ -100,24 +103,82 @@ async function attemptEntry(state, tick, symbol, strategy_details, params) {
     };
 }
 
+async function reconcileDiscardedOpenSlot(prev, strategy_details, symbol) {
+    if (prev?.machineState === 'IN_POSITION' && strategy_details?.account_id) {
+        logger.warn(
+            `[liquidity_sweep] Releasing concurrency slot after discarding IN_POSITION state for ${symbol}`
+        );
+        await decrementOpenPositions(strategy_details.account_id);
+    }
+}
+
 async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
     const params = resolveParams(strategy_details);
-    const previousLtp = prevState?.tickBuffer?.length
-        ? prevState.tickBuffer[prevState.tickBuffer.length - 1].ltp
+    // Default missing timeframe for rollout compatibility (legacy Redis routing)
+    const timeframe = strategy_details?.timeframe || '1m';
+    strategy_details.timeframe = timeframe;
+    let stateEpoch = strategy_details.state_epoch;
+    if (stateEpoch == null || !Number.isFinite(Number(stateEpoch))) {
+        // assertFreshStateEpoch should have healed this; soft-default for safety
+        stateEpoch = 1;
+        strategy_details.state_epoch = 1;
+        logger.warn(`[liquidity_sweep] state_epoch missing for ${symbol}; defaulting to 1`);
+    }
+
+    // Discard Redis state written before a timeframe reset (stale/missing epoch or timeframe).
+    // Preserve open positions across rollout epoch adoption; release slot only when fully discarded.
+    let usablePrev = prevState && Object.keys(prevState).length > 0 ? prevState : null;
+    if (usablePrev) {
+        const epochMismatch = usablePrev.state_epoch == null
+            || Number(usablePrev.state_epoch) !== Number(stateEpoch);
+        const tfMismatch = usablePrev.timeframe && usablePrev.timeframe !== timeframe;
+        if (epochMismatch || tfMismatch) {
+            logger.error(
+                `[liquidity_sweep] Resetting stale Redis state for ${symbol}: state_epoch=${usablePrev.state_epoch} message_epoch=${stateEpoch} state_tf=${usablePrev.timeframe} deployment_tf=${timeframe}`
+            );
+            if (usablePrev.position && usablePrev.machineState === 'IN_POSITION') {
+                // Keep live position / SL management across epoch or TF resets; drop candle/level buffers.
+                // Stop/target are price levels — not timeframe-dependent.
+                usablePrev = {
+                    machineState: 'IN_POSITION',
+                    position: usablePrev.position,
+                    tickBuffer: [],
+                    sweep: null,
+                    pendingSignal: null,
+                    cooldownUntil: usablePrev.cooldownUntil ?? null,
+                    metrics: usablePrev.metrics || { avgAbsDelta: 1, avgVolumeRate: 1 },
+                    lastLtt: usablePrev.lastLtt ?? null,
+                    sessionAtr: null,
+                    priorDayFetched: false,
+                    timeframe,
+                    state_epoch: Number(stateEpoch),
+                };
+            } else {
+                await reconcileDiscardedOpenSlot(usablePrev, strategy_details, symbol);
+                usablePrev = null;
+            }
+        }
+    }
+
+    const previousLtp = usablePrev?.tickBuffer?.length
+        ? usablePrev.tickBuffer[usablePrev.tickBuffer.length - 1].ltp
         : null;
 
     const tick = parseTick(rawMsg, previousLtp);
     if (!tick || tick.ltp == null) {
-        return prevState || {};
+        // Soft-skip: incomplete tick — server must not process.exit
+        const err = new Error(`Tick missing LTP for ${symbol}`);
+        err.name = 'BadTickError';
+        throw err;
     }
 
-    let state = prevState && Object.keys(prevState).length > 0
-        ? { ...prevState }
-        : createInitialState(tick, params);
+    let state = usablePrev
+        ? { ...usablePrev, timeframe, state_epoch: Number(stateEpoch) }
+        : createInitialState(tick, params, timeframe, Number(stateEpoch));
 
     const sessionDate = getSessionDate(tick.timestamp);
     if (!state.priorDayFetched || state.sessionMeta?.sessionDate !== sessionDate) {
-        state = await maybeInitSessionLevels(state, tick, strategy_details, params);
+        state = await maybeInitSessionLevels(state, tick, strategy_details, params, timeframe);
     }
 
     if (isDataGap(tick.timestamp, state.lastLtt, params.gapThresholdSec)) {
@@ -125,7 +186,7 @@ async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
     }
     state.lastLtt = tick.timestamp;
 
-    state = updateLevels(state, tick, params);
+    state = updateLevels(state, tick, params, timeframe);
     state.activeLevels = getActiveLevels(state.levels);
 
     const enriched = enrichTick(tick, previousLtp, params);

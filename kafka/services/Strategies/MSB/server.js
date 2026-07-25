@@ -1,8 +1,8 @@
 import { Kafka } from 'kafkajs';
 import { MSB } from './MSB.js';
-import { getLatestOHLCByInterval, getLTP, getTickTimestamp, isValidI1Candle } from './utils.js';
+import { buildTimeframeCandle } from './candleBuilder.js';
 import { calculateLatency } from './utils/latencyUtil.js';
-import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted } from './redis_utils/getStrategyStateDetails.js';
+import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted, assertFreshStateEpoch } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 
@@ -58,9 +58,13 @@ async function createConsumer() {
                     return;
                 }
                 if (msg.done) {
-                    logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
+                    logger.info(`Received done signal for symbol ${symbol} with last_ltp=${msg.last_ltp}, skipping processing.`);
                     if (strategy_details.deployment_id) {
-                        await setBacktestCompleted(strategy_details.deployment_id);
+                        const runId = msg.run_id || strategy_details.backtest_run_id || null;
+                        await setBacktestCompleted(strategy_details.deployment_id, runId, {
+                            lastLtp: msg.last_ltp,
+                            lastTickAt: msg.last_tick_at,
+                        });
                     }
                     return;
                 }
@@ -74,25 +78,50 @@ async function createConsumer() {
                 if (isBackTest) {
                     strategy_details.isTest = true;
                 }
-                const lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest, strategy_details.deployment_id);
+
+                try {
+                    await assertFreshStateEpoch(strategy_details);
+                } catch (err) {
+                    if (err?.name === 'StaleStateEpochError') {
+                        logger.error(err.message);
+                        return;
+                    }
+                    throw err;
+                }
+
+                let lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest, strategy_details.deployment_id);
+                // Epoch mismatch: drop candle/swing state so old-TF swings cannot drive new-TF entries.
+                // BUY path refuses when bought_quantity is still present, so holdings are not doubled.
+                if (lastState
+                    && (lastState.state_epoch == null
+                        || Number(lastState.state_epoch) !== Number(strategy_details.state_epoch))) {
+                    logger.error(
+                        `Discarding stale MSB Redis state for ${symbol}: state_epoch=${lastState.state_epoch} message_epoch=${strategy_details.state_epoch}`
+                    );
+                    lastState = null;
+                }
 
                 logger.debug(`Message content for ${symbol}:`, msg);
-                
-                let data = getLatestOHLCByInterval(msg, 'I1');
-                let ltp = getLTP(msg);
 
-                if (!isValidI1Candle(data, ltp)) {
-                    logger.warn(`Skipping ${symbol}: tick missing valid I1 OHLC or LTP (high=${data?.high}, low=${data?.low}, ltp=${ltp})`);
+                // Default missing timeframe for rollout compatibility (legacy Redis routing)
+                const timeframe = strategy_details.timeframe || '1m';
+                strategy_details.timeframe = timeframe;
+                const existingCandleState = lastState?.candleState || null;
+                const { candle, newCandleState } = buildTimeframeCandle(msg, timeframe, existingCandleState);
+
+                if (!candle || candle.high == null || candle.low == null || candle.ltp == null) {
+                    // Soft-skip bad/incomplete/out-of-order ticks — do not fatal the consumer
+                    logger.warn(`Skipping ${symbol}: tick missing valid LTP/ltt or out-of-order (timeframe=${timeframe})`);
                     return;
                 }
 
-                logger.debug(`Processing data for symbol ${symbol}:`, data);
-                logger.debug(`Last Trade Price (LTP) for ${symbol}:`, ltp);
-                data.ltp = ltp;
-                data.timestamp = getTickTimestamp(msg);
+                logger.debug(`Processing ${timeframe} candle for symbol ${symbol}:`, candle);
+                candle.candleState = newCandleState;
 
                 // call the actual strategy function here
-                let newState = await MSB(lastState, data, symbol, strategy_details);
+                let newState = await MSB(lastState, candle, symbol, strategy_details);
+                newState.state_epoch = Number(strategy_details.state_epoch);
+                newState.timeframe = timeframe;
 
                 await writeMSBStrategyStateForSymbol(symbol, isBackTest, newState, strategy_details.deployment_id);
                 
@@ -100,6 +129,15 @@ async function createConsumer() {
                 msg.latency.afterStrategyExecution = calculateLatency(symbol, msg);
                 logger.debug('Latency:', msg.latency);
             } catch (error) {
+                if (error?.name === 'StaleStateEpochError') {
+                    logger.error(error.message);
+                    return;
+                }
+                // Unsupported timeframe / bad config should not crash the whole multi-deployment consumer
+                if (error?.message && /Unsupported timeframe|timeframe is required|atrLookbackBars/i.test(error.message)) {
+                    logger.error(`Skipping ${symbol}: recoverable config error: ${error.message}`);
+                    return;
+                }
                 handleFatalError(error, 'message handling');
             }
         },

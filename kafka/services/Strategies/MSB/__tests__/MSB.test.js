@@ -79,6 +79,23 @@ describe('MSB buy/sell consistency', () => {
         assert.equal(store.bought[holdingsKey()] || 0, 0);
     });
 
+    it('skips BUY when Redis already has holdings (no overwrite)', async () => {
+        resetStore({
+            balance: 100000,
+            bought: { [holdingsKey()]: 75 },
+        });
+        let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
+        state = await MSB(
+            state,
+            candle({ high: 101, low: 100, ltp: 101 }),
+            SYMBOL,
+            strategyDetails()
+        );
+        assert.equal(state.isUp, true);
+        assert.equal(store.bought[holdingsKey()], 75, 'must not overwrite preserved holdings');
+        assert.equal(store.orders.filter((o) => o.transaction_type === 'BUY').length, 0);
+    });
+
     it('does not set bought_quantity when BUY order fails', async () => {
         resetStore({ balance: 100000, bought: {}, orderFail: true });
         let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());

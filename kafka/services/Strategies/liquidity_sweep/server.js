@@ -5,6 +5,7 @@ import {
     getLiquiditySweepStateForSymbol,
     writeLiquiditySweepStateForSymbol,
     setBacktestCompleted,
+    assertFreshStateEpoch,
 } from './redis_utils/getStrategyStateDetails.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 
@@ -67,17 +68,21 @@ async function createConsumer() {
             }
 
             const { strategy_details = {} } = msg;
-            const isBackTest = checkIsTest(strategy_details);
-            if (isBackTest && msg.run_id && strategy_details.backtest_run_id && msg.run_id !== strategy_details.backtest_run_id) {
+            const isBackTestMsg = resolveIsBackTest(strategy_details);
+            if (isBackTestMsg && msg.run_id && strategy_details.backtest_run_id && msg.run_id !== strategy_details.backtest_run_id) {
                 logger.info(`Discarding stale backtest message in liquidity_sweep strategy. Msg run_id: ${msg.run_id}, Active: ${strategy_details.backtest_run_id}`);
                 return;
             }
 
             try {
                 if (msg.done) {
-                    logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
+                    logger.info(`Received done signal for symbol ${symbol} with last_ltp=${msg.last_ltp}, skipping processing.`);
                     if (strategy_details.deployment_id) {
-                        await setBacktestCompleted(strategy_details.deployment_id);
+                        const runId = msg.run_id || strategy_details.backtest_run_id || null;
+                        await setBacktestCompleted(strategy_details.deployment_id, runId, {
+                            lastLtp: msg.last_ltp,
+                            lastTickAt: msg.last_tick_at,
+                        });
                     }
                     return;
                 }
@@ -93,6 +98,16 @@ async function createConsumer() {
                     strategy_details.isTest = true;
                 }
 
+                try {
+                    await assertFreshStateEpoch(strategy_details);
+                } catch (err) {
+                    if (err?.name === 'StaleStateEpochError') {
+                        logger.error(err.message);
+                        return;
+                    }
+                    throw err;
+                }
+
                 const lastState = await getLiquiditySweepStateForSymbol(
                     symbol,
                     isBackTest,
@@ -101,15 +116,12 @@ async function createConsumer() {
 
                 const newState = await LiquiditySweep(lastState, msg, symbol, strategy_details);
 
-                const wroteState = await writeLiquiditySweepStateForSymbol(
+                await writeLiquiditySweepStateForSymbol(
                     symbol,
                     isBackTest,
                     newState,
                     strategy_details.deployment_id
                 );
-                if (!wroteState) {
-                    logger.error(`Failed to persist liquidity_sweep state for ${symbol}`);
-                }
 
                 const afterLatency = calculateLatency(symbol, msg);
                 if (afterLatency != null) {
@@ -117,7 +129,21 @@ async function createConsumer() {
                 }
                 logger.debug('Latency:', msg.latency);
             } catch (err) {
-                logger.error(`Unhandled error processing message for ${symbol}:`, err.message);
+                if (err?.name === 'StaleStateEpochError') {
+                    logger.error(err.message);
+                    return;
+                }
+                if (err?.name === 'BadTickError') {
+                    // Soft-skip bad/incomplete ticks — only true infrastructure bugs are fatal
+                    logger.warn(err.message);
+                    return;
+                }
+                if (err?.message && /Unsupported timeframe|timeframe is required|atrLookbackBars|volumeProfile\.interval|Invalid ATR/i.test(err.message)) {
+                    logger.error(`Skipping ${symbol}: recoverable config/data error: ${err.message}`);
+                    return;
+                }
+                // Per-message strategy/data errors must not take down every deployment on this consumer
+                logger.error(`Error processing message for ${symbol} (continuing):`, err);
             }
         },
     });

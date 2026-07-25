@@ -448,6 +448,7 @@ export default function App() {
         backtest_speed: newStrat.backtestSpeed,
         use_full_amount: newStrat.useFullAmount,
         no_of_lots: sizing?.noOfLots ?? newStrat.noOfLots ?? 1,
+        timeframe: newStrat.timeframe || '1m',
       };
 
       if (sizing?.lotSize != null && Number(sizing.lotSize) > 0) {

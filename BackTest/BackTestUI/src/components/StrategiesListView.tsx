@@ -74,6 +74,7 @@ export default function StrategiesListView({
   const [editBacktestSpeed, setEditBacktestSpeed] = useState<number>(1000);
   const [editUseFullAmount, setEditUseFullAmount] = useState(false);
   const [editNoOfLots, setEditNoOfLots] = useState<number>(1);
+  const [editTimeframe, setEditTimeframe] = useState<'1m' | '3m' | '5m' | '15m'>('1m');
 
   const handleOpenEdit = (strat: Strategy) => {
     setEditingStrategy(strat);
@@ -83,6 +84,7 @@ export default function StrategiesListView({
     setEditBacktestSpeed(strat.backtestSpeed || 1000);
     setEditUseFullAmount(strat.useFullAmount || false);
     setEditNoOfLots(strat.noOfLots || 1);
+    setEditTimeframe((strat.timeframe as any) || '1m');
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -92,6 +94,7 @@ export default function StrategiesListView({
       await onEditStrategy(editingStrategy.id, {
         deployment_name: editName,
         notes: editDescription,
+        timeframe: editTimeframe,
         backtest_date: editingStrategy.mode === 'backtest' ? editBacktestDate : undefined,
         backtest_speed: editingStrategy.mode === 'backtest' ? editBacktestSpeed : undefined,
         use_full_amount: editUseFullAmount,
@@ -134,6 +137,7 @@ export default function StrategiesListView({
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [backtestDate, setBacktestDate] = useState(new Date().toISOString().slice(0, 10));
   const [backtestSpeed, setBacktestSpeed] = useState(1000);
+  const [timeframe, setTimeframe] = useState<'1m' | '3m' | '5m' | '15m'>('1m');
   const [useFullAmount, setUseFullAmount] = useState(false);
   const [noOfLots, setNoOfLots] = useState(1);
   const [dynamicLotSize, setDynamicLotSize] = useState(50);
@@ -214,6 +218,7 @@ export default function StrategiesListView({
       useFullAmount: useFullAmount,
       lotSize: resolvedLotSize,
       noOfLots: showLotSizing ? noOfLots : 1,
+      timeframe: timeframe,
     };
 
     const targetSymbol = selectedSymbol?.ticker || 'NSE_INDEX|Nifty 50';
@@ -246,6 +251,7 @@ export default function StrategiesListView({
     setInitialStatus('active');
     setSelectedAccountId('');
     setSelectedStrategyId('');
+    setTimeframe('1m');
     setUseFullAmount(false);
     setNoOfLots(1);
     setDynamicLotSize(50);
@@ -380,6 +386,9 @@ export default function StrategiesListView({
                             : 'bg-indigo-950/40 text-indigo-400 border-indigo-900/30'
                         }`}>
                           {strat.mode} deployment
+                        </span>
+                        <span className="text-[9px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-sm font-mono border bg-slate-900 text-cyan-400 border-slate-700/60">
+                          {strat.timeframe || '1m'} Candle
                         </span>
                         {strat.symbolControl?.enabled && (
                           <span className="text-[9px] font-black tracking-wider uppercase px-2 py-0.5 rounded-sm font-mono border bg-violet-950/40 text-violet-300 border-violet-900/30">
@@ -585,7 +594,7 @@ export default function StrategiesListView({
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Deployment Mode</label>
                   <select
@@ -596,6 +605,20 @@ export default function StrategiesListView({
                     <option value="live">Live Workload (Broker Routing)</option>
                     <option value="paper">Paper Trading (Live Simulation)</option>
                     <option value="backtest">Backtest Engine (Historical Audit)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Candle Timeframe</label>
+                  <select
+                    value={timeframe}
+                    onChange={(e) => setTimeframe(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  >
+                    <option value="1m">1 minute (1m)</option>
+                    <option value="3m">3 minute (3m)</option>
+                    <option value="5m">5 minute (5m)</option>
+                    <option value="15m">15 minute (15m)</option>
                   </select>
                 </div>
 
@@ -858,6 +881,20 @@ export default function StrategiesListView({
                   onChange={(e) => setEditDescription(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 h-20 resize-none"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Candle Timeframe</label>
+                <select
+                  value={editTimeframe}
+                  onChange={(e) => setEditTimeframe(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500 font-mono"
+                >
+                  <option value="1m">1 minute (1m)</option>
+                  <option value="3m">3 minute (3m)</option>
+                  <option value="5m">5 minute (5m)</option>
+                  <option value="15m">15 minute (15m)</option>
+                </select>
               </div>
 
               {editingStrategy.mode === 'backtest' && (

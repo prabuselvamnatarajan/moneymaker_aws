@@ -61,7 +61,7 @@ sequenceDiagram
         Streamer->>Streamer: Delay by time_ms
     end
     
-    Streamer->>Client: Send { done: true }
+    Streamer->>Client: Send { done: true, last_ltp, last_tick_at }
     deactivate Streamer
     deactivate Client
 ```
@@ -98,7 +98,7 @@ sequenceDiagram
   * The streamer loops through each element in the array.
   * If `time_ms` is > 0, it pushes the tick to the WebSocket and delays the next iteration using a promise-wrapped `setTimeout`.
   * If `time_ms` is 0, it streams them sequentially with no artificial delay.
-  * At the end of the array, the streamer sends a `{ done: true }` signal down the socket.
+  * At the end of the array, the streamer sends a `{ done: true, last_ltp, last_tick_at }` signal down the socket, carrying the LTP and exchange time of the final tick that had a usable price. This is the authoritative end-of-data mark that any still-open position is force-closed at.
 
 ### 4. Ingestion to Kafka
 * **Kafka Publish**: As the `BacktestClient` receives ticks over the WebSocket, its `ws.on('message')` listener publishes the stringified tick directly to the Kafka broker:

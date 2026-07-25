@@ -872,7 +872,7 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
               </div>
             </div>
 
-            {/* Total P&L */}
+            {/* Total P&L (realised + unrealised) */}
             <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
@@ -889,6 +889,20 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
               }`}>
                 {formatCurrency(analysis.metrics.total_pnl)}
               </p>
+              <div className="mt-2 flex flex-col gap-0.5 text-xs">
+                <span className="text-slate-400">
+                  Realised (closed qty):{' '}
+                  <span className={(analysis.metrics.realised_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                    {formatCurrency(analysis.metrics.realised_pnl ?? 0)}
+                  </span>
+                </span>
+                <span className="text-slate-400">
+                  Unrealised (open qty):{' '}
+                  <span className={(analysis.metrics.unrealised_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                    {formatCurrency(analysis.metrics.unrealised_pnl ?? 0)}
+                  </span>
+                </span>
+              </div>
             </div>
 
             {/* Profitability Factor */}
@@ -929,7 +943,45 @@ export default function DeploymentAnalysisView({ selectedDeploymentId, timezone 
           </div>
 
           {/* Additional Metrics Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Realised P&L */}
+            <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  (analysis.metrics.realised_pnl ?? 0) >= 0 ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+                }`}>
+                  <DollarSign className={`w-5 h-5 ${
+                    (analysis.metrics.realised_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`} />
+                </div>
+                <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Realised P&L</span>
+              </div>
+              <p className={`text-2xl font-bold ${
+                (analysis.metrics.realised_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+              }`}>
+                {formatCurrency(analysis.metrics.realised_pnl ?? 0)}
+              </p>
+            </div>
+
+            {/* Unrealised P&L */}
+            <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  (analysis.metrics.unrealised_pnl ?? 0) >= 0 ? 'bg-amber-500/10' : 'bg-rose-500/10'
+                }`}>
+                  <Activity className={`w-5 h-5 ${
+                    (analysis.metrics.unrealised_pnl ?? 0) >= 0 ? 'text-amber-400' : 'text-rose-400'
+                  }`} />
+                </div>
+                <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Unrealised P&L</span>
+              </div>
+              <p className={`text-2xl font-bold ${
+                (analysis.metrics.unrealised_pnl ?? 0) >= 0 ? 'text-amber-400' : 'text-rose-400'
+              }`}>
+                {formatCurrency(analysis.metrics.unrealised_pnl ?? 0)}
+              </p>
+            </div>
+
             {/* Gross Profit */}
             <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-5">
               <div className="flex items-center justify-between mb-3">

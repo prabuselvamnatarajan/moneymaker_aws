@@ -21,7 +21,7 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   
-  const [timeframe, setTimeframe] = useState<'1m' | '5m' | '15m'>('1m');
+  const [timeframe, setTimeframe] = useState<'1m' | '3m' | '5m' | '15m'>('1m');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [candlesCount, setCandlesCount] = useState(0);
@@ -163,7 +163,7 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
       {/* Control Actions / Timeframe Selector */}
       <div className="px-4 py-3 bg-[#0f1115]/40 border-b border-[#232a35] flex items-center shrink-0">
         <div className="flex bg-[#0f1115] rounded-lg p-0.5 border border-[#232a35]">
-          {(['1m', '5m', '15m'] as const).map(tf => (
+          {(['1m', '3m', '5m', '15m'] as const).map(tf => (
             <button
               key={tf}
               onClick={() => setTimeframe(tf)}
@@ -232,7 +232,7 @@ export default function CandlestickSidebar({ deploymentId, symbol, date, isOpen,
             <div className="space-y-0.5">
               <span className="text-slate-500 text-[10px]">Timeframe</span>
               <p className="text-slate-300 font-medium">
-                {timeframe === '1m' ? '1 Minute' : timeframe === '5m' ? '5 Minutes' : '15 Minutes'}
+                {timeframe === '1m' ? '1 Minute' : timeframe === '3m' ? '3 Minutes' : timeframe === '5m' ? '5 Minutes' : '15 Minutes'}
               </p>
             </div>
             <div className="space-y-0.5">

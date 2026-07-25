@@ -77,6 +77,28 @@ describe('tickParser', () => {
         assert.equal(tick.ltp, 22050);
         assert.equal(tick.feedType, 'market');
     });
+
+    it('uses ltpc.ltt for bar time and server timestamp for gap detection', () => {
+        const ltt = 1720236005000;
+        const serverTs = Date.parse('2020-01-01T00:00:00.000Z');
+        const tick = parseTick({
+            timestamp: '2020-01-01T00:00:00.000Z',
+            fullFeed: {
+                marketFF: {
+                    ltpc: { ltp: 1000, ltq: 10, ltt },
+                    marketLevel: {
+                        bidAskQuote: [{ bidP: 999, askP: 1001, bidQ: 1, askQ: 1 }],
+                    },
+                },
+            },
+        });
+        // Gap detection stays on wall-clock so sparse option ltt does not false-trigger gaps
+        assert.equal(tick.timestamp, serverTs);
+        // Bar bucketing / trade time still prefers exchange ltt
+        assert.equal(tick.barTimestamp, ltt);
+        assert.equal(tick.ltt, ltt);
+        assert.equal(tick.ohlcI1, undefined);
+    });
 });
 
 describe('tickDelta', () => {
