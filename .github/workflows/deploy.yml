@@ -13,6 +13,10 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      PLAYWRIGHT_WITH_DEPS: "1"
+      STACK_HEALTH_MAX_RETRIES: "120"
+      STACK_HEALTH_DELAY_SEC: "5"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,26 +24,37 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: e2e/package-lock.json
 
       - name: Make scripts executable
         run: |
-          chmod +x build-all.sh run_all_test_cases.sh
+          chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
 
       - name: Run automated test suites
-        env:
-          PLAYWRIGHT_WITH_DEPS: "1"
         run: ./run_all_test_cases.sh --build --coverage
 
-      - name: Upload Playwright report
+      - name: Dump Swarm diagnostics on failure
         if: failure()
+        run: |
+          docker stack ls || true
+          docker stack services moneymaker || true
+          docker service ps moneymaker_backtest-app --no-trunc || true
+          docker service ps moneymaker_reverse-proxy --no-trunc || true
+          docker service ps moneymaker_mongo1 --no-trunc || true
+          curl -sv http://localhost/backtestapp/health || true
+
+      - name: Upload Playwright report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_id }}
-          path: e2e/playwright-report/
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          if-no-files-found: ignore
           retention-days: 7
 
   deploy:

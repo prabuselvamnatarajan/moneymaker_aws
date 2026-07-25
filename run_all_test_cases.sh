@@ -142,6 +142,12 @@ export NO_INSTALL=1
 
 ensure_stack_ready all
 
+if [ "${CI:-}" = "true" ] && [ "$DO_BUILD" = "1" ] && [ "${SKIP_CI_SEED:-0}" != "1" ]; then
+  log_info "CI: seeding BacktestApp database for E2E tests"
+  chmod +x "$ROOT/clear-and-seed.sh" 2>/dev/null || true
+  "$ROOT/clear-and-seed.sh" --yes || die "clear-and-seed.sh failed in CI"
+fi
+
 PASSED=""
 FAILED=""
 SKIPPED=""
