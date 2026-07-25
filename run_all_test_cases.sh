@@ -6,7 +6,9 @@
 #   ./run_all_test_cases.sh --suite backtest-app     # one suite
 #   ./run_all_test_cases.sh --suite backtest-ui
 #   ./run_all_test_cases.sh --suite backtest-app,backtest-ui
-#   ./run_all_test_cases.sh --build                  # build-all.sh first
+#   ./run_all_test_cases.sh --build                  # build-images + deploy-stack
+#   ./run_all_test_cases.sh --build-images           # scripts/build-images.sh only
+#   ./run_all_test_cases.sh --deploy-stack           # scripts/deploy-stack.sh only
 #   ./run_all_test_cases.sh --no-wait                # skip health polling
 #   ./run_all_test_cases.sh --coverage               # check-coverage after tests
 #   ./run_all_test_cases.sh --list                   # show registry
@@ -24,6 +26,8 @@ cd "$ROOT"
 SUITE_FILTER=""
 LIST_ONLY=0
 PASSTHROUGH=""
+DO_BUILD_IMAGES="${DO_BUILD_IMAGES:-0}"
+DO_DEPLOY_STACK="${DO_DEPLOY_STACK:-0}"
 
 usage() {
   cat <<'EOF'
@@ -31,7 +35,9 @@ Usage: run_all_test_cases.sh [options] [-- suite-script-args...]
 
 Options:
   --suite ID[,ID...]   Run only these suite ids (from suites.registry)
-  --build              Run ./build-all.sh before tests (images + stack deploy)
+  --build              Build images + deploy stack (shorthand for both below)
+  --build-images       Run ./scripts/build-images.sh (--profile e2e in CI, full locally)
+  --deploy-stack       Run ./scripts/deploy-stack.sh (CI: --detach + docker-compose.ci.yml)
   --no-install         Skip npm ci / playwright install in suite runners
   --no-wait            Skip stack health checks
   --coverage           Run e2e TC coverage check after suites
@@ -41,7 +47,8 @@ Options:
 Examples:
   ./run_all_test_cases.sh
   ./run_all_test_cases.sh --suite backtest-ui
-  ./run_all_test_cases.sh --suite backtest-app --coverage
+  ./run_all_test_cases.sh --build --coverage
+  ./run_all_test_cases.sh --build-images --deploy-stack --coverage
   ./run_all_test_cases.sh --suite backtest-ui -- --headed
   ./run_all_test_cases.sh --suite backtest-app -- --grep TC-ACC-001
 
@@ -98,6 +105,16 @@ while [ $# -gt 0 ]; do
       ;;
     --build)
       DO_BUILD=1
+      DO_BUILD_IMAGES=1
+      DO_DEPLOY_STACK=1
+      shift
+      ;;
+    --build-images)
+      DO_BUILD_IMAGES=1
+      shift
+      ;;
+    --deploy-stack)
+      DO_DEPLOY_STACK=1
       shift
       ;;
     --no-install)
@@ -130,9 +147,31 @@ if [ "$LIST_ONLY" = "1" ]; then
   exit 0
 fi
 
-if [ "$DO_BUILD" = "1" ]; then
-  log_info "Running ./build-all.sh (images + Swarm stack deploy)"
-  "$ROOT/build-all.sh" || die "build-all.sh failed"
+chmod +x "$ROOT/scripts/build-images.sh" "$ROOT/scripts/deploy-stack.sh" 2>/dev/null || true
+
+if [ "$DO_BUILD_IMAGES" = "1" ]; then
+  if [ "${CI:-}" = "true" ]; then
+    _build_profile=e2e
+    _build_parallel=4
+  else
+    _build_profile=full
+    _build_parallel=1
+  fi
+  log_info "Running ./scripts/build-images.sh --profile $_build_profile --parallel $_build_parallel"
+  "$ROOT/scripts/build-images.sh" --profile "$_build_profile" --parallel "$_build_parallel" \
+    || die "build-images.sh failed"
+fi
+
+if [ "$DO_DEPLOY_STACK" = "1" ]; then
+  _deploy_args=""
+  if [ "${CI:-}" = "true" ]; then
+    _deploy_args="--detach --compose docker-compose.ci.yml"
+  else
+    _deploy_args="--no-detach"
+  fi
+  log_info "Running ./scripts/deploy-stack.sh $_deploy_args"
+  # shellcheck disable=SC2086
+  "$ROOT/scripts/deploy-stack.sh" $_deploy_args || die "deploy-stack.sh failed"
 fi
 
 # Install npm deps once; suite scripts get --no-install to skip npm reinstall.
@@ -142,10 +181,12 @@ export NO_INSTALL=1
 
 ensure_stack_ready all
 
-if [ "${CI:-}" = "true" ] && [ "$DO_BUILD" = "1" ] && [ "${SKIP_CI_SEED:-0}" != "1" ]; then
-  log_info "CI: seeding BacktestApp database for E2E tests"
-  chmod +x "$ROOT/clear-and-seed.sh" 2>/dev/null || true
-  "$ROOT/clear-and-seed.sh" --yes || die "clear-and-seed.sh failed in CI"
+if [ "${CI:-}" = "true" ] && [ "${SKIP_CI_SEED:-0}" != "1" ]; then
+  if [ "$DO_BUILD" = "1" ] || [ "$DO_DEPLOY_STACK" = "1" ]; then
+    log_info "CI: seeding BacktestApp database for E2E tests"
+    chmod +x "$ROOT/clear-and-seed.sh" 2>/dev/null || true
+    "$ROOT/clear-and-seed.sh" --yes || die "clear-and-seed.sh failed in CI"
+  fi
 fi
 
 PASSED=""

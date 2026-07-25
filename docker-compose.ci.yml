@@ -1,0 +1,36 @@
+# CI overlay for docker-compose.yml — single-node GitHub Actions runners.
+# Usage:
+#   docker stack deploy --compose-file docker-compose.yml \
+#     --compose-file docker-compose.ci.yml moneymaker
+# Or:
+#   ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+#
+# Forces replicas:1 for services that default to 3 in production, reducing
+# scheduled tasks and memory pressure on a single Swarm manager.
+
+version: '3.8'
+
+services:
+  wsdatasplitter-consumer:
+    deploy:
+      replicas: 1
+
+  price-storer-consumer:
+    deploy:
+      replicas: 1
+
+  order-storer-consumer:
+    deploy:
+      replicas: 1
+
+  strategy-chooser-consumer:
+    deploy:
+      replicas: 1
+
+  backtest-streamer:
+    deploy:
+      replicas: 1
+
+  backtest-client:
+    deploy:
+      replicas: 1

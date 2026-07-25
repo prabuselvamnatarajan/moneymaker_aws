@@ -17,6 +17,7 @@ jobs:
       PLAYWRIGHT_WITH_DEPS: "1"
       STACK_HEALTH_MAX_RETRIES: "120"
       STACK_HEALTH_DELAY_SEC: "5"
+      SKIP_CI_SEED: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,10 +32,27 @@ jobs:
       - name: Make scripts executable
         run: |
           chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh
+          chmod +x scripts/build-images.sh scripts/deploy-stack.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
 
+      - name: Build E2E images
+        run: ./scripts/build-images.sh --profile e2e --parallel 4
+
+      - name: Deploy CI stack
+        run: ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+
+      - name: Wait for BackTestApp health
+        run: |
+          export ROOT="${GITHUB_WORKSPACE}"
+          . "$ROOT/scripts/test/lib/common.sh"
+          . "$ROOT/scripts/test/lib/stack.sh"
+          ensure_stack_ready all
+
+      - name: Seed BacktestApp database
+        run: ./clear-and-seed.sh --yes
+
       - name: Run automated test suites
-        run: ./run_all_test_cases.sh --build --coverage
+        run: ./run_all_test_cases.sh --coverage --no-wait
 
       - name: Dump Swarm diagnostics on failure
         if: failure()
@@ -75,5 +93,5 @@ jobs:
           script: |
             cd /home/ubuntu/moneymaker_aws
             git pull origin main
-            chmod +x build-all.sh
+            chmod +x build-all.sh scripts/build-images.sh scripts/deploy-stack.sh
             ./build-all.sh

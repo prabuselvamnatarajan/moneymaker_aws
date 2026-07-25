@@ -25,6 +25,9 @@ Modular scripts under `scripts/test/` wrap this Playwright package. Orchestrator
 
 # Rebuild images + deploy Swarm stack, then test
 ./run_all_test_cases.sh --build --coverage
+
+# Granular build / deploy (same as CI phases)
+./run_all_test_cases.sh --build-images --deploy-stack --coverage
 ```
 
 Direct suite scripts:
@@ -37,6 +40,37 @@ Direct suite scripts:
 ```
 
 Future docker-service suites are listed in `scripts/test/suites.registry` with `enabled=0`. Copy `_template_run_service_test_cases.sh` when adding automation.
+
+## Build & deploy scripts
+
+`build-all.sh` is a thin wrapper:
+
+```text
+build-all.sh
+  ├── scripts/build-images.sh   # docker build only
+  └── scripts/deploy-stack.sh   # swarm init + stack deploy
+```
+
+```bash
+# Full local / AWS path (all images, wait for Swarm converge)
+./build-all.sh
+# equivalent to:
+./scripts/build-images.sh --profile full
+./scripts/deploy-stack.sh --no-detach
+
+# E2E / CI-style (fewer images, detach + CI replica overlay)
+./scripts/build-images.sh --profile e2e --parallel 4
+./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+./clear-and-seed.sh --yes
+./run_all_test_cases.sh --coverage --no-wait
+```
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/build-images.sh` | Build custom Docker images (`--profile full\|e2e`, `--parallel N`) |
+| `scripts/deploy-stack.sh` | Swarm init, pre-pull base images, `docker stack deploy` |
+| `docker-compose.ci.yml` | CI overlay (`replicas: 1` for services that default to 3) |
+| `clear-and-seed.sh` | Wipe/reseed BacktestApp DB inside the running stack |
 
 ## Prerequisites (Docker Swarm)
 
@@ -109,25 +143,23 @@ npm run test:e2e:report
 - `@audit` — static source grep (TC-RBAC-001)
 - `@no-secrets` — requires unset JWT env vars
 
-## CI
+## CI (GitHub Actions)
 
-No `.gitlab-ci.yml` exists in this repo. Add a job like:
+Workflow: [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)
 
-```yaml
-e2e-backtest:
-  stage: test
-  script:
-    - ./build-all.sh
-    - curl -sf --retry 60 --retry-delay 3 http://localhost/backtestapp/health
-    - ./run_all_test_cases.sh --no-install --coverage
-    # or: cd e2e && npm ci && npx playwright install --with-deps && npm run test:e2e
-  artifacts:
-    when: always
-    paths:
-      - e2e/playwright-report/
+```text
+test job (every push / PR)
+  1. Build E2E images     → scripts/build-images.sh --profile e2e --parallel 4
+  2. Deploy CI stack      → scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+  3. Wait for /health
+  4. Seed database        → clear-and-seed.sh --yes
+  5. Run suites           → run_all_test_cases.sh --coverage --no-wait
+
+deploy job (push to main only, after test passes)
+  → SSH to AWS and run ./build-all.sh
 ```
 
-Note: `run_all_test_cases.sh` installs e2e deps unless `--no-install` is set; for CI prefer installing once then `--no-install`, or let the orchestrator install.
+Artifacts: on every run, `playwright-report-<run_id>` is uploaded when report files exist (Actions → run → Artifacts).
 
 ## Coverage tracking
 
