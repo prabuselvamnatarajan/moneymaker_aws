@@ -114,24 +114,38 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
 
 async function MSB(prevData, currentData, symbol, strategy_details) {
     const currentCandleState = currentData.candleState || prevData?.candleState;
-    if (!prevData || Object.keys(prevData).length === 0 || !prevData.prevHigh || prevData.prevHigh.high === null || prevData.prevHigh.high === undefined || !prevData.prevLow || prevData.prevLow.high === null || prevData.prevLow.high === undefined) {
-        // initialize
-        let initialState = {
-            isUp: null,
-            prevHigh: { high: currentData.high, low: currentData.low },
-            prevLow: { high: currentData.high, low: currentData.low },
-            lastBuyPrice: null,
-            lastSellPrice: null,
-            position: null,
-            closedByTargetOrSl: false,
-            candleState: currentCandleState,
-        };
-        return initialState;
-    }
-
-    let { isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl = false } = prevData;
-    let { isTest } = strategy_details;
     let { high, low, ltp } = currentData;
+    let { isTest } = strategy_details;
+
+    let isUp;
+    let prevHigh;
+    let prevLow;
+    let lastBuyPrice;
+    let lastSellPrice;
+    let position;
+    let closedByTargetOrSl = false;
+
+    const swingsInvalid = !prevData || Object.keys(prevData).length === 0
+        || !prevData.prevHigh || prevData.prevHigh.high === null || prevData.prevHigh.high === undefined
+        || !prevData.prevLow || prevData.prevLow.high === null || prevData.prevLow.high === undefined;
+
+    if (swingsInvalid) {
+        // Re-initialize swings but preserve any open position / entry so SL/target exits survive state recovery.
+        // Fall through to target/SL checks on this same tick (do not delay exit by one bar).
+        const preservedPosition = prevData?.position
+            || (prevData?.lastBuyPrice ? { direction: "LONG", entryPrice: prevData.lastBuyPrice } : null);
+        isUp = null;
+        prevHigh = { high, low };
+        prevLow = { high, low };
+        lastBuyPrice = preservedPosition?.direction === "LONG"
+            ? (preservedPosition.entryPrice ?? prevData?.lastBuyPrice ?? null)
+            : (prevData?.lastBuyPrice ?? null);
+        lastSellPrice = prevData?.lastSellPrice ?? null;
+        position = preservedPosition;
+        closedByTargetOrSl = prevData?.closedByTargetOrSl ?? false;
+    } else {
+        ({ isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl = false } = prevData);
+    }
 
     let target_type = strategy_details.target_type || "POINTS";
     let target_pts = strategy_details.target_pts !== undefined ? strategy_details.target_pts : 500;
@@ -220,17 +234,29 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
         // Trend is not established yet
         if (prevLow.high < high) {
             isUp = true;
-            logger.info(`msb_pts: Established initial trend UP at ${high}. Opening LONG position.`);
-            let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
-            if (requestBody && requestBody.quantity > 0) {
-                const orderPlaced = await triggerOrder(requestBody);
-                if (orderPlaced) {
-                    await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                    position = { direction: "LONG", entryPrice: ltp };
-                    lastBuyPrice = ltp;
-                    closedByTargetOrSl = false;
-                } else {
-                    logger.warn('msb_pts: Initial BUY failed; not opening position');
+            const existingHoldings = await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id);
+            if (existingHoldings > 0 || position) {
+                // Recover LONG awareness after state wipe that preserved bought_quantity
+                if (!position) {
+                    position = { direction: "LONG", entryPrice: lastBuyPrice || ltp };
+                    lastBuyPrice = position.entryPrice;
+                    logger.warn(
+                        `msb_pts: Skipping initial BUY — holdings already present (${existingHoldings}). Restored LONG state.`
+                    );
+                }
+            } else {
+                logger.info(`msb_pts: Established initial trend UP at ${high}. Opening LONG position.`);
+                let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+                if (requestBody && requestBody.quantity > 0) {
+                    const orderPlaced = await triggerOrder(requestBody);
+                    if (orderPlaced) {
+                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                        position = { direction: "LONG", entryPrice: ltp };
+                        lastBuyPrice = ltp;
+                        closedByTargetOrSl = false;
+                    } else {
+                        logger.warn('msb_pts: Initial BUY failed; not opening position');
+                    }
                 }
             }
             prevHigh.high = high;
@@ -324,19 +350,28 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 lastSellPrice = null;
             }
 
-            // Open LONG position (entry signal) only when flat
+            // Open LONG position (entry signal) only when flat and Redis has no leftover holdings
             if (!position) {
-                logger.info(`msb_pts: Opening LONG position at ${ltp} on trend break UP`);
-                let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
-                if (requestBody && requestBody.quantity > 0) {
-                    const orderPlaced = await triggerOrder(requestBody);
-                    if (orderPlaced) {
-                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                        position = { direction: "LONG", entryPrice: ltp };
-                        lastBuyPrice = ltp;
-                        closedByTargetOrSl = false;
-                    } else {
-                        logger.warn('msb_pts: BUY order failed; not opening LONG position');
+                const existingHoldings = await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id);
+                if (existingHoldings > 0) {
+                    position = { direction: "LONG", entryPrice: lastBuyPrice || ltp };
+                    lastBuyPrice = position.entryPrice;
+                    logger.warn(
+                        `msb_pts: Skipping trend-break BUY — holdings already present (${existingHoldings}). Restored LONG state.`
+                    );
+                } else {
+                    logger.info(`msb_pts: Opening LONG position at ${ltp} on trend break UP`);
+                    let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+                    if (requestBody && requestBody.quantity > 0) {
+                        const orderPlaced = await triggerOrder(requestBody);
+                        if (orderPlaced) {
+                            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                            position = { direction: "LONG", entryPrice: ltp };
+                            lastBuyPrice = ltp;
+                            closedByTargetOrSl = false;
+                        } else {
+                            logger.warn('msb_pts: BUY order failed; not opening LONG position');
+                        }
                     }
                 }
             }

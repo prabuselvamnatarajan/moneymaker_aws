@@ -17,6 +17,12 @@ function priceBucket(price, bucketSizePct) {
     return Math.round(price / bucketSize) * bucketSize;
 }
 
+function resolveBarTimestamp(tick) {
+    const raw = tick?.barTimestamp ?? tick?.ltt ?? tick?.timestamp;
+    const ts = Number(raw);
+    return Number.isFinite(ts) && ts > 0 ? ts : null;
+}
+
 function createInitialLevelState(tick, params, timeframe) {
     if (!timeframe) {
         throw new Error('timeframe is required for level state');
@@ -25,7 +31,8 @@ function createInitialLevelState(tick, params, timeframe) {
     const sessionDate = getSessionDate(tick.timestamp);
     const sessionOpenTs = getSessionOpenTs(tick.timestamp);
     const ohlc1d = tick.ohlc1d || {};
-    const barTs = Math.floor(tick.timestamp / intervalMs) * intervalMs;
+    const barTime = resolveBarTimestamp(tick) || tick.timestamp;
+    const barTs = Math.floor(barTime / intervalMs) * intervalMs;
 
     return {
         levels: {
@@ -108,20 +115,26 @@ function computeHvnLevels(volumeProfile, topN = 3) {
 }
 
 function assertVolumeProfileInterval(volumeProfile, timeframe) {
-    if (!volumeProfile) return;
+    if (!volumeProfile) return false;
     if (volumeProfile.interval && volumeProfile.interval !== timeframe) {
-        throw new Error(
-            `volumeProfile.interval mismatch: state=${volumeProfile.interval} deployment=${timeframe}`
-        );
+        // Soft signal — caller resets profile instead of crashing the consumer
+        return false;
     }
+    return true;
 }
 
 function updateMinuteBar(volumeProfile, tick, timeframe) {
     const intervalMs = timeframeToMs(timeframe);
-    // Construct TF bars from tick LTT/timestamp only — do not use I1 OHLC ts
-    const barTs = Math.floor(tick.timestamp / intervalMs) * intervalMs;
+    // Construct TF bars from trade time (barTimestamp/ltt) — do not use I1 OHLC ts
+    const barTime = resolveBarTimestamp(tick) || tick.timestamp;
+    const barTs = Math.floor(barTime / intervalMs) * intervalMs;
     const current = volumeProfile.currentBar;
     volumeProfile.interval = timeframe;
+
+    // Ignore stale/out-of-order ticks that would rewind or corrupt the forming bar
+    if (current && Number.isFinite(current.ts) && barTs < current.ts) {
+        return false;
+    }
 
     if (!current || current.ts !== barTs) {
         if (current && current.ts) {
@@ -189,7 +202,11 @@ function updateLevels(state, tick, params, timeframe) {
         return { ...state, ...init };
     }
 
-    assertVolumeProfileInterval(volumeProfile, timeframe);
+    if (!assertVolumeProfileInterval(volumeProfile, timeframe)) {
+        // Interval mismatch after TF change — rebuild level state cleanly
+        const init = createInitialLevelState(tick, params, timeframe);
+        return { ...state, ...init };
+    }
 
     levels = { ...levels };
     sessionMeta = { ...sessionMeta };

@@ -86,28 +86,40 @@ async function createConsumer() {
                 }
 
                 let lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest, strategy_details.deployment_id);
-                // Require matching state_epoch — missing epoch means pre-reset / pre-feature state
+                // Epoch mismatch: drop candle/swings (avoid old-TF semantics) but keep position for SL/target
                 if (lastState
                     && (lastState.state_epoch == null
                         || Number(lastState.state_epoch) !== Number(strategy_details.state_epoch))) {
                     logger.error(
-                        `Discarding stale msb_pts Redis state for ${symbol}: state_epoch=${lastState.state_epoch} message_epoch=${strategy_details.state_epoch}`
+                        `Resetting stale msb_pts candle epoch for ${symbol}: state_epoch=${lastState.state_epoch} message_epoch=${strategy_details.state_epoch}`
                     );
-                    lastState = null;
+                    const hasOpen = !!(lastState.position || lastState.lastBuyPrice);
+                    lastState = hasOpen
+                        ? {
+                            isUp: null,
+                            prevHigh: null,
+                            prevLow: null,
+                            lastBuyPrice: lastState.lastBuyPrice ?? null,
+                            lastSellPrice: lastState.lastSellPrice ?? null,
+                            position: lastState.position ?? null,
+                            closedByTargetOrSl: lastState.closedByTargetOrSl ?? false,
+                            candleState: null,
+                            state_epoch: Number(strategy_details.state_epoch),
+                        }
+                        : null;
                 }
 
                 logger.debug(`Message content for ${symbol}:`, msg);
 
-                const timeframe = strategy_details.timeframe;
-                if (!timeframe) {
-                    throw new Error(`timeframe missing on strategy_details for ${symbol}`);
-                }
+                // Default missing timeframe for rollout compatibility (legacy Redis routing)
+                const timeframe = strategy_details.timeframe || '1m';
+                strategy_details.timeframe = timeframe;
                 const existingCandleState = lastState?.candleState || null;
                 const { candle, newCandleState } = buildTimeframeCandle(msg, timeframe, existingCandleState);
 
                 if (!candle || candle.high == null || candle.low == null || candle.ltp == null) {
-                    // Soft-skip bad/incomplete ticks — do not fatal the consumer
-                    logger.warn(`Skipping ${symbol}: tick missing valid LTP/ltt (timeframe=${timeframe})`);
+                    // Soft-skip bad/incomplete/out-of-order ticks — do not fatal the consumer
+                    logger.warn(`Skipping ${symbol}: tick missing valid LTP/ltt or out-of-order (timeframe=${timeframe})`);
                     return;
                 }
 
@@ -127,6 +139,10 @@ async function createConsumer() {
             } catch (error) {
                 if (error?.name === 'StaleStateEpochError') {
                     logger.error(error.message);
+                    return;
+                }
+                if (error?.message && /Unsupported timeframe|timeframe is required|atrLookbackBars/i.test(error.message)) {
+                    logger.error(`Skipping ${symbol}: recoverable config error: ${error.message}`);
                     return;
                 }
                 handleFatalError(error, 'message handling');

@@ -586,18 +586,23 @@ const resetBacktestDeployment = async (deployment) => {
 
         const deploymentIdStr = deploymentId.toString();
 
-        // Safe non-blocking SCAN loop to delete all keys containing the deployment ID
+        // Safe non-blocking SCAN loop to delete all keys containing the deployment ID.
+        // Preserve deployment_state_epoch so strategy consumers never see a missing epoch mid-reset.
         let cursor = 0;
         const pattern = `*${deploymentIdStr}*`;
+        const epochKey = getStateEpochKey(deploymentIdStr);
         do {
           const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
           cursor = reply.cursor;
-          const keys = reply.keys;
-          if (keys && keys.length > 0) {
+          const keys = (reply.keys || []).filter((k) => k !== epochKey);
+          if (keys.length > 0) {
             await client.del(keys);
             console.log(`[Reset] Deleted scanned keys for deployment ${deploymentIdStr}:`, keys);
           }
         } while (cursor !== 0);
+
+        // Ensure epoch exists before backtest ticks start flowing
+        await ensureDeploymentStateEpoch(client, deploymentIdStr);
       } catch (err) {
         console.error(`[Reset] Error clearing Redis keys: ${err.message}`);
       } finally {
@@ -711,15 +716,20 @@ const resetDeploymentStrategyRuntimeState = async (deployment, { bumpEpoch = fal
       }
     }
 
-    // Also clear any other deployment-scoped strategy keys (candleState, bought qty cache, etc.)
-    // Preserve the epoch key so consumers can still validate freshness.
+    // Also clear any other deployment-scoped strategy keys (candle/swing/volume profile, etc.).
+    // Preserve epoch + quantity caches: TF change is blocked while Mongo shows an open position,
+    // but position tracker can lag — wiping bought/short qty would orphan live holdings.
     let cursor = 0;
     const pattern = `*${deploymentIdStr}*`;
     const epochKey = getStateEpochKey(deploymentIdStr);
+    const isProtectedKey = (k) =>
+      k === epochKey
+      || k.startsWith("bought_quantity:")
+      || k.startsWith("short_quantity:");
     do {
       const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
       cursor = reply.cursor;
-      const keys = (reply.keys || []).filter((k) => k !== epochKey);
+      const keys = (reply.keys || []).filter((k) => !isProtectedKey(k));
       if (keys.length > 0) {
         await client.del(keys);
         console.log(`[Reset] Deleted runtime keys for deployment ${deploymentIdStr}:`, keys);
@@ -850,8 +860,9 @@ export const updateDeployment = async (userId, id, updateData) => {
     throw new Error("Deployment not found");
   }
 
+  const previousTimeframe = existing.timeframe || "1m";
   const timeframeChanged = sanitizedUpdate.timeframe !== undefined
-    && (existing.timeframe || "1m") !== sanitizedUpdate.timeframe;
+    && previousTimeframe !== sanitizedUpdate.timeframe;
 
   if (timeframeChanged && (await hasOpenPosition(existing._id))) {
     throw new Error("Cannot change timeframe while deployment has an open position. Close the position or stop the deployment first.");
@@ -898,22 +909,48 @@ export const updateDeployment = async (userId, id, updateData) => {
     }
   );
 
-  if (updated && updated.symbol_control?.enabled && !updateData.skip_resolve) {
-    try {
-      await resolveDeploymentSymbol(updated._id, { force: false });
-    } catch (err) {
-      console.error(`[SymbolControl] Re-resolve on update failed for ${updated._id}:`, err.message);
+  try {
+    if (timeframeChanged) {
+      // Bump epoch + wipe candle/swing BEFORE any symbol-control sync that republishes Redis routing
+      await resetDeploymentStrategyRuntimeState(existing, { bumpEpoch: true });
     }
-  }
 
-  if (timeframeChanged) {
-    // Bump epoch first, then drop candle/swing state so in-flight ticks cannot write stale state back
-    await resetDeploymentStrategyRuntimeState(existing, { bumpEpoch: true });
-  }
+    if (updated && updated.symbol_control?.enabled && !updateData.skip_resolve) {
+      try {
+        await resolveDeploymentSymbol(updated._id, { force: false });
+      } catch (err) {
+        console.error(`[SymbolControl] Re-resolve on update failed for ${updated._id}:`, err.message);
+      }
+    }
 
-  // After TF change, sync must publish the new state_epoch or ticks will be stuck failing assertFreshStateEpoch
-  await syncAllDeploymentsToRedis({ failLoud: timeframeChanged });
-  await syncControlledDeploymentsIndex();
+    // After TF change, sync must publish the new state_epoch or ticks will be stuck failing assertFreshStateEpoch
+    await syncAllDeploymentsToRedis({ failLoud: timeframeChanged });
+    await syncControlledDeploymentsIndex();
+  } catch (err) {
+    if (timeframeChanged) {
+      // Roll back Mongo timeframe so UI/API and Redis routing cannot diverge permanently.
+      // Do NOT bump epoch again — forward path already advanced it; a second bump can
+      // leave activeStrategies advertising a stale epoch while Redis holds N+2.
+      try {
+        await Deployment.findOneAndUpdate(
+          { _id: id, user_id: userId },
+          { timeframe: previousTimeframe },
+          { runValidators: true }
+        );
+        try {
+          await syncAllDeploymentsToRedis({ failLoud: true });
+        } catch (syncErr) {
+          console.error(
+            `[Deployment] CRITICAL: timeframe rolled back for ${id} but Redis sync failed (${syncErr.message}). ` +
+            `Deployment may drop ticks until the next successful sync. Manual syncAllDeploymentsToRedis required.`
+          );
+        }
+      } catch (rollbackErr) {
+        console.error(`[Deployment] Timeframe rollback failed for ${id}:`, rollbackErr.message);
+      }
+    }
+    throw err;
+  }
   return updated;
 };
 
@@ -930,6 +967,35 @@ export const deleteDeployment = async (userId, id) => {
   await Deployment.deleteOne({ _id: deployment._id });
 
   console.log(`[Deployment Service] Cascading delete complete for deployment ${deployment.deployment_name || deployment._id}: removed ${deletedTrades.deletedCount} trades, ${deletedPositions.deletedCount} positions, ${deletedLedger.deletedCount} ledger entries.`);
+
+  // Clean orphaned epoch + runtime Redis keys for this deployment
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    let client;
+    try {
+      client = createClient({ url: redisUrl });
+      await client.connect();
+      const deploymentIdStr = deployment._id.toString();
+      const epochKey = getStateEpochKey(deploymentIdStr);
+      let cursor = 0;
+      const pattern = `*${deploymentIdStr}*`;
+      do {
+        const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+        cursor = reply.cursor;
+        const keys = reply.keys || [];
+        if (keys.length > 0) {
+          await client.del(keys);
+        }
+      } while (cursor !== 0);
+      await client.del(epochKey);
+    } catch (err) {
+      console.error(`[Deployment] Failed to clean Redis keys on delete for ${deployment._id}:`, err.message);
+    } finally {
+      if (client) {
+        await client.disconnect();
+      }
+    }
+  }
 
   await syncAllDeploymentsToRedis();
   await syncControlledDeploymentsIndex();
@@ -963,6 +1029,17 @@ export const transitionDeployment = async (userId, id, action) => {
   if (!transition.from.includes(deployment.current_status)) {
     throw new Error(
       `Cannot ${action} deployment in status '${deployment.current_status}'. Allowed from: ${transition.from.join(", ")}`
+    );
+  }
+
+  // LIVE/PAPER start|restart wipes strategy runtime — refuse while a position is open
+  if (
+    (action === "start" || action === "restart")
+    && deployment.strategy_mode !== "BACKTEST"
+    && (await hasOpenPosition(deployment._id))
+  ) {
+    throw new Error(
+      `Cannot ${action} deployment while it has an open position. Close the position or stop after flattening first.`
     );
   }
 
@@ -1460,13 +1537,15 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
   }
 };
 
-export const getDeploymentCandles = async (userId, id, timeframe = "1m") => {
+export const getDeploymentCandles = async (userId, id, timeframe) => {
   if (!mongoose.isValidObjectId(id)) return null;
   const deployment = await Deployment.findOne({ _id: id, user_id: userId });
   if (!deployment) return null;
 
   const symbol = deployment.symbol;
   const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
+  // Prefer explicit request TF, else deployment's configured candle timeframe
+  const resolvedTf = normalizeTimeframe(timeframe || deployment.timeframe || "1m");
 
-  return await getSymbolCandles(symbol, date, timeframe);
+  return await getSymbolCandles(symbol, date, resolvedTf);
 };

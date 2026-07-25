@@ -86,6 +86,7 @@ export function resolveTickTimestampMs(msg, feed = null) {
  * Does not use marketOHLC / I1 — OHLC is constructed purely from consecutive ticks.
  *
  * Soft-skips incomplete ticks (missing LTP or ltt/timestamp) by returning candle=null.
+ * Soft-skips out-of-order ticks whose bucket is older than the current bucket.
  * Unsupported timeframe still throws (config error).
  *
  * @param {Object} msg - Raw tick payload (fullFeed / ltpc / firstLevelWithGreeks)
@@ -95,8 +96,9 @@ export function resolveTickTimestampMs(msg, feed = null) {
  */
 export function buildTimeframeCandle(msg, timeframe, existingCandleState = null) {
   const feed = extractFeed(msg);
-  const ltp = feed?.ltpc?.ltp ?? msg?.ltp ?? null;
-  if (ltp == null || typeof ltp !== 'number' || Number.isNaN(ltp)) {
+  const rawLtp = feed?.ltpc?.ltp ?? msg?.ltp ?? null;
+  const ltp = typeof rawLtp === 'number' ? rawLtp : Number(rawLtp);
+  if (rawLtp == null || rawLtp === '' || !Number.isFinite(ltp)) {
     // Soft-skip: incomplete tick data must not crash the consumer
     return { candle: null, newCandleState: existingCandleState };
   }
@@ -115,6 +117,17 @@ export function buildTimeframeCandle(msg, timeframe, existingCandleState = null)
   const timeframeChanged = existingCandleState
     && existingCandleState.interval
     && existingCandleState.interval !== timeframe;
+
+  // Ignore stale/out-of-order ticks that would rewind the forming bar
+  if (
+    existingCandleState
+    && !timeframeChanged
+    && Number.isFinite(existingCandleState.bucketStartMs)
+    && bucketStartMs < existingCandleState.bucketStartMs
+  ) {
+    return { candle: null, newCandleState: existingCandleState };
+  }
+
   const bucketChanged = !existingCandleState
     || existingCandleState.bucketStartMs !== bucketStartMs
     || timeframeChanged;

@@ -167,23 +167,31 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             prevHigh.high = high;
             prevHigh.low = low;
             isUp = true;
-            // need to open long position
-            if (isTest) {
-                logger.info(`MSB Test: Opening Test long position at ${high}`);
+            // need to open long position — refuse if Redis already shows holdings
+            // (e.g. TF/state reset preserved bought_quantity while strategy state was wiped)
+            const existingHoldings = await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id);
+            if (existingHoldings > 0) {
+                logger.warn(
+                    `MSB: Skipping BUY — holdings already present in Redis (${existingHoldings}). Waiting for exit signal.`
+                );
             } else {
-                logger.info(`MSB: Opening Live long position at ${high}`);
-            }
-
-            let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
-            if (requestBody && requestBody.quantity > 0) {
-                const orderPlaced = await triggerOrder(requestBody);
-                if (orderPlaced) {
-                    await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                if (isTest) {
+                    logger.info(`MSB Test: Opening Test long position at ${high}`);
                 } else {
-                    logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                    logger.info(`MSB: Opening Live long position at ${high}`);
                 }
-            } else {
-                logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
+
+                let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+                if (requestBody && requestBody.quantity > 0) {
+                    const orderPlaced = await triggerOrder(requestBody);
+                    if (orderPlaced) {
+                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                    } else {
+                        logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                    }
+                } else {
+                    logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
+                }
             }
         }
         else {

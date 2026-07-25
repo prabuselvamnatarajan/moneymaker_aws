@@ -8,6 +8,7 @@ import { passesFilters } from './modules/filters.js';
 import { tryExecuteEntry, manageOpenPosition } from './modules/tradeManagement.js';
 import { logSweepOutcome } from './modules/signalLogger.js';
 import { fetchPriorDayOHLC } from './modules/sessionInit.js';
+import { decrementOpenPositions } from './redis_utils/concurrency.js';
 import { logger } from '/app/utils/logUtils.js';
 
 function createInitialState(tick, params, timeframe, stateEpoch) {
@@ -102,30 +103,60 @@ async function attemptEntry(state, tick, symbol, strategy_details, params) {
     };
 }
 
+async function reconcileDiscardedOpenSlot(prev, strategy_details, symbol) {
+    if (prev?.machineState === 'IN_POSITION' && strategy_details?.account_id) {
+        logger.warn(
+            `[liquidity_sweep] Releasing concurrency slot after discarding IN_POSITION state for ${symbol}`
+        );
+        await decrementOpenPositions(strategy_details.account_id);
+    }
+}
+
 async function LiquiditySweep(prevState, rawMsg, symbol, strategy_details) {
     const params = resolveParams(strategy_details);
-    const timeframe = strategy_details?.timeframe;
-    if (!timeframe) {
-        throw new Error(`timeframe missing on strategy_details for ${symbol}`);
-    }
-    const stateEpoch = strategy_details.state_epoch;
+    // Default missing timeframe for rollout compatibility (legacy Redis routing)
+    const timeframe = strategy_details?.timeframe || '1m';
+    strategy_details.timeframe = timeframe;
+    let stateEpoch = strategy_details.state_epoch;
     if (stateEpoch == null || !Number.isFinite(Number(stateEpoch))) {
-        throw new Error(`state_epoch missing on strategy_details for ${symbol}`);
+        // assertFreshStateEpoch should have healed this; soft-default for safety
+        stateEpoch = 1;
+        strategy_details.state_epoch = 1;
+        logger.warn(`[liquidity_sweep] state_epoch missing for ${symbol}; defaulting to 1`);
     }
 
-    // Discard Redis state written before a timeframe reset (stale/missing epoch or timeframe)
+    // Discard Redis state written before a timeframe reset (stale/missing epoch or timeframe).
+    // Preserve open positions across rollout epoch adoption; release slot only when fully discarded.
     let usablePrev = prevState && Object.keys(prevState).length > 0 ? prevState : null;
     if (usablePrev) {
-        if (usablePrev.state_epoch == null || Number(usablePrev.state_epoch) !== Number(stateEpoch)) {
+        const epochMismatch = usablePrev.state_epoch == null
+            || Number(usablePrev.state_epoch) !== Number(stateEpoch);
+        const tfMismatch = usablePrev.timeframe && usablePrev.timeframe !== timeframe;
+        if (epochMismatch || tfMismatch) {
             logger.error(
-                `[liquidity_sweep] Discarding stale Redis state for ${symbol}: state_epoch=${usablePrev.state_epoch} message_epoch=${stateEpoch}`
+                `[liquidity_sweep] Resetting stale Redis state for ${symbol}: state_epoch=${usablePrev.state_epoch} message_epoch=${stateEpoch} state_tf=${usablePrev.timeframe} deployment_tf=${timeframe}`
             );
-            usablePrev = null;
-        } else if (usablePrev.timeframe && usablePrev.timeframe !== timeframe) {
-            logger.error(
-                `[liquidity_sweep] Discarding stale Redis state for ${symbol}: state_tf=${usablePrev.timeframe} deployment_tf=${timeframe}`
-            );
-            usablePrev = null;
+            if (usablePrev.position && usablePrev.machineState === 'IN_POSITION') {
+                // Keep live position / SL management across epoch or TF resets; drop candle/level buffers.
+                // Stop/target are price levels — not timeframe-dependent.
+                usablePrev = {
+                    machineState: 'IN_POSITION',
+                    position: usablePrev.position,
+                    tickBuffer: [],
+                    sweep: null,
+                    pendingSignal: null,
+                    cooldownUntil: usablePrev.cooldownUntil ?? null,
+                    metrics: usablePrev.metrics || { avgAbsDelta: 1, avgVolumeRate: 1 },
+                    lastLtt: usablePrev.lastLtt ?? null,
+                    sessionAtr: null,
+                    priorDayFetched: false,
+                    timeframe,
+                    state_epoch: Number(stateEpoch),
+                };
+            } else {
+                await reconcileDiscardedOpenSlot(usablePrev, strategy_details, symbol);
+                usablePrev = null;
+            }
         }
     }
 

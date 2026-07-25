@@ -185,4 +185,30 @@ describe('CandleBuilder Multi-Timeframe Tests', () => {
         assert.equal(res.candle.close, 22100.5);
         assert.equal(res.newCandleState.bucketStartMs, Math.floor(ts / 180000) * 180000);
     });
+
+    it('coerces string LTP instead of soft-skipping', () => {
+        const ts = 1720236005000;
+        const res = buildTimeframeCandle({ ltpc: { ltp: '22100.5', ltt: ts } }, '1m', null);
+        assert.equal(res.candle.open, 22100.5);
+        assert.equal(res.candle.close, 22100.5);
+    });
+
+    it('soft-skips out-of-order ticks that rewind the bucket', () => {
+        const ts = 1720236005000;
+        const first = buildTimeframeCandle({ ltpc: { ltp: 100, ltt: ts } }, '5m', null);
+        const second = buildTimeframeCandle(
+            { ltpc: { ltp: 110, ltt: ts + 90_000 } },
+            '5m',
+            first.newCandleState
+        );
+        assert.equal(second.candle.high, 110);
+
+        const stale = buildTimeframeCandle(
+            { ltpc: { ltp: 50, ltt: ts - 300_000 } },
+            '5m',
+            second.newCandleState
+        );
+        assert.equal(stale.candle, null);
+        assert.equal(stale.newCandleState.high, 110);
+    });
 });

@@ -86,7 +86,8 @@ async function createConsumer() {
                 }
 
                 let lastState = await getMSBStrategyStateForSymbol(symbol, isBackTest, strategy_details.deployment_id);
-                // Require matching state_epoch — missing epoch means pre-reset / pre-feature state
+                // Epoch mismatch: drop candle/swing state so old-TF swings cannot drive new-TF entries.
+                // BUY path refuses when bought_quantity is still present, so holdings are not doubled.
                 if (lastState
                     && (lastState.state_epoch == null
                         || Number(lastState.state_epoch) !== Number(strategy_details.state_epoch))) {
@@ -98,16 +99,15 @@ async function createConsumer() {
 
                 logger.debug(`Message content for ${symbol}:`, msg);
 
-                const timeframe = strategy_details.timeframe;
-                if (!timeframe) {
-                    throw new Error(`timeframe missing on strategy_details for ${symbol}`);
-                }
+                // Default missing timeframe for rollout compatibility (legacy Redis routing)
+                const timeframe = strategy_details.timeframe || '1m';
+                strategy_details.timeframe = timeframe;
                 const existingCandleState = lastState?.candleState || null;
                 const { candle, newCandleState } = buildTimeframeCandle(msg, timeframe, existingCandleState);
 
                 if (!candle || candle.high == null || candle.low == null || candle.ltp == null) {
-                    // Soft-skip bad/incomplete ticks — do not fatal the consumer
-                    logger.warn(`Skipping ${symbol}: tick missing valid LTP/ltt (timeframe=${timeframe})`);
+                    // Soft-skip bad/incomplete/out-of-order ticks — do not fatal the consumer
+                    logger.warn(`Skipping ${symbol}: tick missing valid LTP/ltt or out-of-order (timeframe=${timeframe})`);
                     return;
                 }
 
@@ -127,6 +127,11 @@ async function createConsumer() {
             } catch (error) {
                 if (error?.name === 'StaleStateEpochError') {
                     logger.error(error.message);
+                    return;
+                }
+                // Unsupported timeframe / bad config should not crash the whole multi-deployment consumer
+                if (error?.message && /Unsupported timeframe|timeframe is required|atrLookbackBars/i.test(error.message)) {
+                    logger.error(`Skipping ${symbol}: recoverable config error: ${error.message}`);
                     return;
                 }
                 handleFatalError(error, 'message handling');

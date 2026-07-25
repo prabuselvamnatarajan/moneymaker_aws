@@ -77,11 +77,12 @@ function parseTick(dataObject, previousLtp = null) {
     const { feed, feedType } = resolved;
 
     const ltpc = feed.ltpc;
-    const ltp = ltpc.ltp ?? null;
+    const rawLtp = ltpc.ltp ?? null;
+    const ltp = rawLtp == null || rawLtp === '' ? null : Number(rawLtp);
     const ltq = Number(ltpc.ltq) || 0;
-    // Upstox LTPC.ltt = last traded time (ms epoch). Prefer over server timestamps.
+    // Upstox LTPC.ltt = last traded time (ms epoch). Used for bar bucketing.
     const rawLtt = Number(ltpc.ltt);
-    const ltt = Number.isFinite(rawLtt) && rawLtt > 0 ? rawLtt : null;
+    const tradeTs = Number.isFinite(rawLtt) && rawLtt > 0 ? rawLtt : null;
     const cp = ltpc.cp ?? null;
 
     const quotes = feed.marketLevel?.bidAskQuote || [];
@@ -97,21 +98,22 @@ function parseTick(dataObject, previousLtp = null) {
         confidence = 'low';
     }
 
-    let tickTimestamp = ltt;
-    if (!tickTimestamp && dataObject && dataObject.timestamp) {
+    // Wall-clock / server time for gap detection (illiquid instruments have sparse ltt)
+    let serverTs = null;
+    if (dataObject && dataObject.timestamp) {
         const parsedTs = new Date(dataObject.timestamp).getTime();
         if (!isNaN(parsedTs) && parsedTs > 0) {
-            tickTimestamp = parsedTs;
+            serverTs = parsedTs;
         }
     }
-    if (!tickTimestamp) {
-        tickTimestamp = Date.now();
-    }
+    const gapTimestamp = serverTs || tradeTs || Date.now();
+    // Bar bucketing prefers exchange trade time when available
+    const barTimestamp = tradeTs || serverTs || gapTimestamp;
 
     return {
-        ltp,
+        ltp: Number.isFinite(ltp) ? ltp : null,
         ltq,
-        ltt: ltt || tickTimestamp,
+        ltt: tradeTs || gapTimestamp,
         cp,
         bestBid,
         bestAsk,
@@ -126,7 +128,8 @@ function parseTick(dataObject, previousLtp = null) {
         feedType,
         confidence,
         previousLtp,
-        timestamp: tickTimestamp,
+        timestamp: gapTimestamp,
+        barTimestamp,
     };
 }
 

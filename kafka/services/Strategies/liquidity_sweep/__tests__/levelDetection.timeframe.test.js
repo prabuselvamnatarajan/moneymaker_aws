@@ -62,13 +62,25 @@ describe('levelDetection timeframe bars from tick LTT', () => {
         assert.equal(state.volumeProfile.minuteBars.length, 1);
     });
 
-    it('fails loudly when volumeProfile.interval mismatches deployment timeframe', () => {
+    it('soft-resets volumeProfile when interval mismatches deployment timeframe', () => {
         const tick = makeTick({ ltp: 100, ltt: baseLtt });
         const state = createInitialLevelState(tick, DEFAULT_PARAMS, '1m');
-        assert.throws(
-            () => updateLevels(state, tick, DEFAULT_PARAMS, '5m'),
-            /volumeProfile.interval mismatch/
-        );
+        const next = updateLevels(state, tick, DEFAULT_PARAMS, '5m');
+        assert.equal(next.volumeProfile.interval, '5m');
+        assert.equal(next.volumeProfile.currentBar.ts, baseLtt);
+        assert.equal((next.volumeProfile.minuteBars || []).length, 0);
+    });
+
+    it('ignores out-of-order ticks that would rewind the current bar', () => {
+        const tick1 = makeTick({ ltp: 100, ltt: baseLtt + 1000 });
+        let state = createInitialLevelState(tick1, DEFAULT_PARAMS, '5m');
+        state = updateLevels(state, makeTick({ ltp: 110, ltt: baseLtt + 90_000 }), DEFAULT_PARAMS, '5m');
+        assert.equal(state.volumeProfile.currentBar.high, 110);
+
+        // Stale tick from earlier in the same bucket window must not corrupt OHLC
+        state = updateLevels(state, makeTick({ ltp: 50, ltt: baseLtt - 60_000 }), DEFAULT_PARAMS, '5m');
+        assert.equal(state.volumeProfile.currentBar.high, 110);
+        assert.equal(state.volumeProfile.currentBar.low, 100);
     });
 });
 
@@ -76,13 +88,14 @@ describe('ATR multi-timeframe normalization', () => {
     it('scales lookback bars to keep ~1m-equivalent wall-clock window', () => {
         assert.equal(resolveAtrLookbackBars('1m', 14), 14);
         assert.equal(resolveAtrLookbackBars('5m', 14), 3); // ceil(14/5)
-        assert.equal(resolveAtrLookbackBars('15m', 14), 2); // max(2, ceil(14/15))
+        assert.equal(resolveAtrLookbackBars('15m', 14), 3); // max(3, ceil(14/15)) for higher TFs
+        assert.equal(resolveAtrLookbackBars('15m', 1), 2); // soft-clamp bad config
     });
 
-    it('normalizes TF-bar ATR magnitude to 1m-equivalent for filter thresholds', () => {
-        // 5-point average move on 5m bars → 1 point per minute
-        assert.equal(normalizeAtrTo1m(5, '5m'), 1);
-        assert.equal(normalizeAtrTo1m(15, '15m'), 1);
+    it('normalizes TF-bar ATR magnitude to 1m-equivalent via sqrt(t)', () => {
+        // Volatility scales ~√t: 5-point move on 5m → 5/√5
+        assert.ok(Math.abs(normalizeAtrTo1m(5, '5m') - 5 / Math.sqrt(5)) < 1e-9);
+        assert.ok(Math.abs(normalizeAtrTo1m(15, '15m') - 15 / Math.sqrt(15)) < 1e-9);
         assert.equal(normalizeAtrTo1m(2, '1m'), 2);
     });
 
@@ -99,6 +112,7 @@ describe('ATR multi-timeframe normalization', () => {
                 ltq: 10,
                 ltt: barStart + 1000,
                 timestamp: barStart + 1000,
+                barTimestamp: barStart + 1000,
                 ohlc1d: { high: 200, low: 50 },
             };
             if (!state) {
@@ -111,6 +125,7 @@ describe('ATR multi-timeframe normalization', () => {
                 ltq: 10,
                 ltt: barStart + 299_000,
                 timestamp: barStart + 299_000,
+                barTimestamp: barStart + 299_000,
                 ohlc1d: { high: 200, low: 50 },
             };
             state = updateLevels(state, tickClose, params, '5m');
@@ -122,6 +137,7 @@ describe('ATR multi-timeframe normalization', () => {
             ltq: 10,
             ltt: baseLtt + 4 * 300_000,
             timestamp: baseLtt + 4 * 300_000,
+            barTimestamp: baseLtt + 4 * 300_000,
             ohlc1d: { high: 200, low: 50 },
         };
         state = updateLevels(state, next, params, '5m');
@@ -132,8 +148,8 @@ describe('ATR multi-timeframe normalization', () => {
             resolveAtrLookbackBars('5m', 14)
         );
         assert.ok(raw != null);
-        // sessionAtr must be 1m-normalized (raw / 5)
-        assert.ok(Math.abs(state.sessionAtr - raw / 5) < 1e-9);
+        // sessionAtr must be 1m-normalized via √t (raw / √5)
+        assert.ok(Math.abs(state.sessionAtr - raw / Math.sqrt(5)) < 1e-9);
         assert.equal(timeframeToMs('5m'), 300000);
     });
 });

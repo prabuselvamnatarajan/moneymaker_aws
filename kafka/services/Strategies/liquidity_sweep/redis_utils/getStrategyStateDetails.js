@@ -35,15 +35,33 @@ async function ensureRedisJson() {
     return redisJson;
 }
 
-async function getDeploymentStateEpoch(deploymentId) {
+/**
+ * Read or self-heal deployment_state_epoch.
+ * Missing keys are recoverable (LRU eviction / backtest reset race) — never fatal.
+ * Always seeds "1" (never trusts Kafka message epoch) so a stale in-flight tick
+ * cannot pin Redis below the true epoch after eviction.
+ */
+async function ensureDeploymentStateEpoch(deploymentId) {
     if (!deploymentId) {
         throw new Error('deployment_id is required to read state_epoch');
     }
     await ensureRedisJson();
     const client = redisClientInstance.getClient();
-    const raw = await client.get(getEpochKey(deploymentId));
+    const key = getEpochKey(deploymentId);
+    const raw = await client.get(key);
     if (raw == null || raw === '') {
-        throw new Error(`deployment_state_epoch missing for deployment ${deploymentId}`);
+        const seed = '1';
+        const created = await client.set(key, seed, { NX: true });
+        if (created) {
+            logger.warn(`Recreated missing ${key} = ${seed}`);
+            return 1;
+        }
+        const afterRace = await client.get(key);
+        const epoch = Number(afterRace);
+        if (!Number.isFinite(epoch)) {
+            throw new Error(`Invalid deployment_state_epoch for ${deploymentId}: ${afterRace}`);
+        }
+        return epoch;
     }
     const epoch = Number(raw);
     if (!Number.isFinite(epoch)) {
@@ -52,19 +70,31 @@ async function getDeploymentStateEpoch(deploymentId) {
     return epoch;
 }
 
+async function getDeploymentStateEpoch(deploymentId) {
+    return ensureDeploymentStateEpoch(deploymentId);
+}
+
 async function assertFreshStateEpoch(strategy_details = {}) {
     const deploymentId = strategy_details.deployment_id;
     if (!deploymentId) {
         throw new Error('strategy_details.deployment_id is required');
     }
-    const messageEpoch = strategy_details.state_epoch;
-    if (messageEpoch == null || !Number.isFinite(Number(messageEpoch))) {
-        throw new Error(`strategy_details.state_epoch missing for deployment ${deploymentId}`);
+
+    const messageEpochRaw = strategy_details.state_epoch;
+    const hasMessageEpoch = messageEpochRaw != null && Number.isFinite(Number(messageEpochRaw));
+    const redisEpoch = await ensureDeploymentStateEpoch(deploymentId);
+
+    if (!hasMessageEpoch) {
+        strategy_details.state_epoch = redisEpoch;
+        logger.warn(
+            `strategy_details.state_epoch missing for deployment ${deploymentId}; adopting redis epoch ${redisEpoch}`
+        );
+        return redisEpoch;
     }
-    const redisEpoch = await getDeploymentStateEpoch(deploymentId);
-    if (Number(messageEpoch) !== Number(redisEpoch)) {
+
+    if (Number(messageEpochRaw) !== Number(redisEpoch)) {
         throw new StaleStateEpochError(
-            `Stale state_epoch for deployment ${deploymentId}: message=${messageEpoch} redis=${redisEpoch}`
+            `Stale state_epoch for deployment ${deploymentId}: message=${messageEpochRaw} redis=${redisEpoch}`
         );
     }
     return redisEpoch;
@@ -87,7 +117,7 @@ async function writeLiquiditySweepStateForSymbol(symbol, isTestMode = false, new
     if (stateEpoch == null || !Number.isFinite(Number(stateEpoch))) {
         throw new Error(`newState.state_epoch required before write for deployment ${deploymentId}`);
     }
-    const redisEpoch = await getDeploymentStateEpoch(deploymentId);
+    const redisEpoch = await ensureDeploymentStateEpoch(deploymentId);
     if (Number(stateEpoch) !== Number(redisEpoch)) {
         throw new StaleStateEpochError(
             `Refusing stale state write for deployment ${deploymentId}: state=${stateEpoch} redis=${redisEpoch}`
@@ -118,5 +148,6 @@ export {
     writeLiquiditySweepStateForSymbol,
     setBacktestCompleted,
     getDeploymentStateEpoch,
+    ensureDeploymentStateEpoch,
     assertFreshStateEpoch,
 };

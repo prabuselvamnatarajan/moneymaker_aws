@@ -130,12 +130,16 @@ async function createConsumer() {
                     return;
                 }
                 if (err?.name === 'BadTickError') {
-                    // Soft-skip bad/incomplete ticks — only config/epoch bugs are fatal
+                    // Soft-skip bad/incomplete ticks — only true infrastructure bugs are fatal
                     logger.warn(err.message);
                     return;
                 }
-                logger.error(`Fatal error processing message for ${symbol}:`, err);
-                process.exit(1);
+                if (err?.message && /Unsupported timeframe|timeframe is required|atrLookbackBars|volumeProfile\.interval|Invalid ATR/i.test(err.message)) {
+                    logger.error(`Skipping ${symbol}: recoverable config/data error: ${err.message}`);
+                    return;
+                }
+                // Per-message strategy/data errors must not take down every deployment on this consumer
+                logger.error(`Error processing message for ${symbol} (continuing):`, err);
             }
         },
     });
