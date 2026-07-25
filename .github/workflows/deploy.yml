@@ -1,14 +1,55 @@
-name: Deploy to AWS
+name: Test and Deploy to AWS
 
 on:
   push:
-    branches:
-      - main
+  pull_request:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  test:
+    name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Make scripts executable
+        run: |
+          chmod +x build-all.sh run_all_test_cases.sh
+          find scripts -type f -name '*.sh' -exec chmod +x {} +
+
+      - name: Run automated test suites
+        env:
+          PLAYWRIGHT_WITH_DEPS: "1"
+        run: ./run_all_test_cases.sh --build --coverage
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: e2e/playwright-report/
+          retention-days: 7
+
+  deploy:
+    name: Deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: false
     steps:
       - name: Deploy to AWS Instance
         uses: appleboy/ssh-action@v1.0.3
