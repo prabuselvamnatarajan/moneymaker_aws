@@ -58,11 +58,26 @@ const hasOpenPosition = async (deploymentId) => {
   const openPos = await Position.findOne({
     deployment_id: deploymentId,
     status: "OPEN",
-    open_size: { $ne: 0 },
-  });
-  if (openPos) return true;
+  }).select("open_size");
+  if (openPos) {
+    return openPos.open_size !== 0;
+  }
+
+  // position_size is written in the same transaction as the Position document, so a
+  // non-zero counter with no OPEN position is drift. Reconcile it rather than leaving the
+  // deployment permanently unable to start, restart, or change timeframe.
   const dep = await Deployment.findById(deploymentId).select("position_size");
-  return !!(dep && dep.position_size !== 0);
+  if (!dep || dep.position_size === 0) {
+    return false;
+  }
+  console.warn(
+    `[Deployment] position_size=${dep.position_size} on ${deploymentId} with no OPEN position; reconciling to 0`
+  );
+  await Deployment.updateOne(
+    { _id: deploymentId },
+    { $set: { position_size: 0, average_entry_price: 0 } }
+  );
+  return false;
 };
 
 const subscribeSymbolToken = async (instrumentToken, userId) => {
@@ -618,6 +633,18 @@ const resetBacktestDeployment = async (deployment) => {
 
 const LIQUIDITY_SWEEP_STRATEGY = "liquidity_sweep";
 
+const resolveStrategyName = async (deployment) => {
+  const inlineName = deployment.strategy_id?.strategy_name;
+  if (inlineName) {
+    return inlineName;
+  }
+  if (!deployment.strategy_id) {
+    return undefined;
+  }
+  const strategy = await Strategy.findById(deployment.strategy_id);
+  return strategy?.strategy_name;
+};
+
 const STATE_EPOCH_KEY_PREFIX = "deployment_state_epoch:";
 
 const getStateEpochKey = (deploymentId) => `${STATE_EPOCH_KEY_PREFIX}${deploymentId}`;
@@ -666,11 +693,7 @@ const resetDeploymentStrategyRuntimeState = async (deployment, { bumpEpoch = fal
     throw new Error("REDIS_URL is required to reset deployment strategy runtime state");
   }
 
-  let strategyName = deployment.strategy_id?.strategy_name;
-  if (!strategyName && deployment.strategy_id) {
-    const strategy = await Strategy.findById(deployment.strategy_id);
-    strategyName = strategy?.strategy_name;
-  }
+  const strategyName = await resolveStrategyName(deployment);
 
   let client;
   try {
@@ -743,15 +766,13 @@ const resetDeploymentStrategyRuntimeState = async (deployment, { bumpEpoch = fal
 };
 
 const resetLiquiditySweepRuntimeState = async (deployment) => {
-  let strategyName = deployment.strategy_id?.strategy_name;
-  if (!strategyName && deployment.strategy_id) {
-    const strategy = await Strategy.findById(deployment.strategy_id);
-    strategyName = strategy?.strategy_name;
-  }
-  if (strategyName !== LIQUIDITY_SWEEP_STRATEGY) {
+  if ((await resolveStrategyName(deployment)) !== LIQUIDITY_SWEEP_STRATEGY) {
     return;
   }
-  await resetDeploymentStrategyRuntimeState(deployment, { bumpEpoch: false });
+  // Bump the epoch so a tick enriched just before the delete cannot write the
+  // pre-reset state back. transitionDeployment republishes the new epoch via
+  // syncAllDeploymentsToRedis before returning.
+  await resetDeploymentStrategyRuntimeState(deployment, { bumpEpoch: true });
 };
 
 export const createDeployment = async (userId, deploymentData) => {
@@ -1032,14 +1053,16 @@ export const transitionDeployment = async (userId, id, action) => {
     );
   }
 
-  // LIVE/PAPER start|restart wipes strategy runtime — refuse while a position is open
+  // Only liquidity_sweep has its Redis runtime wiped on start|restart; MSB and msb_pts
+  // keep their state, so blocking them here would be a restriction without a purpose.
   if (
     (action === "start" || action === "restart")
     && deployment.strategy_mode !== "BACKTEST"
+    && (await resolveStrategyName(deployment)) === LIQUIDITY_SWEEP_STRATEGY
     && (await hasOpenPosition(deployment._id))
   ) {
     throw new Error(
-      `Cannot ${action} deployment while it has an open position. Close the position or stop after flattening first.`
+      `Cannot ${action} this deployment while it has an open position, because ${action} clears its liquidity_sweep runtime state. Flatten the position first.`
     );
   }
 
