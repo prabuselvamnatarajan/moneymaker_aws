@@ -82,4 +82,11 @@ connectDB().then(async () => {
   } catch (err) {
     console.error("⚠️ Failed to initialize WebSocket server:", err.message);
   }
+  try {
+    const { startBacktestCompletionWatcher } = await import("./services/backtestCompletionWatcher.js");
+    startBacktestCompletionWatcher();
+    console.log("✅ Backtest completion watcher started");
+  } catch (err) {
+    console.error("⚠️ Failed to start backtest completion watcher:", err.message);
+  }
 });

@@ -1,6 +1,4 @@
 import mongoose from "mongoose";
-import fs from "fs/promises";
-import path from "path";
 import Trade from "../models/trade.js";
 import Account from "../models/account.js";
 import Ledger from "../models/ledger.js";
@@ -20,100 +18,6 @@ import {
   readLiveCache,
 } from "../utils/positionRedis.js";
 
-async function updateBacktestExcursions(position, currentTradeTime, TradeModel) {
-  let startTime = position.opened_at;
-  if (position.trades && position.trades.length > 0) {
-    const lastTradeId = position.trades[position.trades.length - 1];
-    const lastTrade = await TradeModel.findById(lastTradeId);
-    if (lastTrade) {
-      startTime = lastTrade.execution_time || lastTrade.created_at || startTime;
-    }
-  }
-
-  const startMs = new Date(startTime).getTime();
-  const endMs = new Date(currentTradeTime).getTime();
-
-  if (startMs >= endMs) {
-    return;
-  }
-
-  // Get all date strings between startMs and endMs inclusive to handle multi-day positions
-  const dates = [];
-  let currentMs = startMs;
-  while (currentMs <= endMs) {
-    dates.push(new Date(currentMs).toISOString().slice(0, 10));
-    currentMs += 24 * 60 * 60 * 1000;
-  }
-  const lastDateStr = new Date(endMs).toISOString().slice(0, 10);
-  if (!dates.includes(lastDateStr)) {
-    dates.push(lastDateStr);
-  }
-
-  const symbol = position.symbol;
-  const sanitizedSymbol = String(symbol).replace(/[^a-zA-Z0-9-_]/g, '_');
-  
-  let ticks = [];
-  const exportedDataDir = process.env.EXPORTED_DATA_DIR
-    || path.join(process.env.SHARED_DIR || process.env.EXPORT_VOLUME_PATH || "/shared", "exportedData");
-  for (const d of dates) {
-    const filePath = path.join(exportedDataDir, d, `${sanitizedSymbol}.json`);
-    try {
-      const fileContent = await fs.readFile(filePath, "utf8");
-      const dayTicks = JSON.parse(fileContent);
-      if (!Array.isArray(dayTicks)) {
-        throw new Error(`expected JSON array at ${filePath}`);
-      }
-      ticks = ticks.concat(dayTicks);
-    } catch (err) {
-      throw new Error(
-        `[updateBacktestExcursions] Tick data not found or unreadable for ${symbol} on ${d} at ${filePath}: ${err.message}`
-      );
-    }
-  }
-
-  if (ticks.length === 0) return;
-
-  let maxUp = position.max_up || 0;
-  let maxDown = position.max_down || 0;
-  let maxUpPct = position.max_up_pct || 0;
-  let maxDownPct = position.max_down_pct || 0;
-
-  for (const tick of ticks) {
-    const feed = tick.fullFeed?.marketFF || tick.fullFeed?.indexFF;
-    if (!feed?.ltpc) continue;
-
-    const ltpc = feed.ltpc;
-    const ltp = ltpc.ltp;
-    if (ltp === undefined || ltp === null) continue;
-
-    let tickTimeMs;
-    if (tick.timestamp) {
-      tickTimeMs = new Date(tick.timestamp).getTime();
-    } else if (ltpc.ltt) {
-      tickTimeMs = parseInt(ltpc.ltt, 10);
-    } else {
-      continue;
-    }
-
-    if (tickTimeMs < startMs || tickTimeMs > endMs) {
-      continue;
-    }
-
-    const unrealised = calcUnrealizedPnl(position.average_entry_price, position.direction, position.open_size, ltp);
-    const pct = calcProfitPct(position.average_entry_price, position.direction, ltp);
-
-    maxUp = Math.max(maxUp, unrealised);
-    maxDown = Math.min(maxDown, unrealised);
-    maxUpPct = Math.max(maxUpPct, pct);
-    maxDownPct = Math.min(maxDownPct, pct);
-  }
-
-  position.max_up = maxUp;
-  position.max_down = maxDown;
-  position.max_up_pct = maxUpPct;
-  position.max_down_pct = maxDownPct;
-}
-
 function buildAccountQuery(accountId) {
   if (mongoose.isValidObjectId(accountId)) {
     return {
@@ -124,6 +28,9 @@ function buildAccountQuery(accountId) {
 }
 
 function buildPositionBase(tradeData, account, deployment, direction, size, entryPrice, price, typeOfOrder, commission) {
+  const resolvedEntry = entryPrice > 0 ? entryPrice : (price > 0 ? price : 0);
+  const openSize = Math.abs(size);
+  const markPrice = price > 0 ? price : resolvedEntry;
   const position = {
     deployment_id: tradeData.deployment_id,
     user_id: tradeData.user_id,
@@ -135,15 +42,18 @@ function buildPositionBase(tradeData, account, deployment, direction, size, entr
     strategy_mode: deployment?.strategy_mode || undefined,
     direction,
     status: "OPEN",
-    total_size: Math.abs(size),
-    open_size: Math.abs(size),
-    average_entry_price: entryPrice > 0 ? entryPrice : (price > 0 ? price : 0),
+    total_size: openSize,
+    open_size: openSize,
+    average_entry_price: resolvedEntry,
     buy_price: 0,
     sell_price: 0,
     buy_qty: 0,
     sell_qty: 0,
     realised_pnl: 0,
-    unrealised_pnl: 0,
+    // Commission is amortised into average_entry_price; mark at fill price so
+    // the first tick does not jump unrealised from 0 to -commission.
+    // Unrealised is always from open_size only; realised stays 0 until closed qty.
+    unrealised_pnl: calcUnrealizedPnl(resolvedEntry, direction, openSize, markPrice),
     max_up: 0,
     max_down: 0,
     max_up_pct: 0,
@@ -152,9 +62,17 @@ function buildPositionBase(tradeData, account, deployment, direction, size, entr
     trades: [],
     opened_at: tradeData.execution_time ? new Date(tradeData.execution_time) : new Date(),
     closed_at: null,
-    last_ltp: price > 0 ? price : 0,
+    last_ltp: markPrice,
+    last_tick_at: tradeData.execution_time ? new Date(tradeData.execution_time) : new Date(),
   };
-  applyBuySellPrice(position, typeOfOrder, price, Math.abs(size));
+  // Seed excursions from the opening mark (often slightly negative due to commission-in-avg).
+  const openPct = calcProfitPct(resolvedEntry, direction, markPrice);
+  const seeded = applyExcursion(position, position.unrealised_pnl, openPct);
+  position.max_up = seeded.max_up;
+  position.max_down = seeded.max_down;
+  position.max_up_pct = seeded.max_up_pct;
+  position.max_down_pct = seeded.max_down_pct;
+  applyBuySellPrice(position, typeOfOrder, price, openSize);
   return position;
 }
 
@@ -163,10 +81,10 @@ async function finalizeClosePosition(position, trade, price, pnlContribution, se
   const openBeforeClose = position.open_size || 0;
   const direction = position.direction;
 
-  // Fold closing price into excursions using size before zeroing
-  if (position.strategy_mode === "BACKTEST") {
-    await updateBacktestExcursions(position, trade.execution_time || trade.created_at || new Date(), Trade);
-  } else if (price > 0 && openBeforeClose > 0 && entry > 0) {
+  // Fold closing price into excursions using size before zeroing. Every mode
+  // takes this path: the tracker marks BACKTEST positions from the replay feed
+  // exactly as it marks LIVE/PAPER from the live feed.
+  if (price > 0 && openBeforeClose > 0 && entry > 0) {
     const unrealised = calcUnrealizedPnl(entry, direction, openBeforeClose, price);
     const pct = calcProfitPct(entry, direction, price);
     const extremum = applyExcursion(
@@ -207,7 +125,25 @@ async function finalizeClosePosition(position, trade, price, pnlContribution, se
   return position;
 }
 
-export const createTrade = async (tradeData) => {
+const TRADE_TXN_MAX_ATTEMPTS = Number(process.env.TRADE_TXN_MAX_ATTEMPTS || 3);
+
+/**
+ * The position tracker updates the same Position document outside a transaction,
+ * so a tick landing mid-trade can abort this one with a write conflict. Mongo
+ * labels those retryable; anything else is a real failure and must surface.
+ */
+function isTransientTransactionError(error) {
+  if (!error) return false;
+  if (typeof error.hasErrorLabel === "function" && error.hasErrorLabel("TransientTransactionError")) {
+    return true;
+  }
+  if (Array.isArray(error.errorLabels) && error.errorLabels.includes("TransientTransactionError")) {
+    return true;
+  }
+  return error.codeName === "WriteConflict" || error.code === 112;
+}
+
+const runCreateTrade = async (tradeData) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -215,7 +151,7 @@ export const createTrade = async (tradeData) => {
   const redisOps = [];
 
   try {
-    const { price, quantity, type_of_order, user_id } = tradeData;
+    const { price, quantity, type_of_order, user_id, force_close } = tradeData;
 
     if (!user_id) {
       throw new Error("user_id is required");
@@ -310,7 +246,9 @@ export const createTrade = async (tradeData) => {
 
     const opening_balance = account.current_balance;
 
-    if (type_of_order === "BUY" && opening_balance < (tradeValue + commission)) {
+    // A forced flatten must not be blocked by this: covering a short that moved
+    // against the account is exactly when the balance is short of the cover cost.
+    if (type_of_order === "BUY" && !force_close && opening_balance < (tradeValue + commission)) {
       throw new Error("Insufficient balance for BUY order (including commission)");
     }
 
@@ -476,6 +414,7 @@ export const createTrade = async (tradeData) => {
       commission,
       position_id: null,
     };
+    delete tradePayload.force_close;
     if (tradeData.execution_time) {
       tradePayload.execution_time = new Date(tradeData.execution_time);
       tradePayload.created_at = new Date(tradeData.execution_time);
@@ -553,9 +492,6 @@ export const createTrade = async (tradeData) => {
       linkedPositionId = linkedPositionId || created._id;
       redisOps.push({ type: "sync", position: created.toObject() });
     } else if ((isScaleIn || isPartialClose) && openPositionDoc) {
-      if (openPositionDoc.strategy_mode === "BACKTEST") {
-        await updateBacktestExcursions(openPositionDoc, trade.execution_time || trade.created_at || new Date(), Trade);
-      }
       applyBuySellPrice(openPositionDoc, type_of_order, price, quantity);
       openPositionDoc.open_size = Math.abs(newPositionSize);
       openPositionDoc.average_entry_price =
@@ -571,15 +507,7 @@ export const createTrade = async (tradeData) => {
           ((openPositionDoc.realised_pnl || 0) + pnl).toFixed(2)
         );
       }
-      if (openPositionDoc.strategy_mode === "BACKTEST") {
-        openPositionDoc.last_ltp = price;
-        openPositionDoc.unrealised_pnl = calcUnrealizedPnl(
-          openPositionDoc.average_entry_price,
-          openPositionDoc.direction,
-          openPositionDoc.open_size,
-          price
-        );
-      } else if (price > 0) {
+      if (price > 0) {
         openPositionDoc.last_ltp = price;
         const unrealised = calcUnrealizedPnl(
           openPositionDoc.average_entry_price,
@@ -697,6 +625,23 @@ export const createTrade = async (tradeData) => {
     await session.abortTransaction();
     session.endSession();
     throw error;
+  }
+};
+
+export const createTrade = async (tradeData) => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      // Fresh copy per attempt: the body enriches tradeData from the deployment.
+      return await runCreateTrade({ ...tradeData });
+    } catch (error) {
+      if (!isTransientTransactionError(error) || attempt >= TRADE_TXN_MAX_ATTEMPTS) {
+        throw error;
+      }
+      console.warn(
+        `[createTrade] Write conflict on attempt ${attempt}/${TRADE_TXN_MAX_ATTEMPTS}, retrying: ${error.message}`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
+    }
   }
 };
 

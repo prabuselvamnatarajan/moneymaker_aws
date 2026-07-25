@@ -78,7 +78,8 @@ async function createConsumer() {
                 if (msg.done) {
                     logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
                     if (strategy_details.deployment_id) {
-                        await setBacktestCompleted(strategy_details.deployment_id);
+                        const runId = msg.run_id || strategy_details.backtest_run_id || null;
+                        await setBacktestCompleted(strategy_details.deployment_id, runId);
                     }
                     return;
                 }

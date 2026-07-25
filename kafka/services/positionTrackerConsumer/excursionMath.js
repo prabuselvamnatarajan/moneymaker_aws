@@ -42,3 +42,40 @@ export function extractLtp(data) {
   const ltp = feed?.ltpc?.ltp ?? data.ltpc?.ltp ?? null;
   return typeof ltp === "number" ? ltp : null;
 }
+
+/**
+ * Prefer exchange LTT (ltpc.ltt), then message timestamp.
+ * Same precedence as strategy candle builders.
+ */
+export function extractTickTimeMs(data) {
+  if (!data || typeof data !== "object") return null;
+  const feed =
+    data.fullFeed?.marketFF ||
+    data.fullFeed?.indexFF ||
+    data.marketFF ||
+    data.indexFF ||
+    data.feed;
+  const ltt = feed?.ltpc?.ltt ?? data.ltpc?.ltt;
+  if (ltt != null && ltt !== "") {
+    const ms = parseInt(ltt, 10);
+    if (Number.isFinite(ms) && ms > 0) return ms;
+  }
+  if (data.timestamp) {
+    const ms = new Date(data.timestamp).getTime();
+    if (Number.isFinite(ms) && ms > 0) return ms;
+  }
+  return null;
+}
+
+/**
+ * position:open:{SYMBOL} is keyed by symbol alone, so two BACKTEST deployments
+ * replaying the same symbol share one set. Backtest ticks carry deployment_id,
+ * so require an exact match before a replay may mark a position. Live feed ticks
+ * carry no deployment_id and legitimately apply to every LIVE/PAPER position.
+ */
+export function tickTargetsPosition(isBacktestTopic, tickDeploymentId, positionDeploymentId) {
+  if (!isBacktestTopic) return true;
+  if (!tickDeploymentId) return true;
+  if (!positionDeploymentId) return false;
+  return String(tickDeploymentId) === String(positionDeploymentId);
+}

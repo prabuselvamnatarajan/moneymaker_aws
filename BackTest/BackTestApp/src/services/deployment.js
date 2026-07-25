@@ -17,6 +17,9 @@ import {
   computeReferenceStrike,
   resolveExpiryDate,
 } from "./optionSymbolResolver.js";
+import { purgePositionsFromRedis, readLiveCache } from "../utils/positionRedis.js";
+import { sumOpenUnrealised, round2, resolveCloseExecutionTime } from "../utils/positionMath.js";
+import { completionKey as backtestCompletionKey } from "../utils/backtestCompletionUtil.js";
 
 const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframe", "symbol_control"];
 
@@ -534,6 +537,129 @@ const triggerBacktestIfNeeded = async (deployment) => {
   }
 };
 
+async function clearStrategyHoldingsKeys(deployment) {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl || !deployment?._id) return;
+  const deploymentId = deployment._id.toString();
+  const symbol = String(deployment.symbol || "").toUpperCase();
+  let client;
+  try {
+    client = createClient({ url: redisUrl });
+    client.on("error", (err) => console.error(`[ForceClose] redis error: ${err.message}`));
+    await client.connect();
+    const keys = [
+      `bought_quantity:${deploymentId}:${symbol}`,
+      `bought_quantity:${deploymentId}:${deployment.symbol}`,
+      `short_quantity:${deploymentId}:${symbol}`,
+      `short_quantity:${deploymentId}:${deployment.symbol}`,
+    ];
+    for (const key of keys) {
+      await client.del(key).catch(() => {});
+    }
+  } catch (err) {
+    console.error(`[ForceClose] Failed clearing holdings keys for ${deploymentId}: ${err.message}`);
+  } finally {
+    if (client) await client.disconnect().catch(() => {});
+  }
+}
+
+/**
+ * Force-close any still-open positions at end of a backtest run via createTrade
+ * so realised P&L, ledger and account balance stay consistent.
+ */
+export const forceCloseOpenPositions = async (deployment) => {
+  if (!deployment?._id) return { closed: 0, skipped: 0, stillOpen: 0 };
+
+  const openPositions = await Position.find({
+    deployment_id: deployment._id,
+    status: "OPEN",
+    open_size: { $gt: 0 },
+  });
+
+  if (openPositions.length === 0) {
+    await clearStrategyHoldingsKeys(deployment);
+    return { closed: 0, skipped: 0, stillOpen: 0 };
+  }
+
+  const { createTrade } = await import("./trade.js");
+  let closed = 0;
+  let skipped = 0;
+
+  for (const pos of openPositions) {
+    const liveCache = await readLiveCache(pos._id.toString());
+    const price = (liveCache?.lastLtp > 0 ? liveCache.lastLtp : null) || pos.last_ltp;
+
+    if (!(price > 0) || !(pos.open_size > 0)) {
+      console.warn(
+        `[ForceClose] Skipping position ${pos._id} for deployment ${deployment._id}: missing last_ltp or open_size`
+      );
+      skipped += 1;
+      continue;
+    }
+
+    // Redis is ahead of Mongo between throttled tracker writes, so fold the
+    // freshest mark and excursions in before close accounting reads them.
+    if (liveCache?.lastLtp > 0) {
+      pos.last_ltp = liveCache.lastLtp;
+      if (typeof liveCache.unrealisedPnl === "number") {
+        pos.unrealised_pnl = liveCache.unrealisedPnl;
+      }
+      pos.max_up = Math.max(pos.max_up || 0, liveCache.maxUp || 0);
+      pos.max_down = Math.min(pos.max_down || 0, liveCache.maxDown || 0);
+      pos.max_up_pct = Math.max(pos.max_up_pct || 0, liveCache.maxUpPct || 0);
+      pos.max_down_pct = Math.min(pos.max_down_pct || 0, liveCache.maxDownPct || 0);
+      if (liveCache.lastTickAt > 0) {
+        pos.last_tick_at = new Date(liveCache.lastTickAt);
+      }
+      await pos.save().catch(() => {});
+    }
+
+    const type_of_order = pos.direction === "LONG" ? "SELL" : "BUY";
+    const executionTime = resolveCloseExecutionTime(pos.opened_at, pos.last_tick_at);
+
+    try {
+      await createTrade({
+        user_id: deployment.user_id,
+        deployment_id: deployment._id,
+        account_id: deployment.account_id || pos.account_id,
+        strategy_id: deployment.strategy_id || pos.strategy_id,
+        user_symbol_id: deployment.user_symbol_id || pos.user_symbol_id,
+        instrument_token: deployment.instrument_token || pos.instrument_token,
+        symbol: pos.symbol || deployment.symbol,
+        type_of_order,
+        quantity: pos.open_size,
+        price,
+        execution_time: executionTime,
+        force_close: true,
+      });
+      closed += 1;
+      console.log(
+        `[ForceClose] Closed ${pos.direction} position ${pos._id} qty=${pos.open_size} @ ${price} for deployment ${deployment._id}`
+      );
+    } catch (err) {
+      skipped += 1;
+      console.error(
+        `[ForceClose] Failed to close position ${pos._id} for deployment ${deployment._id}: ${err.message}`
+      );
+    }
+  }
+
+  await clearStrategyHoldingsKeys(deployment);
+
+  const stillOpen = await Position.countDocuments({
+    deployment_id: deployment._id,
+    status: "OPEN",
+    open_size: { $gt: 0 },
+  });
+  if (stillOpen > 0) {
+    console.error(
+      `[ForceClose] CRITICAL: deployment ${deployment._id} still has ${stillOpen} OPEN position(s) after force-close`
+    );
+  }
+
+  return { closed, skipped, stillOpen };
+};
+
 const resetBacktestDeployment = async (deployment) => {
   if (deployment.strategy_mode !== "BACKTEST") {
     return;
@@ -543,15 +669,39 @@ const resetBacktestDeployment = async (deployment) => {
   const symbol = deployment.symbol;
 
   try {
-    // 1. Delete trades, ledgers and positions in MongoDB for this deployment
+    // 1. Purge Redis live/open index for positions before Mongo delete
+    const positionsToPurge = await Position.find({ deployment_id: deploymentId }).select("_id symbol").lean();
+    await purgePositionsFromRedis(positionsToPurge);
+
+    // Clear stale completion flag so the watcher cannot stop a brand-new run
+    const redisUrlForFlag = process.env.REDIS_URL;
+    if (redisUrlForFlag) {
+      let flagClient;
+      try {
+        flagClient = createClient({ url: redisUrlForFlag });
+        flagClient.on("error", (err) => console.error(`[Reset] redis error: ${err.message}`));
+        await flagClient.connect();
+        await flagClient.del(backtestCompletionKey(deploymentId.toString()));
+      } catch (err) {
+        console.warn(`[Reset] Failed clearing backtest_completed flag: ${err.message}`);
+      } finally {
+        if (flagClient) await flagClient.disconnect().catch(() => {});
+      }
+    }
+
+    // 2. Delete trades, ledgers and positions in MongoDB for this deployment
     const deletedTrades = await Trade.deleteMany({ deployment_id: deploymentId });
     const deletedLedgers = await Ledger.deleteMany({ deployment_id: deploymentId });
     const deletedPositions = await Position.deleteMany({ deployment_id: deploymentId });
     console.log(`[Reset] Deleted ${deletedTrades.deletedCount} trades, ${deletedLedgers.deletedCount} ledgers, and ${deletedPositions.deletedCount} positions for deployment ${deploymentId}`);
 
-    // Reset cached position state on deployment
+    // Reset cached position state on deployment. Clearing backtest_run_id matters:
+    // the deployment is already RUNNING here but triggerBacktestIfNeeded does not
+    // mint the new run id until later, and a late {done} from the previous run
+    // would otherwise match the old id and stop the run that is just starting.
     deployment.position_size = 0;
     deployment.average_entry_price = 0;
+    deployment.backtest_run_id = null;
     await deployment.save();
     console.log(`[Reset] Reset deployment cached position fields to 0`);
 
@@ -1066,6 +1216,10 @@ export const transitionDeployment = async (userId, id, action) => {
     );
   }
 
+  // Open backtest positions are flattened after the status flip is published, so
+  // an in-flight tick cannot make the strategy open a fresh position mid-flatten.
+  const shouldFlattenBacktest = action === "stop" && deployment.strategy_mode === "BACKTEST";
+
   deployment.current_status = transition.to;
 
   if (action === "start" || action === "restart") {
@@ -1137,6 +1291,23 @@ export const transitionDeployment = async (userId, id, action) => {
   await deployment.save();
   await triggerBacktestIfNeeded(deployment);
   await syncAllDeploymentsToRedis();
+
+  // STOPPED is now published, so the strategy will not act on further ticks.
+  // The stop itself has already committed, so a flatten failure is reported
+  // rather than thrown — it must not turn a successful stop into an API error.
+  if (shouldFlattenBacktest) {
+    try {
+      const flatten = await forceCloseOpenPositions(deployment);
+      if (flatten.stillOpen > 0) {
+        console.error(
+          `[Deployment] Stopped ${deployment._id} with ${flatten.stillOpen} OPEN position(s) that could not be flattened`
+        );
+      }
+    } catch (err) {
+      console.error(`[Deployment] Force-close failed after stopping ${deployment._id}: ${err.message}`);
+    }
+  }
+
   return deployment;
 };
 
@@ -1226,11 +1397,23 @@ export const getDeploymentMetrics = async (userId, id) => {
     }
   }
 
+  // Realised comes from the trade walk, which only books P&L against closing
+  // quantity and also covers deployments whose trades predate Position tracking.
+  // Unrealised is open quantity only, so it can only come from OPEN positions.
+  const openPositions = await Position.find({
+    deployment_id: deployment._id,
+    status: "OPEN",
+  }).select("status realised_pnl unrealised_pnl");
+  const realisedPnl = round2(totalPnL);
+  const unrealisedPnl = sumOpenUnrealised(openPositions);
+
   return {
     deployment_id: deployment._id,
     current_status: deployment.current_status,
     total_trades: totalTrades,
-    total_pnl: parseFloat(totalPnL.toFixed(2)),
+    realised_pnl: realisedPnl,
+    unrealised_pnl: unrealisedPnl,
+    total_pnl: round2(realisedPnl + unrealisedPnl),
     wins,
     losses,
     win_rate: (wins + losses) > 0 ? ((wins / (wins + losses)) * 100).toFixed(2) + "%" : "0.00%",
@@ -1398,6 +1581,21 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
   // Calculate profitability factor
   const profitabilityFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
 
+  // Realised is the trade walk above: it books P&L against closing quantity only,
+  // already respects the date window, and reconciles with gross_profit/gross_loss
+  // and the tail of time_series by construction.
+  const realisedPnl = round2(totalPnL);
+
+  // Unrealised is a mark on currently open quantity, so it only belongs to a
+  // window that extends to now. A bounded historical window reports realised only.
+  const windowIncludesNow = !end || end.getTime() >= Date.now();
+  const openPositions = windowIncludesNow
+    ? await Position.find({ deployment_id: deployment._id, status: "OPEN" }).select(
+        "status realised_pnl unrealised_pnl"
+      )
+    : [];
+  const unrealisedPnl = sumOpenUnrealised(openPositions);
+
   return {
     deployment_id: deployment._id,
     deployment_name: deployment.deployment_name,
@@ -1409,7 +1607,9 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
     },
     metrics: {
       total_trades: totalTrades,
-      total_pnl: parseFloat(totalPnL.toFixed(2)),
+      realised_pnl: realisedPnl,
+      unrealised_pnl: unrealisedPnl,
+      total_pnl: round2(realisedPnl + unrealisedPnl),
       gross_profit: parseFloat(grossProfit.toFixed(2)),
       gross_loss: parseFloat(grossLoss.toFixed(2)),
       profitability_factor: profitabilityFactor === Infinity ? "Infinity" : parseFloat(profitabilityFactor.toFixed(2)),
@@ -1422,7 +1622,7 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
     time_series: timeSeriesData,
     intraday_trades: intradayTrades,
   };
-};;
+};
 
 export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
   const redisUrl = process.env.REDIS_URL;

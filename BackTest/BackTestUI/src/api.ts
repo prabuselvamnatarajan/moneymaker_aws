@@ -654,6 +654,8 @@ export const api = {
         deployment_id: string;
         current_status: string;
         total_trades: number;
+        realised_pnl: number;
+        unrealised_pnl: number;
         total_pnl: number;
         wins: number;
         losses: number;
@@ -725,6 +727,8 @@ export const api = {
           };
           metrics: {
             total_trades: number;
+            realised_pnl: number;
+            unrealised_pnl: number;
             total_pnl: number;
             gross_profit: number;
             gross_loss: number;

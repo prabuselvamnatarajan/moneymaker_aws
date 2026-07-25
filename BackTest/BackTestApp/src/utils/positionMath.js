@@ -57,3 +57,33 @@ export function applyBuySellPrice(position, typeOfOrder, price, quantity) {
 export function directionFromSignedSize(signedSize) {
   return signedSize > 0 ? "LONG" : "SHORT";
 }
+
+/**
+ * Timestamp for a forced end-of-run close. Must land strictly after the open,
+ * otherwise the closing trade sorts level with the opening one in the analysis
+ * series and the excursion replay window is empty.
+ */
+export function resolveCloseExecutionTime(openedAt, lastTickAt) {
+  const openedRaw = openedAt ? new Date(openedAt).getTime() : NaN;
+  const openedMs = Number.isFinite(openedRaw) ? openedRaw : Date.now();
+  const tickRaw = lastTickAt ? new Date(lastTickAt).getTime() : NaN;
+  const tickMs = Number.isFinite(tickRaw) ? tickRaw : 0;
+  return tickMs > openedMs ? new Date(tickMs) : new Date(openedMs + 1);
+}
+
+export function round2(n) {
+  return parseFloat((Number(n) || 0).toFixed(2));
+}
+
+/**
+ * Unrealised is open-quantity mark-to-market, so CLOSED positions contribute
+ * nothing however stale a value they happen to be carrying.
+ */
+export function sumOpenUnrealised(positions = []) {
+  let total = 0;
+  for (const pos of positions) {
+    if (String(pos.status || "").toUpperCase() !== "OPEN") continue;
+    total += Number(pos.unrealised_pnl) || 0;
+  }
+  return round2(total);
+}

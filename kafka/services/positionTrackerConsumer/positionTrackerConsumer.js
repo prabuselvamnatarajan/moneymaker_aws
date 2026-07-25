@@ -8,6 +8,8 @@ import {
   calcProfitPct,
   applyExcursion,
   extractLtp,
+  extractTickTimeMs,
+  tickTargetsPosition,
 } from './excursionMath.js';
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -15,6 +17,7 @@ const TARGET_TOPICS = (process.env.TARGET_TOPIC || 'splited-live-data,backtest-s
   .split(',')
   .map((t) => t.trim())
   .filter(Boolean);
+const BACKTEST_TOPIC = process.env.BACKTEST_TOPIC || 'backtest-stream-data';
 const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID || 'position_tracker_group';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017';
@@ -32,7 +35,7 @@ const mongoClient = new MongoClient(MONGO_URI);
 let redisClient;
 let positionsCollection;
 
-/** In-memory throttle: positionMongoId -> last unrealised write timestamp */
+/** In-memory throttle: positionMongoId -> last unrealised write timestamp (tick or wall clock) */
 const lastUnrealisedWriteAt = new Map();
 
 registerFatalErrorHandlers();
@@ -43,6 +46,14 @@ function openSymbolKey(symbol) {
 
 function liveKey(positionId) {
   return `position:live:${positionId}`;
+}
+
+function topicAllowsMode(topic, strategyMode) {
+  const mode = String(strategyMode || '').toUpperCase();
+  const isBacktestTopic = topic === BACKTEST_TOPIC;
+  if (isBacktestTopic) return mode === 'BACKTEST';
+  // Live market feed updates LIVE and PAPER only
+  return mode === 'LIVE' || mode === 'PAPER';
 }
 
 async function setJson(key, value) {
@@ -89,7 +100,21 @@ function buildCacheFromDoc(doc) {
     maxDownPct: doc.max_down_pct || 0,
     unrealisedPnl: doc.unrealised_pnl || 0,
     lastLtp: doc.last_ltp || 0,
+    lastTickAt: doc.last_tick_at ? new Date(doc.last_tick_at).getTime() : 0,
+    strategyMode: doc.strategy_mode || null,
+    deploymentId: doc.deployment_id?.toString?.() || doc.deployment_id || null,
   };
+}
+
+async function evictPositionFromRedis(positionMongoId, symbolHint, docSymbol) {
+  await redisClient.del(liveKey(positionMongoId)).catch(() => {});
+  if (symbolHint) {
+    await redisClient.sRem(openSymbolKey(symbolHint), positionMongoId).catch(() => {});
+  }
+  if (docSymbol) {
+    await redisClient.sRem(openSymbolKey(docSymbol), positionMongoId).catch(() => {});
+  }
+  lastUnrealisedWriteAt.delete(positionMongoId);
 }
 
 async function selfHealCache(positionMongoId, symbolHint) {
@@ -98,14 +123,8 @@ async function selfHealCache(positionMongoId, symbolHint) {
       _id: new ObjectId(positionMongoId),
       status: 'OPEN',
     });
-    if (!doc || !(doc.open_size > 0) || doc.strategy_mode === 'BACKTEST') {
-      await redisClient.del(liveKey(positionMongoId)).catch(() => {});
-      if (symbolHint) {
-        await redisClient.sRem(openSymbolKey(symbolHint), positionMongoId).catch(() => {});
-      }
-      if (doc?.symbol) {
-        await redisClient.sRem(openSymbolKey(doc.symbol), positionMongoId).catch(() => {});
-      }
+    if (!doc || !(doc.open_size > 0)) {
+      await evictPositionFromRedis(positionMongoId, symbolHint, doc?.symbol);
       return null;
     }
     const cache = buildCacheFromDoc(doc);
@@ -115,15 +134,39 @@ async function selfHealCache(positionMongoId, symbolHint) {
     return cache;
   } catch (err) {
     logger.error(`Self-heal failed for ${positionMongoId}: ${err.message}`);
+    lastUnrealisedWriteAt.delete(positionMongoId);
     return null;
   }
 }
 
-async function updatePositionForTick(positionMongoId, ltp, symbolHint) {
+async function updatePositionForTick(positionMongoId, ltp, symbolHint, tickTimeMs, topic, tickDeploymentId) {
   let cache = await getJson(liveKey(positionMongoId));
   if (!cache) {
     cache = await selfHealCache(positionMongoId, symbolHint);
     if (!cache) return;
+  }
+
+  // Missing strategyMode: heal from Mongo before the topic filter runs
+  if (!cache.strategyMode) {
+    const healed = await selfHealCache(positionMongoId, symbolHint);
+    if (!healed) return;
+    cache = healed;
+  }
+
+  // Mongo has no mode either, so the position cannot be attributed to a topic.
+  // Evict rather than heal again, or every tick costs a findOne forever.
+  if (!cache.strategyMode) {
+    logger.warn(`Evicting position ${positionMongoId}: no strategy_mode to match against topic ${topic}`);
+    await evictPositionFromRedis(positionMongoId, symbolHint, cache.symbol);
+    return;
+  }
+
+  if (!topicAllowsMode(topic, cache.strategyMode)) {
+    return;
+  }
+
+  if (!tickTargetsPosition(topic === BACKTEST_TOPIC, tickDeploymentId, cache.deploymentId)) {
+    return;
   }
 
   if (!(cache.openSize > 0) || !(cache.entryPrice > 0)) {
@@ -148,14 +191,14 @@ async function updatePositionForTick(positionMongoId, ltp, symbolHint) {
     maxDownPct: extremum.maxDownPct,
     unrealisedPnl: unrealised,
     lastLtp: ltp,
+    lastTickAt: tickTimeMs != null && tickTimeMs > 0 ? tickTimeMs : cache.lastTickAt || 0,
   };
 
-  // Always keep Redis hot
   await setJson(liveKey(positionMongoId), nextCache);
 
-  const now = Date.now();
+  const clockMs = Date.now();
   const lastWrite = lastUnrealisedWriteAt.get(positionMongoId) || 0;
-  const throttleOk = now - lastWrite >= UNREALISED_WRITE_THROTTLE_MS;
+  const throttleOk = clockMs - lastWrite >= UNREALISED_WRITE_THROTTLE_MS;
 
   if (!extremeChanged && !throttleOk) {
     return;
@@ -165,6 +208,9 @@ async function updatePositionForTick(positionMongoId, ltp, symbolHint) {
     unrealised_pnl: unrealised,
     last_ltp: ltp,
   };
+  if (tickTimeMs != null && tickTimeMs > 0) {
+    update.last_tick_at = new Date(tickTimeMs);
+  }
   if (extremeChanged) {
     update.max_up = extremum.maxUp;
     update.max_down = extremum.maxDown;
@@ -176,14 +222,17 @@ async function updatePositionForTick(positionMongoId, ltp, symbolHint) {
     { _id: new ObjectId(positionMongoId), status: 'OPEN' },
     { $set: update }
   );
-  lastUnrealisedWriteAt.set(positionMongoId, now);
+  lastUnrealisedWriteAt.set(positionMongoId, clockMs);
 }
 
-async function handleTick(symbol, data) {
+async function handleTick(symbol, data, topic) {
   const ltp = extractLtp(data);
   if (ltp == null || !(ltp > 0)) {
     return;
   }
+
+  const tickTimeMs = extractTickTimeMs(data);
+  const tickDeploymentId = data?.deployment_id ? String(data.deployment_id) : null;
 
   const members = await redisClient.sMembers(openSymbolKey(symbol));
   if (!members || members.length === 0) {
@@ -193,7 +242,7 @@ async function handleTick(symbol, data) {
   await Promise.all(
     members.map(async (positionMongoId) => {
       try {
-        await updatePositionForTick(positionMongoId, ltp, symbol);
+        await updatePositionForTick(positionMongoId, ltp, symbol, tickTimeMs, topic, tickDeploymentId);
       } catch (err) {
         logger.error(`Failed updating position ${positionMongoId}: ${err.message}`);
       }
@@ -224,7 +273,7 @@ async function createConsumer() {
         const symbol = message.key?.toString?.() || '';
         if (!symbol) return;
         const data = JSON.parse(message.value.toString());
-        await handleTick(symbol, data);
+        await handleTick(symbol, data, topic);
       } catch (error) {
         handleFatalError(error, `message handling on ${topic}`);
       }

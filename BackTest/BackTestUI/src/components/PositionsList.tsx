@@ -111,8 +111,8 @@ export default function PositionsList({
         </h3>
       </div>
       <p className="text-slate-500 text-[11px] mb-4">
-        Realised P&amp;L is net of commission. Unrealised / Max Up / Max Down are gross mark-to-market (exclude exit
-        commission). Max Up / Max Down are the best and worst unrealised P&amp;L reached while the position was open.
+        Realised P&amp;L is from closed quantity only (net of commission). Unrealised is from open quantity mark-to-market
+        (OPEN positions only). Max Up / Max Down are the best and worst unrealised P&amp;L while the position was open.
       </p>
 
       <div className="overflow-x-auto">

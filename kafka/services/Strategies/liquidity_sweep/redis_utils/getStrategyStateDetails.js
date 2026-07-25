@@ -134,13 +134,17 @@ async function writeLiquiditySweepStateForSymbol(symbol, isTestMode = false, new
     return true;
 }
 
-async function setBacktestCompleted(deploymentId) {
+async function setBacktestCompleted(deploymentId, runId = null) {
     await ensureRedisJson();
     const client = redisClientInstance.getClient();
     const key = `backtest_completed:${deploymentId}`;
-    await client.set(key, 'true');
+    const payload = JSON.stringify({
+        completed: true,
+        run_id: runId != null ? String(runId) : null,
+    });
+    await client.set(key, payload);
     await client.expire(key, 120);
-    logger.info(`Set backtest completion flag in Redis for key ${key}`);
+    logger.info(`Set backtest completion flag in Redis for key ${key} run_id=${runId}`);
 }
 
 export {

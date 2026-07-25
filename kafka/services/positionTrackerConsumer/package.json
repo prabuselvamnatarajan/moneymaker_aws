@@ -5,7 +5,8 @@
   "main": "positionTrackerConsumer.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test __tests__/excursionMath.test.js",
+    "start": "node positionTrackerConsumer.js"
   },
   "author": "",
   "license": "ISC",
