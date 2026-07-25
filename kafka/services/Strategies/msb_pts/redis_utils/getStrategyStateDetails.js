@@ -134,17 +134,26 @@ async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newSta
     logger.debug(`Wrote MSB strategy state for key ${redisKey}:`, newState);
 }
 
-async function setBacktestCompleted(deploymentId, runId = null) {
+/**
+ * @param {Object} finalTick - { lastLtp, lastTickAt } from the streamer's done
+ *   signal. Carried on the flag so the force-close at end of data marks out at
+ *   the last replayed tick rather than whatever the position tracker last wrote.
+ */
+async function setBacktestCompleted(deploymentId, runId = null, finalTick = {}) {
     await ensureRedisJson();
     const client = redisClientInstance.getClient();
     const key = `backtest_completed:${deploymentId}`;
+    const lastLtp = Number(finalTick?.lastLtp);
+    const lastTickAt = Number(finalTick?.lastTickAt);
     const payload = JSON.stringify({
         completed: true,
         run_id: runId != null ? String(runId) : null,
+        last_ltp: Number.isFinite(lastLtp) && lastLtp > 0 ? lastLtp : null,
+        last_tick_at: Number.isFinite(lastTickAt) && lastTickAt > 0 ? lastTickAt : null,
     });
     await client.set(key, payload);
     await client.expire(key, 120);
-    logger.info(`Set backtest completion flag in Redis for key ${key} run_id=${runId}`);
+    logger.info(`Set backtest completion flag in Redis for key ${key} run_id=${runId} last_ltp=${lastLtp}`);
 }
 
 export {

@@ -76,10 +76,13 @@ async function createConsumer() {
 
             try {
                 if (msg.done) {
-                    logger.info(`Received done signal for symbol ${symbol}, skipping processing.`);
+                    logger.info(`Received done signal for symbol ${symbol} with last_ltp=${msg.last_ltp}, skipping processing.`);
                     if (strategy_details.deployment_id) {
                         const runId = msg.run_id || strategy_details.backtest_run_id || null;
-                        await setBacktestCompleted(strategy_details.deployment_id, runId);
+                        await setBacktestCompleted(strategy_details.deployment_id, runId, {
+                            lastLtp: msg.last_ltp,
+                            lastTickAt: msg.last_tick_at,
+                        });
                     }
                     return;
                 }

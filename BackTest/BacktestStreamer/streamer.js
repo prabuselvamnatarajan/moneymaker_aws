@@ -15,6 +15,38 @@ function sanitize(str) {
     return String(str).replace(/[^a-zA-Z0-9-_]/g, '_');
 }
 
+function extractFeed(item) {
+    if (!item || typeof item !== 'object') return null;
+    return item.fullFeed?.marketFF
+        || item.fullFeed?.indexFF
+        || item.marketFF
+        || item.indexFF
+        || item.feed
+        || null;
+}
+
+function extractLtp(item) {
+    if (!item || typeof item !== 'object') return null;
+    const raw = extractFeed(item)?.ltpc?.ltp ?? item.ltpc?.ltp ?? item.ltp ?? null;
+    if (raw == null || raw === '') return null;
+    const ltp = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(ltp) && ltp > 0 ? ltp : null;
+}
+
+function extractTickTimeMs(item) {
+    if (!item || typeof item !== 'object') return null;
+    const ltt = extractFeed(item)?.ltpc?.ltt ?? item.ltpc?.ltt;
+    if (ltt != null && ltt !== '') {
+        const ms = typeof ltt === 'number' ? ltt : parseInt(ltt, 10);
+        if (Number.isFinite(ms) && ms > 0) return ms;
+    }
+    if (item.timestamp) {
+        const ms = new Date(item.timestamp).getTime();
+        if (Number.isFinite(ms) && ms > 0) return ms;
+    }
+    return null;
+}
+
 wss.on('connection', ws => {
     ws.on('message', async message => {
         // Expecting JSON: { symbolName: "AAPL", date: "2024-06-01", time_ms: 1000 }
@@ -44,18 +76,34 @@ wss.on('connection', ws => {
                 ws.send(JSON.stringify({ error: `Data format error at ${filePath}: expected JSON array` }));
                 return;
             }
-            // Stream data one by one
-            if (typeof time_ms === 'number' && time_ms > 0) {
-                for (const item of data) {
-                    ws.send(JSON.stringify(item));
+            // The done signal carries the final mark because the streamer is the
+            // only component that knows where the data actually ends; downstream
+            // consumers force-close open positions at this price.
+            let lastLtp = null;
+            let lastTickAt = null;
+            const pace = typeof time_ms === 'number' && time_ms > 0;
+
+            for (const item of data) {
+                ws.send(JSON.stringify(item));
+                const ltp = extractLtp(item);
+                if (ltp != null) {
+                    // Both come from the same tick: a price paired with an older
+                    // tick's time would date the force-close wrongly, so a tick
+                    // without a usable time reports none and lets the consumer
+                    // fall back to what it already knows.
+                    lastLtp = ltp;
+                    lastTickAt = extractTickTimeMs(item);
+                }
+                if (pace) {
                     await new Promise(res => setTimeout(res, time_ms));
                 }
-            } else {
-                for (const item of data) {
-                    ws.send(JSON.stringify(item));
-                }
             }
-            ws.send(JSON.stringify({ done: true }));
+
+            console.log(
+                `Finished streaming ${data.length} ticks for ${symbolName} on ${date}; ` +
+                `last_ltp=${lastLtp} last_tick_at=${lastTickAt}`
+            );
+            ws.send(JSON.stringify({ done: true, last_ltp: lastLtp, last_tick_at: lastTickAt }));
         } catch (err) {
             ws.send(JSON.stringify({ error: err.message }));
         }

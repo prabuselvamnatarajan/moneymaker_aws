@@ -566,9 +566,21 @@ async function clearStrategyHoldingsKeys(deployment) {
 /**
  * Force-close any still-open positions at end of a backtest run via createTrade
  * so realised P&L, ledger and account balance stay consistent.
+ *
+ * @param {Object} finalTick - { lastLtp, lastTickAt } from the streamer's done
+ *   signal. This is the authoritative end-of-data mark: the position tracker is
+ *   a separate consumer group that can still be behind the final ticks (or have
+ *   never seen a position opened right at the end), so its cache is only a
+ *   fallback.
  */
-export const forceCloseOpenPositions = async (deployment) => {
+export const forceCloseOpenPositions = async (deployment, finalTick = {}) => {
   if (!deployment?._id) return { closed: 0, skipped: 0, stillOpen: 0 };
+
+  const finalLtpRaw = Number(finalTick?.lastLtp);
+  const finalLtp = Number.isFinite(finalLtpRaw) && finalLtpRaw > 0 ? finalLtpRaw : null;
+  const finalTickAtRaw = Number(finalTick?.lastTickAt);
+  const finalTickAt =
+    Number.isFinite(finalTickAtRaw) && finalTickAtRaw > 0 ? new Date(finalTickAtRaw) : null;
 
   const openPositions = await Position.find({
     deployment_id: deployment._id,
@@ -587,7 +599,8 @@ export const forceCloseOpenPositions = async (deployment) => {
 
   for (const pos of openPositions) {
     const liveCache = await readLiveCache(pos._id.toString());
-    const price = (liveCache?.lastLtp > 0 ? liveCache.lastLtp : null) || pos.last_ltp;
+    const cachedLtp = liveCache?.lastLtp > 0 ? liveCache.lastLtp : null;
+    const price = finalLtp || cachedLtp || pos.last_ltp;
 
     if (!(price > 0) || !(pos.open_size > 0)) {
       console.warn(
@@ -599,8 +612,8 @@ export const forceCloseOpenPositions = async (deployment) => {
 
     // Redis is ahead of Mongo between throttled tracker writes, so fold the
     // freshest mark and excursions in before close accounting reads them.
-    if (liveCache?.lastLtp > 0) {
-      pos.last_ltp = liveCache.lastLtp;
+    if (cachedLtp) {
+      pos.last_ltp = cachedLtp;
       if (typeof liveCache.unrealisedPnl === "number") {
         pos.unrealised_pnl = liveCache.unrealisedPnl;
       }
@@ -611,6 +624,20 @@ export const forceCloseOpenPositions = async (deployment) => {
       if (liveCache.lastTickAt > 0) {
         pos.last_tick_at = new Date(liveCache.lastTickAt);
       }
+    }
+
+    // The final replayed tick outranks the tracker cache. Excursions and
+    // realised P&L are folded in from the close price by finalizeClosePosition,
+    // so only the mark and its tick time are worth persisting here — the tick
+    // time is what dates the closing trade below.
+    if (finalLtp) {
+      pos.last_ltp = finalLtp;
+      if (finalTickAt) {
+        pos.last_tick_at = finalTickAt;
+      }
+    }
+
+    if (cachedLtp || finalLtp) {
       await pos.save().catch(() => {});
     }
 
@@ -633,8 +660,10 @@ export const forceCloseOpenPositions = async (deployment) => {
         force_close: true,
       });
       closed += 1;
+      const priceSource = finalLtp ? "final-tick" : cachedLtp ? "live-cache" : "position";
       console.log(
-        `[ForceClose] Closed ${pos.direction} position ${pos._id} qty=${pos.open_size} @ ${price} for deployment ${deployment._id}`
+        `[ForceClose] Closed ${pos.direction} position ${pos._id} qty=${pos.open_size} ` +
+          `@ ${price} (${priceSource}) for deployment ${deployment._id}`
       );
     } catch (err) {
       skipped += 1;
@@ -1183,7 +1212,12 @@ const VALID_TRANSITIONS = {
   restart: { from: ["RUNNING", "PAUSED", "STOPPED", "COMPLETED"], to: "RUNNING" },
 };
 
-export const transitionDeployment = async (userId, id, action) => {
+/**
+ * @param {Object} options - { finalTick } forwarded to the backtest force-close
+ *   so it marks out at the last replayed tick. Only set by the completion
+ *   watcher; a manual stop has no end-of-data tick and falls back to the cache.
+ */
+export const transitionDeployment = async (userId, id, action, options = {}) => {
   if (!mongoose.isValidObjectId(id)) {
     return null;
   }
@@ -1297,7 +1331,7 @@ export const transitionDeployment = async (userId, id, action) => {
   // rather than thrown — it must not turn a successful stop into an API error.
   if (shouldFlattenBacktest) {
     try {
-      const flatten = await forceCloseOpenPositions(deployment);
+      const flatten = await forceCloseOpenPositions(deployment, options.finalTick);
       if (flatten.stillOpen > 0) {
         console.error(
           `[Deployment] Stopped ${deployment._id} with ${flatten.stillOpen} OPEN position(s) that could not be flattened`

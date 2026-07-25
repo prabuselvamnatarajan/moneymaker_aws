@@ -21,6 +21,30 @@ describe("parseCompletionFlag", () => {
     assert.equal(parseCompletionFlag(null), null);
     assert.equal(parseCompletionFlag("nope"), null);
   });
+
+  it("parses the final tick mark from the done signal", () => {
+    const flag = parseCompletionFlag(
+      JSON.stringify({ completed: true, run_id: "123", last_ltp: 152.75, last_tick_at: 1710000000000 })
+    );
+    assert.equal(flag.last_ltp, 152.75);
+    assert.equal(flag.last_tick_at, 1710000000000);
+  });
+
+  it("nulls out non-positive or missing final tick values", () => {
+    const missing = parseCompletionFlag(JSON.stringify({ completed: true, run_id: "123" }));
+    assert.equal(missing.last_ltp, null);
+    assert.equal(missing.last_tick_at, null);
+
+    const zeroed = parseCompletionFlag(
+      JSON.stringify({ completed: true, run_id: "123", last_ltp: 0, last_tick_at: -1 })
+    );
+    assert.equal(zeroed.last_ltp, null);
+    assert.equal(zeroed.last_tick_at, null);
+
+    const legacy = parseCompletionFlag("true");
+    assert.equal(legacy.last_ltp, null);
+    assert.equal(legacy.last_tick_at, null);
+  });
 });
 
 describe("completionKey", () => {

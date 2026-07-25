@@ -3,9 +3,10 @@
  * consumers when the streamer emits {done: true}, then stops the deployment
  * (which force-closes any still-open positions).
  *
- * Flag value is JSON: { run_id, completed: true }. Only stop when run_id matches
- * the deployment's current backtest_run_id so a stale prior-run flag cannot
- * truncate a new backtest.
+ * Flag value is JSON: { run_id, completed: true, last_ltp, last_tick_at }. Only
+ * stop when run_id matches the deployment's current backtest_run_id so a stale
+ * prior-run flag cannot truncate a new backtest. last_ltp is the final replayed
+ * tick and becomes the force-close mark.
  */
 
 import { createClient } from "redis";
@@ -69,8 +70,13 @@ async function pollOnce() {
             continue;
           }
 
-          console.log(`[BacktestCompletion] Flag matched run_id ${currentRunId} for ${id}; stopping`);
-          await transitionDeployment(dep.user_id, id, "stop");
+          console.log(
+            `[BacktestCompletion] Flag matched run_id ${currentRunId} for ${id}; ` +
+              `stopping (final tick ltp=${flag.last_ltp})`
+          );
+          await transitionDeployment(dep.user_id, id, "stop", {
+            finalTick: { lastLtp: flag.last_ltp, lastTickAt: flag.last_tick_at },
+          });
           await client.del(key).catch(() => {});
           console.log(`[BacktestCompletion] Stopped deployment ${id}`);
         } catch (err) {
