@@ -69,7 +69,8 @@ build-all.sh
 |--------|---------|
 | `scripts/build-images.sh` | Build custom Docker images (`--profile full\|e2e`, `--parallel N`) |
 | `scripts/deploy-stack.sh` | Swarm init, pre-pull base images, `docker stack deploy` |
-| `docker-compose.ci.yml` | CI overlay (`replicas: 1` for services that default to 3) |
+| `docker-compose.ci.yml` | CI overlay (minimal nginx, `replicas: 0` for non-E2E services) |
+| `certs/nginx.ci.conf` | CI nginx — only `/backtestapp/` and `/backtest-ui/` upstreams |
 | `clear-and-seed.sh` | Wipe/reseed BacktestApp DB inside the running stack |
 
 ## Prerequisites (Docker Swarm)

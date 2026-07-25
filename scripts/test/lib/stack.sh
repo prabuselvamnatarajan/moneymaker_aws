@@ -39,6 +39,8 @@ log_swarm_service_state() {
   fi
   log_info "Swarm service state for $_service:"
   docker service ps "$_service" --no-trunc 2>/dev/null || log_warn "Could not inspect $_service"
+  # Tail recent logs — especially useful for reverse-proxy nginx host-not-found exits
+  docker service logs "$_service" --tail 20 2>/dev/null || true
 }
 
 # Wait until URL returns HTTP success (curl -sf).

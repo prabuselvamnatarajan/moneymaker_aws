@@ -62,7 +62,16 @@ jobs:
           docker service ps moneymaker_backtest-app --no-trunc || true
           docker service ps moneymaker_reverse-proxy --no-trunc || true
           docker service ps moneymaker_mongo1 --no-trunc || true
+          echo "===== reverse-proxy logs ====="
+          docker service logs moneymaker_reverse-proxy --tail 80 2>&1 || true
+          echo "===== backtest-app logs ====="
+          docker service logs moneymaker_backtest-app --tail 80 2>&1 || true
+          echo "===== curl via reverse-proxy ====="
           curl -sv http://localhost/backtestapp/health || true
+          echo "===== curl backtest-app task IP (bypass proxy) ====="
+          TASK_IP=$(docker inspect -f '{{range .NetworksAttachments}}{{range .Addresses}}{{.}}{{end}}{{end}}' "$(docker ps -q -f name=moneymaker_backtest-app | head -1)" 2>/dev/null | cut -d/ -f1 || true)
+          echo "task_ip=${TASK_IP}"
+          [ -n "$TASK_IP" ] && curl -sv "http://${TASK_IP}/health" || true
 
       - name: Upload Playwright report
         if: always()
