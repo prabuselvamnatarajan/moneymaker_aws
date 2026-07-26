@@ -47,27 +47,31 @@ const normalizeChainItems = (rawItems) =>
 
 export const resolveExpiryDate = (scExpiry) => {
   const expiryStr = String(scExpiry || "").trim();
+  if (!expiryStr) {
+    throw new Error("expiry is required (YYYY-MM-DD)");
+  }
+
+  if (expiryStr === "next_week") {
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay();
+    let daysUntilThursday = (4 - dayOfWeek + 7) % 7;
+    if (daysUntilThursday === 0 && now.getUTCHours() >= 10) {
+      daysUntilThursday = 7;
+    }
+    daysUntilThursday += 7;
+    const targetDate = new Date(now.getTime() + daysUntilThursday * 86400000);
+    return targetDate.toISOString().slice(0, 10);
+  }
+
   if (/^\d{4}-\d{2}-\d{2}$/.test(expiryStr)) {
     const d = new Date(`${expiryStr}T00:00:00.000Z`);
     if (!Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === expiryStr) {
       return expiryStr;
     }
+    throw new Error("expiry must be a valid calendar date in YYYY-MM-DD format");
   }
 
-  const now = new Date();
-  let offsetWeeks = 0;
-  if (expiryStr === "next_week") {
-    offsetWeeks = 1;
-  }
-
-  const dayOfWeek = now.getUTCDay();
-  let daysUntilThursday = (4 - dayOfWeek + 7) % 7;
-  if (daysUntilThursday === 0 && now.getUTCHours() >= 10) {
-    daysUntilThursday = 7;
-  }
-  daysUntilThursday += offsetWeeks * 7;
-  const targetDate = new Date(now.getTime() + daysUntilThursday * 86400000);
-  return targetDate.toISOString().slice(0, 10);
+  throw new Error("expiry must be in YYYY-MM-DD format");
 };
 
 export const fetchUnderlyingLtp = async (underlyingSymbol, userId) => {

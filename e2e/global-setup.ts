@@ -1,5 +1,5 @@
 import { request as playwrightRequest } from '@playwright/test';
-import { API_BASE, apiPath, loginWithFallback, SEED_CREDENTIALS } from './fixtures/auth';
+import { API_BASE, apiUrl, loginWithFallback, SEED_CREDENTIALS } from './fixtures/auth';
 
 const API_BASE_URL = API_BASE;
 const MAX_HEALTH_RETRIES = 60;
@@ -18,7 +18,7 @@ async function waitForHealth(): Promise<void> {
     for (let i = 0; i < MAX_HEALTH_RETRIES; i++) {
       try {
         // Relative path keeps /backtestapp prefix (leading / would hit host root)
-        const res = await ctx.get(apiPath('health'));
+        const res = await ctx.get(apiUrl('health'));
         if (res.ok()) {
           const body = await res.json();
           if (body.status === 'ok') return;

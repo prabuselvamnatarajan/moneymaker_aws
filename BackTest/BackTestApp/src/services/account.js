@@ -15,6 +15,14 @@ export const createAccount = async (userId, accountData) => {
   const Broker = mongoose.model("Broker");
   
   if (accountData.account_type === "PAPER" || accountData.account_type === "SIMULATION") {
+    if (accountData.broker_id) {
+      const requestedBroker = await Broker.findById(accountData.broker_id);
+      if (requestedBroker && !requestedBroker.is_internal) {
+        throw new Error(
+          "Only LIVE accounts can be associated with external brokers. PAPER and SIMULATION accounts must use Cobra Trades broker."
+        );
+      }
+    }
     let internalBroker = await Broker.findOne({ is_internal: true });
     if (!internalBroker) {
       internalBroker = await Broker.create({ name: "Cobra Trades", is_internal: true });

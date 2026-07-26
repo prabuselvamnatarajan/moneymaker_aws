@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import jwt from 'jsonwebtoken';
-import { apiPath, apiRequest, loginAs, uniqueSuffix } from '../fixtures/auth';
+import { apiUrl, apiRequest, loginAs, uniqueSuffix } from '../fixtures/auth';
 import { generateTotp } from '../fixtures/totp';
 import { getLocalStorageTokens } from './helpers/nav';
 
@@ -18,7 +18,7 @@ async function signupFreshUser(request: APIRequestContext) {
   const username = `e2eui${suffix.replace(/[^a-z0-9]/gi, '').slice(0, 16)}`;
   const password = 'TestPass123!';
   const name = 'E2E UI User';
-  const res = await request.post(apiPath('/auth/signup'), {
+  const res = await request.post(apiUrl('/auth/signup'), {
     data: { username, name, email, password },
   });
   expect(res.ok(), `signup failed: ${await res.text()}`).toBeTruthy();
@@ -49,8 +49,10 @@ async function submitAuthForm(page: Page) {
 }
 
 async function loginToMfaSetup(page: Page, email: string, password: string) {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
+  await page.goto('.');
+  await page.evaluate(() => localStorage.clear());
+  await page.goto('.');
+  await page.waitForLoadState('domcontentloaded');
   await fillLoginCredentials(page, email, password);
   await submitAuthForm(page);
   await expect(page.getByRole('heading', { name: 'Protect Your Account' })).toBeVisible({
@@ -74,8 +76,10 @@ async function openProfileAndSignOut(page: Page) {
 // ---------------------------------------------------------------------------
 
 test.describe('Authentication & MFA', () => {
-  test.beforeEach(async ({ context }) => {
+  test.beforeEach(async ({ context, page }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('.');
+    await page.evaluate(() => localStorage.clear());
   });
 
   test('TC-UI-001: login without MFA redirects to MFA setup, not dashboard', async ({
@@ -84,7 +88,7 @@ test.describe('Authentication & MFA', () => {
   }) => {
     const user = await signupFreshUser(request);
 
-    await page.goto('/');
+    await page.goto('.');
     await fillLoginCredentials(page, user.email, user.password);
     await submitAuthForm(page);
 
@@ -103,7 +107,7 @@ test.describe('Authentication & MFA', () => {
     const tokens = await loginAs(request, user.email, user.password);
     await setupMfaForUser(request, tokens.accessToken);
 
-    await page.goto('/');
+    await page.goto('.');
     await fillLoginCredentials(page, user.email, user.password);
     await submitAuthForm(page);
 
@@ -122,7 +126,7 @@ test.describe('Authentication & MFA', () => {
     const tokens = await loginAs(request, user.email, user.password);
     const mfaSecret = await setupMfaForUser(request, tokens.accessToken);
 
-    await page.goto('/');
+    await page.goto('.');
     await fillLoginCredentials(page, user.email, user.password);
     await submitAuthForm(page);
     await expect(page.getByRole('heading', { name: 'Two-Factor Authentication' })).toBeVisible();
@@ -160,7 +164,7 @@ test.describe('Authentication & MFA', () => {
     await page.locator('#sidebar-container').waitFor({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: 'Protect Your Account' })).not.toBeVisible();
 
-    const meRes = await request.get(apiPath('/me'), {
+    const meRes = await request.get(apiUrl('/me'), {
       headers: { Authorization: `Bearer ${(await getLocalStorageTokens(page)).accessToken}` },
     });
     expect(meRes.ok()).toBeTruthy();
@@ -221,7 +225,7 @@ test.describe('Authentication & MFA', () => {
   test('TC-UI-007: Developer Seed Profiles quick-fill buttons expose credentials on login page', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('.');
     await expect(page.getByText('Developer Seed Profiles')).toBeVisible();
 
     const emailInput = page.locator('input[type="email"]').first();
@@ -242,7 +246,7 @@ test.describe('Authentication & MFA', () => {
     const username = `e2esignupui${suffix.replace(/[^a-z0-9]/gi, '').slice(0, 12)}`;
     const password = 'SignupPass123!';
 
-    await page.goto('/');
+    await page.goto('.');
     await page.getByRole('button', { name: /Don't have an account/i }).click();
 
     await page.locator('input[placeholder="John Doe"]').fill('Signup UI User');

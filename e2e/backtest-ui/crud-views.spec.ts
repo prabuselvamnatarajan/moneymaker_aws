@@ -7,6 +7,7 @@ import {
   openRegisterAccountDialog,
   openResourceOverview,
   openAccountDetail,
+  accountRegistrationModal,
 } from './helpers/nav';
 
 // ---------------------------------------------------------------------------
@@ -23,15 +24,21 @@ async function fillAccountRegistrationForm(
     commissionRate?: string;
   }
 ) {
-  const form = page.locator('form').filter({ hasText: 'Register New Brokerage' });
+  const modal = accountRegistrationModal(page);
+  const form = modal.locator('form');
+  await page.getByRole('heading', { name: 'Register New Brokerage' }).waitFor({ timeout: 15_000 });
+  await form.locator('select').first().waitFor({ timeout: 15_000 });
   await form.locator('input[type="text"]').first().fill(opts.name);
   if (opts.accountType) {
     await form.locator('select').first().selectOption(opts.accountType);
+    await expect(form.locator('select').nth(1).locator('option')).not.toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await expect(form.locator('select').nth(1)).not.toHaveValue('', { timeout: 15_000 });
   }
   await form.locator('input[type="number"]').first().fill(opts.balance);
-  const commissionSelect = form.locator('select').nth(1);
   if (opts.commissionType) {
-    await commissionSelect.selectOption(opts.commissionType);
+    await form.locator('select').nth(2).selectOption(opts.commissionType);
   }
   if (opts.commissionRate !== undefined) {
     await form.locator('input[type="number"]').nth(2).fill(opts.commissionRate);
@@ -49,13 +56,11 @@ test.describe('CRUD list views', () => {
   }) => {
     await loginViaUI(page);
     await openResourceOverview(page, 'accounts');
-
-    const createPromise = page.waitForRequest(
-      (req) => req.method() === 'POST' && req.url().includes('/api/accounts'),
-      { timeout: 30_000 }
-    );
+    await page.locator('#btn-register-account-trigger').waitFor({ timeout: 15_000 });
 
     await openRegisterAccountDialog(page);
+    await accountRegistrationModal(page).locator('form select').nth(1).waitFor({ timeout: 15_000 });
+
     const accountName = `e2e-ui-acc-${uniqueSuffix()}`;
     await fillAccountRegistrationForm(page, {
       name: accountName,
@@ -64,10 +69,16 @@ test.describe('CRUD list views', () => {
       commissionType: 'FLAT',
       commissionRate: '15',
     });
-    await page.getByRole('button', { name: 'Save Broker Record' }).click();
 
-    const createReq = await createPromise;
-    const payload = createReq.postDataJSON() as Record<string, unknown>;
+    const [createRes] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/backtestapp/accounts') && r.request().method() === 'POST',
+        { timeout: 30_000 }
+      ),
+      page.getByRole('button', { name: 'Save Broker Record' }).click(),
+    ]);
+
+    const payload = createRes.request().postDataJSON() as Record<string, unknown>;
 
     expect(payload.account_name).toBe(accountName);
     expect(payload.account_type).toBe('PAPER');
@@ -93,10 +104,10 @@ test.describe('CRUD list views', () => {
     });
 
     await loginViaUI(page);
-    await openAccountDetail(page, account._id);
+    await openAccountDetail(page, account._id, accountName);
 
     await page.getByTitle('Delete Account').click();
-    await page.locator('#btn-confirm-delete-acc-details').locator('..').locator('input').fill(accountName);
+    await page.getByPlaceholder('Type account name to confirm').fill(accountName);
     await page.locator('#btn-confirm-delete-acc-details').click();
 
     await expect(page.getByText('Brokerage Accounts Directory')).toBeVisible({ timeout: 20_000 });
@@ -121,7 +132,7 @@ test.describe('CRUD list views', () => {
     await loginViaUI(page);
     await openResourceOverview(page, 'accounts');
 
-    await page.route('**/api/accounts/**', async (route) => {
+    await page.route('**/backtestapp/accounts/**', async (route) => {
       if (route.request().method() === 'PATCH') {
         await route.fulfill({ status: 500, body: JSON.stringify({ message: 'Simulated failure' }) });
         return;
@@ -129,14 +140,15 @@ test.describe('CRUD list views', () => {
       await route.continue();
     });
 
-    const statusPill = page.getByText('API SESSION ACTIVE').first();
+    const accountRow = page.locator('div.p-5').filter({ hasText: account.account_name });
+    const statusPill = accountRow.getByText('API SESSION ACTIVE');
     await expect(statusPill).toBeVisible();
     await statusPill.click();
 
     await expect(page.locator('#toast-container').getByText(/failed to update account state/i)).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByText('API SESSION ACTIVE').first()).toBeVisible();
+    await expect(accountRow.getByText('API SESSION ACTIVE')).toBeVisible();
   });
 
   test('TC-UI-034: strategy template create, edit, and delete use definition endpoints', async ({
@@ -148,7 +160,7 @@ test.describe('CRUD list views', () => {
 
     const templateName = `e2e-template-${uniqueSuffix()}`;
     const createPromise = page.waitForRequest(
-      (req) => req.method() === 'POST' && req.url().includes('/api/strategies'),
+      (req) => req.method() === 'POST' && req.url().includes('/backtestapp/strategies'),
       { timeout: 30_000 }
     );
 
@@ -159,29 +171,42 @@ test.describe('CRUD list views', () => {
     await page.getByRole('button', { name: 'Create Template' }).click();
     await createPromise;
 
-    const templateRow = page.locator('div').filter({ hasText: templateName }).first();
-    await expect(templateRow).toBeVisible({ timeout: 15_000 });
+    const templateCard = page
+      .getByRole('heading', { level: 3, name: templateName })
+      .locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]');
+    await expect(templateCard).toBeVisible({ timeout: 15_000 });
 
     const updatedName = `${templateName}-edited`;
-    const patchPromise = page.waitForRequest(
-      (req) => req.method() === 'PATCH' && req.url().includes('/api/strategies/'),
-      { timeout: 30_000 }
-    );
-    await templateRow.getByTitle('Edit Strategy Template').click();
-    await page.locator('form').filter({ hasText: 'Edit Strategy Template' }).locator('input[type="text"]').first().fill(updatedName);
-    await page.getByRole('button', { name: 'Update Template' }).click();
-    await patchPromise;
-    await expect(page.getByText(updatedName)).toBeVisible({ timeout: 15_000 });
+    const editModal = page.locator('.fixed.inset-0').filter({ hasText: 'Edit Strategy Template' });
+    const [patchRes] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/backtestapp/strategies/') && r.request().method() === 'PATCH',
+        { timeout: 30_000 }
+      ),
+      (async () => {
+        await templateCard.getByTitle('Edit Strategy Template').click();
+        await editModal.locator('form input[type="text"]').first().fill(updatedName);
+        await page.getByRole('button', { name: 'Update Template' }).click();
+      })(),
+    ]);
+    expect(patchRes.ok()).toBeTruthy();
+    await expect(page.getByRole('heading', { level: 3, name: updatedName })).toBeVisible({ timeout: 15_000 });
 
-    const deletePromise = page.waitForRequest(
-      (req) => req.method() === 'DELETE' && req.url().includes('/api/strategies/'),
-      { timeout: 30_000 }
-    );
-    await page.locator('div').filter({ hasText: updatedName }).first().getByTitle('Delete Strategy Template').click();
-    await page.locator('#btn-confirm-delete-template').locator('..').locator('input').fill(updatedName);
-    await page.locator('#btn-confirm-delete-template').click();
-    await deletePromise;
-    await expect(page.getByText(updatedName)).not.toBeVisible({ timeout: 15_000 });
+    const updatedCard = page
+      .getByRole('heading', { level: 3, name: updatedName })
+      .locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]');
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/backtestapp/strategies/') && r.request().method() === 'DELETE',
+        { timeout: 30_000 }
+      ),
+      (async () => {
+        await updatedCard.getByTitle('Delete Strategy Template').click();
+        await page.getByPlaceholder('Type strategy template name to confirm').fill(updatedName);
+        await page.locator('#btn-confirm-delete-template').click();
+      })(),
+    ]);
+    await expect(page.getByRole('heading', { level: 3, name: updatedName })).not.toBeVisible({ timeout: 15_000 });
   });
 
   test('TC-UI-035: symbol activation toggle updates list and survives reload', async ({
@@ -201,7 +226,7 @@ test.describe('CRUD list views', () => {
     await expect(row.getByText('Inactive')).toBeVisible({ timeout: 15_000 });
 
     const patchPromise = page.waitForRequest(
-      (req) => req.method() === 'PATCH' && req.url().includes(`/api/symbols/${symbol._id}`),
+      (req) => req.method() === 'PATCH' && req.url().includes(`/backtestapp/symbols/${symbol._id}`),
       { timeout: 30_000 }
     );
     await row.getByRole('button', { name: 'Activate' }).click();
@@ -235,20 +260,24 @@ test.describe('CRUD list views', () => {
     await page.locator('#btn-track-symbol-trigger').click();
     await page.getByRole('button', { name: 'Add Bulk Symbols' }).click();
 
-    const bulkPromise = page.waitForRequest(
-      (req) => req.method() === 'POST' && req.url().includes('/api/symbols/bulk'),
-      { timeout: 30_000 }
-    );
+    const bulkModal = page.locator('.fixed.inset-0').filter({ hasText: 'Add Bulk Option Symbols' });
+    await bulkModal.getByRole('heading', { name: 'Add Bulk Option Symbols' }).waitFor({ timeout: 15_000 });
 
-    await page.locator('select').filter({ has: page.locator('option', { hasText: 'NIFTY' }) }).selectOption('NIFTY');
-    await page.locator('input[type="date"]').fill('2026-12-25');
-    await page.locator('select').filter({ hasText: 'ITM (In The Money)' }).selectOption('OTM');
-    await page.locator('select').filter({ hasText: 'Call (CE Only)' }).selectOption('Both');
-    await page.locator('input[type="number"]').fill('3');
-    await page.getByRole('button', { name: 'Fetch & Add Chain' }).click();
+    await bulkModal.locator('select').first().selectOption('NIFTY');
+    await bulkModal.locator('input[type="date"]').fill('2026-12-25');
+    await bulkModal.locator('select').nth(1).selectOption('OTM');
+    await bulkModal.locator('select').nth(2).selectOption('Both');
+    await bulkModal.getByRole('spinbutton').first().fill('3');
 
-    const bulkReq = await bulkPromise;
-    const payload = bulkReq.postDataJSON() as Record<string, unknown>;
+    const [bulkRes] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/backtestapp/symbols/bulk') && r.request().method() === 'POST',
+        { timeout: 30_000 }
+      ),
+      bulkModal.getByRole('button', { name: 'Fetch & Add Chain' }).click(),
+    ]);
+
+    const payload = bulkRes.request().postDataJSON() as Record<string, unknown>;
     expect(payload.symbol).toBe('NIFTY');
     expect(payload.range_count).toBe(3);
     expect(payload.range_option).toBe('OTM');
@@ -263,7 +292,7 @@ test.describe('CRUD list views', () => {
     await expect(page.getByRole('heading', { name: /Brokers/i })).toBeVisible({ timeout: 15_000 });
 
     const refreshPromise = page.waitForRequest(
-      (req) => req.method() === 'GET' && req.url().includes('/api/brokers'),
+      (req) => req.method() === 'GET' && req.url().includes('/backtestapp/brokers'),
       { timeout: 15_000 }
     );
 

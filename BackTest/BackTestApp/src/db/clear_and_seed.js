@@ -212,6 +212,11 @@ export const clearAndSeedDB = async () => {
     const seededAccounts = await Account.insertMany(accountsData);
     console.log(`Created ${seededAccounts.length} accounts.`);
 
+    const { initializeUserAccounts } = await import("../utils/accountInitializer.js");
+    await initializeUserAccounts(standardUser._id);
+    await initializeUserAccounts(adminUser._id);
+    console.log("Initialized Manual strategy/symbol/deployments for seeded users.");
+
     // 5. Create strategies
     const strategiesData = [
       {

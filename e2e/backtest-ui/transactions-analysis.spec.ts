@@ -74,17 +74,16 @@ test.describe('Transactions and analysis views', () => {
     await navigateTo(page, 'transactions');
 
     await page.locator('#toggle-advance-filters-btn').click();
-    await page.locator(`#filter-acc-${account._id}`).check();
-    await page.locator(`#filter-strat-${deployment._id}`).check();
-    await page.locator('#advanced-filters-panel').getByRole('button', { name: 'BUY', exact: true }).click();
+    await page.locator(`#filter-acc-${account._id}`).click();
+    await page.locator(`#filter-strat-${deployment._id}`).click();
+    await page.locator('#advanced-filters-panel label').filter({ hasText: 'BUY' }).locator('input[type="checkbox"]').check();
 
-    await openAccountDetail(page, account._id);
+    await openAccountDetail(page, account._id, account.account_name);
     await page.locator('#view-all-transactions-drilldown').click();
 
     await expect(page.locator('#global-ledger-search-input')).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator(`#filter-acc-${account._id}`)).toBeChecked();
-    await expect(page.locator(`#filter-strat-${deployment._id}`)).not.toBeChecked();
-    await expect(page.locator('#filter-chips-board').getByText(/Strategy:/i)).not.toBeVisible();
+    await expect(page.locator('#filter-chips-board')).toContainText(account.account_name);
+    await expect(page.locator('#filter-chips-board')).not.toContainText('Strategy:');
   });
 
   test('TC-UI-039: highlighted transaction row clears after navigation away', async ({
@@ -94,7 +93,7 @@ test.describe('Transactions and analysis views', () => {
     const { account, tradeId } = await seedAccountWithTrade(request);
 
     await loginViaUI(page);
-    await openAccountDetail(page, account._id);
+    await openAccountDetail(page, account._id, account.account_name);
     await page.locator('#view-all-transactions-drilldown').click();
     await expect(page.locator('#global-ledger-search-input')).toBeVisible({ timeout: 15_000 });
 
@@ -160,7 +159,7 @@ test.describe('Transactions and analysis views', () => {
     const positionsPromise = page.waitForRequest(
       (req) =>
         req.method() === 'GET' &&
-        req.url().includes('/api/positions') &&
+        req.url().includes('/backtestapp/positions') &&
         req.url().includes('populate_trades=true'),
       { timeout: 45_000 }
     );
@@ -200,7 +199,7 @@ test.describe('Transactions and analysis views', () => {
       },
     };
 
-    await page.route(`**/api/deployments/${deployment._id}/analysis**`, async (route) => {
+    await page.route(`**/backtestapp/deployments/${deployment._id}/analysis**`, async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(analysisPayload) });
         return;
@@ -226,7 +225,7 @@ test.describe('Transactions and analysis views', () => {
     const { accessToken } = await loginAsUser(request);
     await createSymbol(request, accessToken, { is_active: true });
 
-    await page.route('**/api/symbols/**/candles**', async (route) => {
+    await page.route('**/backtestapp/symbols/**/candles**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -262,7 +261,7 @@ test.describe('Transactions and analysis views', () => {
   });
 
   test('TC-UI-044: backtest dates API failure falls back to hardcoded dates', async ({ page }) => {
-    await page.route('**/api/symbols/backtest-dates**', async (route) => {
+    await page.route('**/backtestapp/symbols/backtest-dates**', async (route) => {
       await route.fulfill({ status: 500, body: JSON.stringify({ message: 'Unavailable' }) });
     });
 
@@ -278,14 +277,14 @@ test.describe('Transactions and analysis views', () => {
     const { accessToken } = await loginAsUser(request);
     await createSymbol(request, accessToken, { is_active: true });
 
-    await page.route('**/api/symbols/backtest-dates**', async (route) => {
+    await page.route('**/backtestapp/symbols/backtest-dates**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: ['2099-01-01'] }),
       });
     });
-    await page.route('**/api/symbols/**/candles**', async (route) => {
+    await page.route('**/backtestapp/symbols/**/candles**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

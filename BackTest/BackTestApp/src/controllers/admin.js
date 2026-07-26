@@ -43,8 +43,11 @@ export const createUser = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     
-    let userRoles = roles;
-    if (!userRoles || !Array.isArray(userRoles) || userRoles.length === 0) {
+    let userRoles;
+    if (Array.isArray(roles)) {
+      // Honor explicit [] — used to create users with no assignable role for login tests.
+      userRoles = roles;
+    } else {
       const Role = mongoose.model("Role");
       const defaultRole = await Role.findOne({ name: "user" });
       userRoles = defaultRole ? [defaultRole._id] : [];

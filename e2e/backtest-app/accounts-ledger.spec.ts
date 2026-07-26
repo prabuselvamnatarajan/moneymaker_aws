@@ -1142,8 +1142,8 @@ test('TC-LDG-025: Account commission_rate commission_type applied at trade time'
   });
   await expectStatus(tradeRes, 201);
 
-  const tradeBody = unwrapData<{ commission: number }>(await jsonBody(tradeRes));
-  expect(tradeBody.commission).toBe(expectedCommission);
+  const tradeBody = unwrapData<{ trade: { commission: number } }>(await jsonBody(tradeRes));
+  expect(tradeBody.trade.commission).toBe(expectedCommission);
 });
 
 test('TC-LDG-026: Unauthenticated request to ledger and account endpoints rejected', async ({

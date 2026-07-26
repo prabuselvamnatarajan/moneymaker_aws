@@ -124,6 +124,22 @@ export default function AccountsListView({
     setBrokers(initialBrokers);
   }, [initialBrokers]);
 
+  useEffect(() => {
+    if (!showAddForm || brokers.length > 0) return;
+    let cancelled = false;
+    api.brokers
+      .list()
+      .then((res) => {
+        if (!cancelled && Array.isArray(res.items)) {
+          setBrokers(res.items);
+        }
+      })
+      .catch((err) => console.error('[AccountsListView] Failed to load brokers for add form', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [showAddForm, brokers.length]);
+
   // Auto-select broker based on account type selection
   useEffect(() => {
     if (accountType === 'SIMULATION' || accountType === 'PAPER') {

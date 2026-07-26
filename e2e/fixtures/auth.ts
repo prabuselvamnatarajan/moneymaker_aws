@@ -31,14 +31,10 @@ export interface AuthTokens {
 }
 
 /**
- * Relative API path (no leading slash).
+ * Relative API path segment (no leading slash), for use with an API-scoped baseURL.
  *
- * Important:
- * - Leading `/` would drop `/backtestapp` from baseURL (URL resolution).
- * - Prefer root mounts (`/auth`, `/brokers`, …) — NOT `/api/*`.
- *   BackTestApp mounts legacy `app.use("/api", tradeRoutes)` BEFORE `/api/brokers`
- *   etc., so `GET /api/brokers` is captured as `GET /api/:id` → "Trade not found".
- * - Keep an explicit `api/...` prefix only for the legacy trade endpoint (`api/trade`).
+ * Prefer {@link apiUrl} for Playwright `request` calls — the UI project sets
+ * baseURL to UI_BASE_URL, so relative paths would hit /backtest-ui/… (405 HTML).
  */
 export function apiPath(path: string): string {
   const stripped = path.replace(/^\/+/, '');
@@ -48,12 +44,17 @@ export function apiPath(path: string): string {
   return stripped.replace(/^api\//, '');
 }
 
+/** Absolute BackTestApp URL — safe regardless of Playwright project baseURL. */
+export function apiUrl(path: string): string {
+  return new URL(apiPath(path), API_BASE).href;
+}
+
 export async function loginAs(
   request: APIRequestContext,
   email: string,
   password: string
 ): Promise<AuthTokens> {
-  const res = await request.post(apiPath('/auth/login'), {
+  const res = await request.post(apiUrl('/auth/login'), {
     data: { email, password },
   });
   if (!res.ok()) {
@@ -100,7 +101,7 @@ export async function createUserB(
   const email = `e2e-user-b-${suffix}@e2e.test.com`;
   const username = `e2euserb${suffix}`;
   const password = 'TestPassword123!';
-  const res = await apiRequest(request, adminToken).post(apiPath('/admin/users'), {
+  const res = await apiRequest(request, adminToken).post('/admin/users', {
     data: {
       username,
       name: 'E2E User B',
@@ -109,7 +110,8 @@ export async function createUserB(
     },
   });
   expectOk(res, 201);
-  const user = await res.json();
+  const body = await res.json();
+  const user = body?.data ?? body;
   const tokens = await loginAs(request, email, password);
   return { userId: user._id || user.id, email, password, tokens };
 }
@@ -133,16 +135,16 @@ export function apiRequest(request: APIRequestContext, token?: string) {
   const headers = (more: Record<string, string> = {}) => authHeaders(token, more);
   return {
     get: (path: string, opts: { params?: Record<string, string | number | boolean> } = {}) =>
-      request.get(apiPath(path), { headers: headers(), params: opts.params }),
+      request.get(apiUrl(path), { headers: headers(), params: opts.params }),
     post: (path: string, opts: { data?: unknown; headers?: Record<string, string> } = {}) =>
-      request.post(apiPath(path), { headers: headers(opts.headers), data: opts.data }),
+      request.post(apiUrl(path), { headers: headers(opts.headers), data: opts.data }),
     put: (path: string, opts: { data?: unknown } = {}) =>
-      request.put(apiPath(path), { headers: headers(), data: opts.data }),
+      request.put(apiUrl(path), { headers: headers(), data: opts.data }),
     patch: (path: string, opts: { data?: unknown } = {}) =>
-      request.patch(apiPath(path), { headers: headers(), data: opts.data }),
-    delete: (path: string) => request.delete(apiPath(path), { headers: headers() }),
+      request.patch(apiUrl(path), { headers: headers(), data: opts.data }),
+    delete: (path: string) => request.delete(apiUrl(path), { headers: headers() }),
     fetch: (path: string, opts: Parameters<APIRequestContext['fetch']>[1] = {}) =>
-      request.fetch(apiPath(path), {
+      request.fetch(apiUrl(path), {
         ...opts,
         headers: { ...headers(), ...(opts.headers as Record<string, string>) },
       }),
@@ -156,7 +158,7 @@ export async function signupUser(
   const email = `e2e-signup-${suffix}@e2e.test.com`;
   const username = `e2esignup${suffix}`;
   const password = 'SignupPass123!';
-  const res = await request.post(apiPath('/auth/signup'), {
+  const res = await request.post(apiUrl('/auth/signup'), {
     data: { username, name: 'Signup User', email, password },
   });
   expectOk(res, 201);

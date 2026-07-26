@@ -13,7 +13,7 @@ import {
   getMe,
   createUserB,
 } from '../fixtures/auth';
-import { generateTotp } from '../fixtures/totp';
+import { generateTotp, generateTotpAt } from '../fixtures/totp';
 import { createAccount, createTradeFixture } from '../fixtures/factories';
 import { expectStatus, expectMessageContains, tags, newObjectId } from '../fixtures/test-helpers';
 
@@ -54,7 +54,8 @@ async function loginRaw(
 async function setupMfaUser(request: APIRequestContext, accessToken: string): Promise<string> {
   const setupRes = await apiRequest(request, accessToken).post('/auth/mfa/setup');
   await expectStatus(setupRes, 200);
-  const setup = await setupRes.json();
+  const body = await setupRes.json();
+  const setup = body?.data ?? body;
   expect(setup.tempSecret).toBeTruthy();
   const verifyRes = await apiRequest(request, accessToken).post('/auth/mfa/verify-setup', {
     data: { token: generateTotp(setup.tempSecret) },
@@ -89,14 +90,6 @@ function signAccessToken(
 function signResetToken(userId: string, expiresIn: jwt.SignOptions['expiresIn'] = '15m') {
   const secret = process.env.JWT_ACCESS_SECRET || DEFAULT_ACCESS_SECRET;
   return jwt.sign({ userId, purpose: 'password-reset' }, secret, { expiresIn });
-}
-
-function generateTotpAt(secret: string, epochMs: number): string {
-  const prevEpoch = (authenticator as { options?: { epoch?: number } }).options?.epoch;
-  (authenticator as { options: { epoch?: number } }).options = { epoch: epochMs };
-  const token = authenticator.generate(secret);
-  (authenticator as { options: { epoch?: number } }).options = { epoch: prevEpoch };
-  return token;
 }
 
 function responseHasPasswordField(obj: unknown): boolean {

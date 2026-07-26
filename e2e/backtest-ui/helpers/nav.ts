@@ -1,37 +1,26 @@
 import type { Page } from '@playwright/test';
-import { loginWithFallback, SEED_CREDENTIALS } from '../../fixtures/auth';
+import { request as playwrightRequest } from '@playwright/test';
+import { API_BASE, loginWithFallback } from '../../fixtures/auth';
 
 export async function loginViaUI(page: Page, role: 'admin' | 'user' = 'user'): Promise<void> {
-  const creds = SEED_CREDENTIALS[role];
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
+  await page.goto('.');
+  await page.evaluate(() => localStorage.clear());
 
-  const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-  await emailInput.fill(creds.email);
-  const passwordInput = page.locator('input[type="password"]').first();
-  await passwordInput.fill(creds.password);
-
-  const submitBtn = page.locator('button[type="submit"]').first();
-  const loginResponse = page.waitForResponse(
-    (r) => r.url().includes('/auth/login') && r.request().method() === 'POST',
-    { timeout: 30_000 }
-  ).catch(() => null);
-
-  await submitBtn.click();
-  const res = await loginResponse;
-
-  if (res && !res.ok()) {
-    // Try fallback credentials (cobratrades)
-    await emailInput.fill(creds.fallbackEmail);
-    await passwordInput.fill(creds.fallbackPassword);
-    await submitBtn.click();
+  const api = await playwrightRequest.newContext({ baseURL: API_BASE });
+  try {
+    const { accessToken, refreshToken } = await loginWithFallback(api, role);
+    await setLocalStorageToken(page, accessToken, refreshToken);
+  } finally {
+    await api.dispose();
   }
-
-  // Handle MFA setup skip or verify screens
-  const skipBtn = page.getByRole('button', { name: /skip for now/i });
-  if (await skipBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await skipBtn.click();
-  }
+  await page.goto('.');
+  await page.waitForLoadState('domcontentloaded');
+  await page
+    .waitForResponse(
+      (r) => r.url().includes('/backtestapp/brokers') && r.request().method() === 'GET' && r.ok(),
+      { timeout: 30_000 }
+    )
+    .catch(() => null);
 
   await page.locator('#sidebar-container, #nav-dashboard-btn').first().waitFor({
     timeout: 30_000,
@@ -64,12 +53,37 @@ export async function openResourceOverview(
   const section = page.locator('#sidebar-container').locator('div.space-y-1').filter({
     has: page.getByRole('button', { name: pattern }),
   });
-  await section.getByRole('button', { name: pattern }).click();
-  await section.getByRole('button', { name: 'Overview', exact: true }).click();
+  const overviewBtn = section.getByRole('button', { name: 'Overview', exact: true });
+
+  if (!(await overviewBtn.isVisible().catch(() => false))) {
+    await section.getByRole('button', { name: pattern }).click();
+    await page.waitForTimeout(350);
+  }
+  if (!(await overviewBtn.isVisible().catch(() => false))) {
+    await section.getByRole('button', { name: pattern }).click();
+    await page.waitForTimeout(350);
+  }
+  await overviewBtn.evaluate((el: HTMLElement) => el.click());
 }
 
-export async function openAccountDetail(page: Page, accountId: string): Promise<void> {
-  await page.locator(`#sidebar-acc-${accountId}`).click();
+export async function openAccountDetail(
+  page: Page,
+  accountId: string,
+  accountName?: string
+): Promise<void> {
+  if (!accountName) {
+    throw new Error('openAccountDetail requires accountName for reliable navigation');
+  }
+
+  await openResourceOverview(page, 'accounts');
+
+  const search = page.locator('input[placeholder*="Search accounts"]');
+  if (await search.isVisible().catch(() => false)) {
+    await search.fill(accountName);
+  }
+
+  await page.getByText(accountName, { exact: true }).first().click();
+  await page.getByRole('heading', { name: accountName }).waitFor({ timeout: 15_000 });
 }
 
 export async function openProfile(page: Page): Promise<void> {
@@ -88,13 +102,7 @@ export async function navigateToStrategies(page: Page): Promise<void> {
   if (await deployTrigger.isVisible().catch(() => false)) {
     return;
   }
-  await page.getByRole('button', { name: /Deployments \(\d+\)/ }).click();
-  await page
-    .locator('button')
-    .filter({ hasText: /^Deployments \(\d+\)$/ })
-    .locator('xpath=following-sibling::div[1]')
-    .getByRole('button', { name: 'Overview' })
-    .click();
+  await openResourceOverview(page, 'deployments');
   await deployTrigger.waitFor({ timeout: 15_000 });
 }
 
@@ -103,13 +111,7 @@ export async function navigateToSymbols(page: Page): Promise<void> {
   if (await trackBtn.isVisible().catch(() => false)) {
     return;
   }
-  await page.getByRole('button', { name: /Symbols \(\d+\)/ }).click();
-  await page
-    .locator('button')
-    .filter({ hasText: /^Symbols \(\d+\)$/ })
-    .locator('xpath=following-sibling::div[1]')
-    .getByRole('button', { name: 'Overview' })
-    .click();
+  await openResourceOverview(page, 'symbols');
   await trackBtn.waitFor({ timeout: 15_000 });
 }
 
@@ -131,6 +133,10 @@ export async function openDeployDialog(page: Page): Promise<void> {
 
 export async function openRegisterAccountDialog(page: Page): Promise<void> {
   await page.locator('#btn-register-account-trigger').click();
+}
+
+export function accountRegistrationModal(page: Page) {
+  return page.locator('.fixed.inset-0').filter({ hasText: 'Register New Brokerage' });
 }
 
 export async function getLocalStorageTokens(page: Page) {

@@ -6,8 +6,7 @@ import {
   logoutViaUI,
   navigateToSymbols,
 } from './helpers/nav';
-
-const WS_URL_PATTERN = /\/backtestapp\/ws/;
+import { WS_URL_PATTERN, WsRelay } from './helpers/ws-relay';
 
 function trackAppWebSockets(page: Page): { urls: string[]; count: () => number } {
   const urls: string[] = [];
@@ -17,56 +16,6 @@ function trackAppWebSockets(page: Page): { urls: string[]; count: () => number }
     }
   });
   return { urls, count: () => urls.length };
-}
-
-async function installWsRelay(
-  page: Page,
-  opts: { injectAfterMs?: number; closeAfterMs?: number } = {}
-): Promise<void> {
-  await page.routeWebSocket(WS_URL_PATTERN, (ws) => {
-    const server = ws.connectToServer();
-    server.onMessage((message) => server.send(message));
-
-    if (opts.injectAfterMs != null) {
-      setTimeout(() => {
-        ws.send(JSON.stringify({ event: 'broker_updated', broker_id: 'e2e-broker' }));
-      }, opts.injectAfterMs);
-    }
-
-    if (opts.closeAfterMs != null) {
-      setTimeout(() => ws.close(), opts.closeAfterMs);
-    }
-  });
-}
-
-async function sendWsFrame(page: Page, payload: string, delayMs = 300): Promise<void> {
-  await page.evaluate(
-    ({ frame, waitMs }) =>
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          const ws = (window as unknown as { __e2eWs?: WebSocket }).__e2eWs;
-          if (ws?.onmessage) {
-            ws.onmessage({ data: frame } as MessageEvent);
-          }
-          resolve();
-        }, waitMs);
-      }),
-    { frame: payload, waitMs: delayMs }
-  );
-}
-
-async function hookClientWebSocket(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const NativeWebSocket = window.WebSocket;
-    window.WebSocket = class extends NativeWebSocket {
-      constructor(url: string | URL, protocols?: string | string[]) {
-        super(url, protocols);
-        if (String(url).includes('/backtestapp/ws')) {
-          (window as unknown as { __e2eWs?: WebSocket }).__e2eWs = this;
-        }
-      }
-    } as typeof WebSocket;
-  });
 }
 
 test.describe('BackTest UI — Live WebSocket ticker feed', () => {
@@ -96,10 +45,17 @@ test.describe('BackTest UI — Live WebSocket ticker feed', () => {
   test('TC-UI-019: broker_updated WS event dispatches broker-updated and reloads data', async ({
     page,
   }) => {
-    await hookClientWebSocket(page);
-    await installWsRelay(page);
+    const relay = new WsRelay();
+    await relay.install(page);
+
+    const wsReady = page.waitForEvent('websocket', {
+      predicate: (ws) => WS_URL_PATTERN.test(ws.url()),
+      timeout: 30_000,
+    });
+
     await loginViaUI(page);
-    await page.waitForLoadState('networkidle');
+    await wsReady;
+    await expect.poll(() => relay.isReady(), { timeout: 5_000 }).toBe(true);
 
     const brokerEvent = page.evaluate(
       () =>
@@ -114,17 +70,13 @@ test.describe('BackTest UI — Live WebSocket ticker feed', () => {
 
     const accountsReload = page.waitForResponse(
       (response) =>
-        response.url().includes('/api/accounts') &&
+        response.url().includes('/backtestapp/accounts') &&
         response.request().method() === 'GET' &&
         response.status() === 200,
       { timeout: 20_000 }
     );
 
-    await sendWsFrame(
-      page,
-      JSON.stringify({ event: 'broker_updated', broker_id: 'e2e-broker' }),
-      0
-    );
+    relay.push({ event: 'broker_updated', broker_id: 'e2e-broker' });
 
     const [detail] = await Promise.all([brokerEvent, accountsReload]);
     expect(detail.event).toBe('broker_updated');
@@ -134,9 +86,15 @@ test.describe('BackTest UI — Live WebSocket ticker feed', () => {
     page,
     request,
   }) => {
-    await hookClientWebSocket(page);
-    await installWsRelay(page);
+    const relay = new WsRelay();
+    await relay.install(page);
+    const wsReady = page.waitForEvent('websocket', {
+      predicate: (ws) => WS_URL_PATTERN.test(ws.url()),
+      timeout: 30_000,
+    });
     await loginViaUI(page);
+    await wsReady;
+    await expect.poll(() => relay.isReady(), { timeout: 5_000 }).toBe(true);
     await navigateToSymbols(page);
 
     const { accessToken } = await getLocalStorageTokens(page);
@@ -149,8 +107,11 @@ test.describe('BackTest UI — Live WebSocket ticker feed', () => {
     }>;
     expect(items.length).toBeGreaterThan(1);
 
-    const target = items[0];
-    const other = items[1];
+    const firstTicker = (
+      await page.locator('tbody tr').first().locator('span.font-mono').first().innerText()
+    ).trim();
+    const target = items.find((s) => s.symbol === firstTicker) ?? items[0];
+    const other = items.find((s) => s.symbol !== target.symbol) ?? items[1];
     const newPrice = 4242.42;
 
     const priceCell = (symbol: string) =>
@@ -158,42 +119,43 @@ test.describe('BackTest UI — Live WebSocket ticker feed', () => {
         .locator('tbody tr')
         .filter({ has: page.locator('span.font-mono', { hasText: symbol }) })
         .locator('td')
-        .nth(4);
+        .nth(5);
 
     const targetBefore = await priceCell(target.symbol).innerText();
     const otherBefore = await priceCell(other.symbol).innerText();
 
-    await sendWsFrame(
-      page,
-      JSON.stringify({ instrument_token: target.instrument_token, last_price: newPrice })
-    );
+    relay.push({ instrument_token: target.instrument_token, last_price: newPrice });
 
-    await expect(priceCell(target.symbol)).not.toHaveText(targetBefore, { timeout: 10_000 });
-    await expect(priceCell(target.symbol)).toContainText('4,242.42');
+    await expect(priceCell(target.symbol)).toContainText('₹4,242.42', { timeout: 10_000 });
+    await expect(priceCell(target.symbol)).not.toHaveText(targetBefore);
     await expect(priceCell(other.symbol)).toHaveText(otherBefore);
   });
 
   test('TC-UI-021: malformed WS JSON is logged without crashing the UI or connection', async ({
     page,
   }) => {
-    await hookClientWebSocket(page);
-    await installWsRelay(page);
-    await loginViaUI(page);
+    const relay = new WsRelay();
+    await relay.install(page);
 
-    const consoleErrors: string[] = [];
+    const consoleLines: string[] = [];
     page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text());
+      consoleLines.push(msg.text());
     });
 
-    await sendWsFrame(page, 'not-valid-json{{{');
+    const wsReady = page.waitForEvent('websocket', {
+      predicate: (ws) => WS_URL_PATTERN.test(ws.url()),
+      timeout: 30_000,
+    });
+    await loginViaUI(page);
+    await wsReady;
+    await expect.poll(() => relay.isReady(), { timeout: 5_000 }).toBe(true);
+
+    relay.push('not-valid-json{{{');
     await expect(page.locator('#nav-dashboard-btn, #sidebar-container').first()).toBeVisible();
 
-    expect(consoleErrors.some((line) => /Error parsing live WS message/i.test(line))).toBe(true);
+    expect(consoleLines.some((line) => /Error parsing live WS message/i.test(line))).toBe(true);
 
-    await sendWsFrame(
-      page,
-      JSON.stringify({ instrument_token: 'e2e-health-check-token', last_price: 100 })
-    );
+    relay.push({ instrument_token: 'e2e-health-check-token', last_price: 100 });
     await expect(page.locator('#nav-dashboard-btn, #sidebar-container').first()).toBeVisible();
   });
 
@@ -203,7 +165,8 @@ test.describe('BackTest UI — Live WebSocket ticker feed', () => {
     const tracker = trackAppWebSockets(page);
     await page.routeWebSocket(WS_URL_PATTERN, (ws) => {
       const server = ws.connectToServer();
-      server.onMessage((message) => server.send(message));
+      server.onMessage((message) => ws.send(message));
+      ws.onMessage((message) => server.send(message));
       setTimeout(() => ws.close(), 500);
     });
 
@@ -224,7 +187,8 @@ test.describe('BackTest UI — Live WebSocket ticker feed', () => {
     const tracker = trackAppWebSockets(page);
     await page.routeWebSocket(WS_URL_PATTERN, (ws) => {
       const server = ws.connectToServer();
-      server.onMessage((message) => server.send(message));
+      server.onMessage((message) => ws.send(message));
+      ws.onMessage((message) => server.send(message));
       setTimeout(() => ws.close(), 500);
     });
 

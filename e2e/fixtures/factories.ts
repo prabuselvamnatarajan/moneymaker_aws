@@ -194,7 +194,11 @@ export async function createExternalBrokerForUser(
     data: {
       name: `E2E External ${suffix}`,
       external_broker_id: 'upstox',
-      credentials: { client_secret: 'test-secret' },
+      credentials: {
+        client_id: 'e2e-client-id',
+        client_secret: 'test-secret',
+        redirect_uri: 'http://localhost/callback',
+      },
     },
   });
   if (!res.ok()) throw new Error(`createExternalBroker failed: ${res.status()}`);

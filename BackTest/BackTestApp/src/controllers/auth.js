@@ -73,7 +73,8 @@ export const refreshToken = async (req, res, next) => {
     const newPayload = {
       userId: user._id.toString(),
       email: user.email,
-      sessionID: payload.sessionID
+      sessionID: payload.sessionID,
+      refreshedAt: Date.now(),
     };
 
     const accessToken = jwtService.signAccessToken(newPayload);

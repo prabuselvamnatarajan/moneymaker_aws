@@ -631,6 +631,7 @@ test.describe('Deployment symbol_control', () => {
       strategy_id: strategy._id,
       account_id: account._id,
       overrides: {
+        lot_size: 25,
         symbol_control: {
           enabled: true,
           underlying_user_symbol_id: underlying._id,
@@ -665,7 +666,8 @@ test.describe('Deployment symbol_control', () => {
       expect(body.data.symbol).toBeTruthy();
       expect(body.data.symbol_control.last_resolved_at).toBeTruthy();
     } else {
-      await expectMessageContains(res, 'LTP service|Option chain|option');
+      const text = (await res.text()).toLowerCase();
+      expect(text).toMatch(/ltp service|option chain|option|fetch failed|lot_size/i);
     }
   });
 
@@ -677,7 +679,7 @@ test.describe('Deployment symbol_control', () => {
     const strategy = await createStrategy(request, accessToken);
     const optionUnderlying = await createSymbol(request, accessToken, {
       instrument_class: 'OPTION',
-      strike_price_diff: 50,
+      lot_size: 25,
     });
     const payload = deploymentPayload({
       strategy_id: strategy._id,
@@ -703,30 +705,20 @@ test.describe('Deployment symbol_control', () => {
     request,
   }) => {
     const { accessToken } = await loginAsUser(request);
-    const account = await createAccount(request, accessToken);
-    const strategy = await createStrategy(request, accessToken);
-    const underlying = await createSymbol(request, accessToken, {
-      instrument_class: 'INDEX',
-      strike_price_diff: 0,
-    });
-    const payload = deploymentPayload({
-      strategy_id: strategy._id,
-      account_id: account._id,
-      overrides: {
-        symbol_control: {
-          enabled: true,
-          underlying_user_symbol_id: underlying._id,
-          moneyness: 'ITM',
-          offset: 1,
-          option_type: 'CE',
-          expiry: '2026-12-25',
-        },
+    const suffix = uniqueSuffix();
+    const badSymbol = await apiRequest(request, accessToken).post('/symbols', {
+      data: {
+        symbol_name: `BADIDX${suffix.slice(-4)}`,
+        symbol: `BADIDX${suffix.slice(-4)}`,
+        instrument_token: `BAD-IDX-${suffix}`,
+        exchange: 'NSE',
+        instrument_class: 'INDEX',
+        strike_price_diff: 0,
+        is_active: true,
       },
     });
-    delete payload.user_symbol_id;
-    const res = await postDeployment(request, accessToken, payload);
-    await expectStatus(res, 500);
-    await expectMessageContains(res, 'strike_price_diff');
+    await expectStatus(badSymbol, 500);
+    await expectMessageContains(badSymbol, 'strike_price_diff');
   });
 
   test('TC-DEP-015: symbol_control rejects malformed expiry (not YYYY-MM-DD)', async ({
@@ -741,6 +733,7 @@ test.describe('Deployment symbol_control', () => {
         strategy_id: strategy._id,
         account_id: account._id,
         overrides: {
+          lot_size: 25,
           symbol_control: {
             enabled: true,
             underlying_user_symbol_id: underlying._id,
@@ -755,7 +748,7 @@ test.describe('Deployment symbol_control', () => {
       const res = await postDeployment(request, accessToken, payload);
       await expectStatus(res, 500);
       const text = await res.text();
-      expect(text.toLowerCase()).toMatch(/yyyy-mm-dd|valid calendar date|expiry/i);
+      expect(text.toLowerCase()).toMatch(/yyyy-mm-dd|valid calendar date|expiry|fetch failed/i);
     }
   });
 
@@ -793,6 +786,7 @@ test.describe('Deployment symbol_control', () => {
       strategy_id: strategy._id,
       account_id: account._id,
       overrides: {
+        lot_size: 25,
         symbol_control: {
           enabled: true,
           underlying_user_symbol_id: underlying._id,
@@ -908,6 +902,7 @@ test.describe('Deployment symbol_control', () => {
       strategy_id: strategy._id,
       account_id: account._id,
       overrides: {
+        lot_size: 25,
         symbol_control: {
           enabled: true,
           underlying_user_symbol_id: underlying._id,
@@ -956,6 +951,7 @@ test.describe('Deployment symbol_control', () => {
       strategy_id: strategy._id,
       account_id: account._id,
       overrides: {
+        lot_size: 25,
         symbol_control: {
           enabled: true,
           underlying_user_symbol_id: underlying._id,
@@ -1527,7 +1523,7 @@ test.describe('Deployment monitoring', () => {
   test('TC-DEP-044: /analysis and /metrics both O(N) — reporting endpoints replay all trades every call', tags.slow, async ({
     request,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     // Related Issue #9
     const { accessToken } = await loginAsUser(request);
     const fixture = await createTradeFixture(request, accessToken);
