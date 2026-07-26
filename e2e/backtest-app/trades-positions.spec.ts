@@ -286,7 +286,7 @@ async function hasBacktestTickFiles(symbol: string): Promise<boolean> {
     path.join(process.cwd(), '..', 'BackTest', 'exportedData'),
     path.join(process.cwd(), '..', 'exportedData'),
     '/shared/exportedData',
-    '/home/prabu/Desktop/Work Folder/MoneyMaker GitLab AWS/BackTest/exportedData',
+    ...(process.env.EXPORTED_DATA_DIR ? [process.env.EXPORTED_DATA_DIR] : []),
   ];
 
   for (const root of candidateRoots) {
