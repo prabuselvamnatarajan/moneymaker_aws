@@ -136,20 +136,6 @@ ensure_swarm_deploy_ready
 
 pre_pull_images
 
-COMPOSE_ARGS="--compose-file docker-compose.yml"
-for _extra in $COMPOSE_EXTRA; do
-  if [ ! -f "$ROOT/$_extra" ] && [ ! -f "$_extra" ]; then
-    log "ERROR: compose file not found: $_extra"
-    exit 1
-  fi
-  # Prefer path relative to ROOT when given as relative
-  if [ -f "$ROOT/$_extra" ]; then
-    COMPOSE_ARGS="$COMPOSE_ARGS --compose-file $ROOT/$_extra"
-  else
-    COMPOSE_ARGS="$COMPOSE_ARGS --compose-file $_extra"
-  fi
-done
-
 # When any compose extra looks like the CI overlay, default to the minimal nginx config
 # unless the caller already set NGINX_CONF.
 case " $COMPOSE_EXTRA " in
@@ -169,7 +155,23 @@ if [ -n "${NGINX_CONF:-}" ]; then
 fi
 
 log "Deploying stack '$STACK_NAME' (detach=$DETACH)"
-# shellcheck disable=SC2086
-docker stack deploy --detach="$DETACH" $COMPOSE_ARGS "$STACK_NAME"
+set -- --compose-file docker-compose.yml
+for _extra in $COMPOSE_EXTRA; do
+  if [ ! -f "$ROOT/$_extra" ] && [ ! -f "$_extra" ]; then
+    log "ERROR: compose file not found: $_extra"
+    exit 1
+  fi
+  if [ -f "$ROOT/$_extra" ]; then
+    set -- "$@" --compose-file "$_extra"
+  else
+    set -- "$@" --compose-file "$_extra"
+  fi
+done
+set -- "$@" "$STACK_NAME"
+if [ "$DETACH" = "true" ]; then
+  docker stack deploy --detach "$@"
+else
+  docker stack deploy "$@"
+fi
 log "Stack deploy finished"
 exit 0
