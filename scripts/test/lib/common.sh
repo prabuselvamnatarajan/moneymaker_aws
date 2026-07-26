@@ -26,12 +26,30 @@ SUITES_REGISTRY="${SUITES_REGISTRY:-$TEST_SCRIPTS_DIR/suites.registry}"
 
 # Defaults matching e2e/playwright.config.ts
 # Trailing slash required so Playwright relative paths stay under /backtestapp/
-_API_BASE="${API_BASE_URL:-http://localhost/backtestapp}"
+# Prefer 127.0.0.1 over localhost in CI — curl often resolves localhost to ::1 first,
+# while some nginx configs only listen on IPv4.
+if [ -z "${API_BASE_URL:-}" ]; then
+  if [ "${CI:-}" = "true" ]; then
+    _API_BASE="http://127.0.0.1/backtestapp"
+  else
+    _API_BASE="http://localhost/backtestapp"
+  fi
+else
+  _API_BASE="$API_BASE_URL"
+fi
 case "$_API_BASE" in
   */) export API_BASE_URL="$_API_BASE" ;;
   *)  export API_BASE_URL="${_API_BASE}/" ;;
 esac
-_UI_BASE="${UI_BASE_URL:-http://localhost/backtest-ui/}"
+if [ -z "${UI_BASE_URL:-}" ]; then
+  if [ "${CI:-}" = "true" ]; then
+    _UI_BASE="http://127.0.0.1/backtest-ui/"
+  else
+    _UI_BASE="http://localhost/backtest-ui/"
+  fi
+else
+  _UI_BASE="$UI_BASE_URL"
+fi
 case "$_UI_BASE" in
   */) export UI_BASE_URL="$_UI_BASE" ;;
   *)  export UI_BASE_URL="${_UI_BASE}/" ;;

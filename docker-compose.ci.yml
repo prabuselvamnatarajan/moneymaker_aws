@@ -1,24 +1,20 @@
 # CI overlay for docker-compose.yml — single-node GitHub Actions runners.
 # Usage:
-#   ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+#   NGINX_CONF=./certs/nginx.ci.conf \
+#     ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
 #
-# - Minimal nginx config (only backtest-app / backtest-ui upstreams)
 # - replicas:0 for services not required by BackTest E2E (avoids missing-image
 #   crash loops and frees RAM for mongo/kafka/redis)
-# - replicas:1 for services that default to 3 in production
+# - Set NGINX_CONF=./certs/nginx.ci.conf so reverse-proxy uses the minimal
+#   config (only backtest-app / backtest-ui). Do NOT redeclare reverse-proxy
+#   volumes/ports here — compose merges append and would break mounts.
 
 version: '3.8'
 
 services:
-  reverse-proxy:
-    volumes:
-      - ./certs/nginx.ci.conf:/etc/nginx/nginx.conf:ro
-    # Drop SSL ports for CI (nginx.ci.conf listens on :80 only)
-    ports:
-      - "80:80"
-
-  # --- E2E-required services stay at default / 1 replica ---
-  # mongo1/2/3, redis, zookeeper, kafka-broker-*, backtest-app, backtest-ui
+  # --- E2E-required services stay at default replicas ---
+  # mongo1/2/3, redis, zookeeper, kafka-broker-*, backtest-app, backtest-ui,
+  # reverse-proxy
 
   # --- Scale down everything else ---
   mongo-express:

@@ -60,17 +60,19 @@ build-all.sh
 
 # E2E / CI-style (fewer images, detach + CI replica overlay)
 ./scripts/build-images.sh --profile e2e --parallel 4
-./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+NGINX_CONF=./certs/nginx.ci.conf \
+  ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
 ./clear-and-seed.sh --yes
-./run_all_test_cases.sh --coverage --no-wait
+API_BASE_URL=http://127.0.0.1/backtestapp/ \
+  ./run_all_test_cases.sh --coverage --no-wait
 ```
 
 | Script | Purpose |
 |--------|---------|
 | `scripts/build-images.sh` | Build custom Docker images (`--profile full\|e2e`, `--parallel N`) |
 | `scripts/deploy-stack.sh` | Swarm init, pre-pull base images, `docker stack deploy` |
-| `docker-compose.ci.yml` | CI overlay (minimal nginx, `replicas: 0` for non-E2E services) |
-| `certs/nginx.ci.conf` | CI nginx — only `/backtestapp/` and `/backtest-ui/` upstreams |
+| `docker-compose.ci.yml` | CI overlay (`replicas: 0` for non-E2E services) |
+| `certs/nginx.ci.conf` | CI nginx — only `/backtestapp/` and `/backtest-ui/` (set via `NGINX_CONF`) |
 | `clear-and-seed.sh` | Wipe/reseed BacktestApp DB inside the running stack |
 
 ## Prerequisites (Docker Swarm)

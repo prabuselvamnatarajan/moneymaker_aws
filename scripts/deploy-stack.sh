@@ -150,6 +150,24 @@ for _extra in $COMPOSE_EXTRA; do
   fi
 done
 
+# When any compose extra looks like the CI overlay, default to the minimal nginx config
+# unless the caller already set NGINX_CONF.
+case " $COMPOSE_EXTRA " in
+  *"docker-compose.ci.yml"*)
+    if [ -z "${NGINX_CONF:-}" ]; then
+      export NGINX_CONF=./certs/nginx.ci.conf
+    fi
+    ;;
+esac
+
+if [ -n "${NGINX_CONF:-}" ]; then
+  if [ ! -f "$NGINX_CONF" ] && [ ! -f "$ROOT/$NGINX_CONF" ]; then
+    log "ERROR: NGINX_CONF file not found: $NGINX_CONF"
+    exit 1
+  fi
+  log "Using NGINX_CONF=$NGINX_CONF"
+fi
+
 log "Deploying stack '$STACK_NAME' (detach=$DETACH)"
 # shellcheck disable=SC2086
 docker stack deploy --detach="$DETACH" $COMPOSE_ARGS "$STACK_NAME"

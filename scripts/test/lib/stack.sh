@@ -63,30 +63,56 @@ wait_for_url() {
   return 1
 }
 
+# Probe health URL; prints status/body hints for CI debugging.
+# Returns 0 when body contains status ok.
+_probe_backtest_health() {
+  _url="$1"
+  _tmp="$(mktemp 2>/dev/null || echo /tmp/mm-health.$$)"
+  _code=$(curl -sS -o "$_tmp" -w "%{http_code}" --max-time 5 "$_url" 2>/dev/null || echo "000")
+  _body=$(cat "$_tmp" 2>/dev/null || true)
+  rm -f "$_tmp" 2>/dev/null || true
+  case "$_body" in
+    *'"status":"ok"'*|*'"status": "ok"'*)
+      return 0
+      ;;
+  esac
+  # Stash last probe for periodic logs
+  LAST_HEALTH_CODE="$_code"
+  LAST_HEALTH_BODY=$(printf '%s' "$_body" | head -c 200)
+  return 1
+}
+
 # Poll GET $API_BASE_URL/health until status is ok (mirrors e2e/global-setup.ts).
 wait_for_backtest_app() {
   _health_url="$(api_health_url)"
   _max="${1:-$(stack_health_max_retries)}"
   _delay="${2:-$(stack_health_delay_sec)}"
   _i=0
+  LAST_HEALTH_CODE=""
+  LAST_HEALTH_BODY=""
 
   log_info "Waiting for BackTestApp health at $_health_url (max ${_max}x${_delay}s)"
   while [ "$_i" -lt "$_max" ]; do
-    _body=$(curl -sf --max-time 5 "$_health_url" 2>/dev/null || true)
-    case "$_body" in
-      *'"status":"ok"'*|*'"status": "ok"'*)
-        log_info "BackTestApp is healthy"
-        return 0
-        ;;
-    esac
+    if _probe_backtest_health "$_health_url"; then
+      log_info "BackTestApp is healthy"
+      return 0
+    fi
     _i=$((_i + 1))
     if [ "${CI:-}" = "true" ] && [ $((_i % 12)) -eq 0 ]; then
-      log_info "Still waiting for BackTestApp ($_i/${_max})..."
+      log_info "Still waiting for BackTestApp ($_i/${_max})... last_http=${LAST_HEALTH_CODE} body=${LAST_HEALTH_BODY}"
       log_swarm_service_state "moneymaker_backtest-app"
       log_swarm_service_state "moneymaker_reverse-proxy"
+      # Bypass ingress: curl from a throwaway container on the overlay network
+      docker run --rm --network moneymaker_net curlimages/curl:8.5.0 \
+        -sS -m 5 "http://backtest-app/health" 2>/dev/null \
+        | head -c 200 | sed 's/^/[test] direct overlay health: /' || true
+      docker run --rm --network moneymaker_net curlimages/curl:8.5.0 \
+        -sS -m 5 "http://reverse-proxy/backtestapp/health" 2>/dev/null \
+        | head -c 200 | sed 's/^/[test] via reverse-proxy on overlay: /' || true
     fi
     sleep "$_delay"
   done
+  log_info "Final probe http=${LAST_HEALTH_CODE} body=${LAST_HEALTH_BODY}"
   log_swarm_service_state "moneymaker_backtest-app"
   log_swarm_service_state "moneymaker_reverse-proxy"
   return 1
