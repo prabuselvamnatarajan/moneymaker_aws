@@ -55,46 +55,9 @@ export const initializeUserAccounts = async (userId) => {
     createdAccounts.push(account);
   }
 
-  // ── Manual Strategy ───────────────────────────────────────────────
-  let manualStrategy = await Strategy.findOne({
-    user_id: userId,
-    strategy_name: "Manual"
-  });
+  // ── Manual Strategy + symbol + deployments ───────────────────────────────
+  const { manualStrategy, manualSymbol } = await ensureManualStrategyAndSymbol(userId);
 
-  if (!manualStrategy) {
-    manualStrategy = new Strategy({
-      user_id: userId,
-      strategy_name: "Manual",
-      strategy_description: "Predefined manual trading strategy",
-      is_active: true
-    });
-    await manualStrategy.save();
-    console.log(`[AccountInitializer] Initialized predefined Manual strategy for user ${userId}`);
-  }
-
-  // ── MANUAL placeholder UserSymbol ───────────────────────────────────────
-  let manualSymbol = await UserSymbol.findOne({
-    user_id: userId,
-    instrument_token: "MANUAL"
-  });
-
-  if (!manualSymbol) {
-    manualSymbol = new UserSymbol({
-      user_id: userId,
-      instrument_token: "MANUAL",
-      symbol: "MANUAL",
-      symbol_name: "Manual Operations",
-      exchange: "NSE",
-      description: "Placeholder symbol for manual account operations",
-      instrument_class: "EQUITY",
-      strike_price_diff: 1,
-      is_active: true,
-    });
-    await manualSymbol.save();
-    console.log(`[AccountInitializer] Created MANUAL placeholder symbol for user ${userId}`);
-  }
-
-  // ── Manual Deployment per predefined account ─────────────────────────────
   for (const account of createdAccounts) {
     await ensureManualDeploymentForAccount(userId, account._id, {
       manualStrategy,
@@ -107,6 +70,55 @@ export const initializeUserAccounts = async (userId) => {
 async function findWithSession(model, filter, session) {
   const query = model.findOne(filter);
   return session ? query.session(session) : query;
+}
+
+export async function ensureManualStrategyAndSymbol(userId, { session } = {}) {
+  if (!userId) return { manualStrategy: null, manualSymbol: null };
+
+  let manualStrategy = await findWithSession(
+    Strategy,
+    { user_id: userId, strategy_name: "Manual" },
+    session
+  );
+  if (!manualStrategy) {
+    manualStrategy = new Strategy({
+      user_id: userId,
+      strategy_name: "Manual",
+      strategy_description: "Predefined manual trading strategy",
+      is_active: true,
+    });
+    if (session) {
+      await manualStrategy.save({ session });
+    } else {
+      await manualStrategy.save();
+    }
+  }
+
+  let manualSymbol = await findWithSession(
+    UserSymbol,
+    { user_id: userId, instrument_token: "MANUAL" },
+    session
+  );
+  if (!manualSymbol) {
+    manualSymbol = new UserSymbol({
+      user_id: userId,
+      instrument_token: "MANUAL",
+      symbol: "MANUAL",
+      symbol_name: "Manual Operations",
+      exchange: "NSE",
+      description: "Placeholder symbol for manual account operations",
+      instrument_class: "EQUITY",
+      strike_price_diff: 1,
+      is_active: true,
+    });
+    if (session) {
+      await manualSymbol.save({ session });
+    } else {
+      await manualSymbol.save();
+    }
+  }
+
+  return { manualStrategy, manualSymbol };
 }
 
 /**
@@ -184,9 +196,39 @@ export async function ensureManualDeploymentForAccount(
   });
 
   if (session) {
-    await manualDeployment.save({ session });
+    try {
+      await manualDeployment.save({ session });
+    } catch (err) {
+      if (err.code === 11000) {
+        return findWithSession(
+          Deployment,
+          {
+            user_id: userId,
+            account_id: accountDoc._id,
+            deployment_name: "Manual",
+          },
+          session
+        );
+      }
+      throw err;
+    }
   } else {
-    await manualDeployment.save();
+    try {
+      await manualDeployment.save();
+    } catch (err) {
+      if (err.code === 11000) {
+        return findWithSession(
+          Deployment,
+          {
+            user_id: userId,
+            account_id: accountDoc._id,
+            deployment_name: "Manual",
+          },
+          session
+        );
+      }
+      throw err;
+    }
   }
   console.log(
     `[AccountInitializer] Created Manual deployment for account ${accountDoc.account_name} (user ${userId})`

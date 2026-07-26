@@ -11,6 +11,8 @@ export function authenticateOrServiceToken(req, res, next) {
       if (userId && typeof userId === "string" && userId.trim()) {
         req.auth = { userId: userId.trim() };
       }
+      // X-User-Id is optional: sweep-signals/resolve-symbol infer user from deployment;
+      // lifecycle controllers resolve owner from deployment when auth is absent.
       return next();
     }
   }

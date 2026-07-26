@@ -188,12 +188,16 @@ const runCreateTrade = async (tradeData) => {
             deployment_name: "Manual",
           }).session(session);
           if (!manualDeployment) {
-            const { initializeUserAccounts, ensureManualDeploymentForAccount } = await import(
+            const { ensureManualStrategyAndSymbol, ensureManualDeploymentForAccount } = await import(
               "../utils/accountInitializer.js"
             );
-            await initializeUserAccounts(user_id);
+            const { manualStrategy, manualSymbol } = await ensureManualStrategyAndSymbol(user_id, {
+              session,
+            });
             manualDeployment = await ensureManualDeploymentForAccount(user_id, accountObj._id, {
               account: accountObj,
+              manualStrategy,
+              manualSymbol,
               session,
             });
           }
