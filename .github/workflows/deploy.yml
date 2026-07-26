@@ -1,14 +1,109 @@
-name: Deploy to AWS
+name: Test and Deploy to AWS
 
 on:
   push:
-    branches:
-      - main
+  pull_request:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  test:
+    name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PLAYWRIGHT_WITH_DEPS: "1"
+      STACK_HEALTH_MAX_RETRIES: "120"
+      STACK_HEALTH_DELAY_SEC: "5"
+      SKIP_CI_SEED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Make scripts executable
+        run: |
+          chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh
+          chmod +x scripts/build-images.sh scripts/deploy-stack.sh
+          find scripts -type f -name '*.sh' -exec chmod +x {} +
+
+      - name: Build E2E images
+        run: ./scripts/build-images.sh --profile e2e --parallel 4
+
+      - name: Deploy CI stack
+        env:
+          NGINX_CONF: ./certs/nginx.ci.conf
+        run: ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+
+      - name: Wait for BackTestApp health
+        env:
+          # Avoid localhost → ::1 when nginx/ingress is IPv4-only
+          API_BASE_URL: http://127.0.0.1/backtestapp/
+          UI_BASE_URL: http://127.0.0.1/backtest-ui/
+        run: |
+          export ROOT="${GITHUB_WORKSPACE}"
+          . "$ROOT/scripts/test/lib/common.sh"
+          . "$ROOT/scripts/test/lib/stack.sh"
+          ensure_stack_ready all
+
+      - name: Seed BacktestApp database
+        run: ./clear-and-seed.sh --yes
+
+      - name: Run automated test suites
+        env:
+          API_BASE_URL: http://127.0.0.1/backtestapp/
+          UI_BASE_URL: http://127.0.0.1/backtest-ui/
+        run: ./run_all_test_cases.sh --coverage --no-wait
+
+      - name: Dump Swarm diagnostics on failure
+        if: failure()
+        run: |
+          docker stack ls || true
+          docker stack services moneymaker || true
+          docker service ps moneymaker_backtest-app --no-trunc || true
+          docker service ps moneymaker_reverse-proxy --no-trunc || true
+          docker service ps moneymaker_mongo1 --no-trunc || true
+          echo "===== reverse-proxy logs ====="
+          docker service logs moneymaker_reverse-proxy --tail 80 2>&1 || true
+          echo "===== backtest-app logs ====="
+          docker service logs moneymaker_backtest-app --tail 80 2>&1 || true
+          echo "===== curl via reverse-proxy (127.0.0.1) ====="
+          curl -sv http://127.0.0.1/backtestapp/health || true
+          echo "===== curl via reverse-proxy (localhost / -4 / -6) ====="
+          curl -sv http://localhost/backtestapp/health || true
+          curl -4 -sv http://localhost/backtestapp/health || true
+          curl -6 -sv http://localhost/backtestapp/health || true
+          echo "===== curl on overlay network ====="
+          docker run --rm --network moneymaker_net curlimages/curl:8.5.0 -sv http://backtest-app/health || true
+          docker run --rm --network moneymaker_net curlimages/curl:8.5.0 -sv http://reverse-proxy/backtestapp/health || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy:
+    name: Deploy
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: false
     steps:
       - name: Deploy to AWS Instance
         uses: appleboy/ssh-action@v1.0.3
@@ -19,5 +114,5 @@ jobs:
           script: |
             cd /home/ubuntu/moneymaker_aws
             git pull origin main
-            chmod +x build-all.sh
+            chmod +x build-all.sh scripts/build-images.sh scripts/deploy-stack.sh
             ./build-all.sh

@@ -1,0 +1,1220 @@
+{
+  "TC-ACC-001": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-013": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-002": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-003": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-004": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-005": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-006": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-007": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-008": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-009": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-010": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-011": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-012": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-014": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-018": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-015": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-016": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-017": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-019": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-023": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-020": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-021": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-022": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-024": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-027": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-025": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ACC-026": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-001": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-006": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-002": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-003": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-004": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-005": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-007": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-011": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-008": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-009": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-010": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-012": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-019": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-013": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-014": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-015": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-016": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-017": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-018": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-020": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-024": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-021": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-022": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-023": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-025": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-LDG-026": {
+    "spec": "accounts-ledger.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-001": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-004": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-002": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-003": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-005": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-009": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-006": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-007": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-008": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-010": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-014": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-011": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-012": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-013": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-015": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-BRK-016": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-001": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-009": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-002": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-003": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-004": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-005": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-006": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-007": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-008": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-010": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-014": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-011": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-012": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-013": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ADM-015": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "skipped",
+    "note": "Duplicate of TC-RBAC-001 in iam-auth.spec.ts"
+  },
+  "TC-ADM-016": {
+    "spec": "brokers-users-admin.spec.ts",
+    "status": "implemented"
+  },
+  "TC-RBAC-001": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-001": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-004": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-002": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-003": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-005": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-012": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-037": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-006": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-007": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-008": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-009": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-010": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-011": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-013": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-019": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-014": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-015": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-016": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-017": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-018": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-020": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-026": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-021": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-022": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-023": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-024": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-025": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-027": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-033": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-028": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-029": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-030": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-031": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-032": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-034": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-036": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-AUTH-035": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-001": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-013": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-002": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-003": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-004": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-005": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-006": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-007": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-008": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-009": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-010": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-011": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-MFA-012": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-PAT-001": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-PAT-008": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-PAT-002": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-PAT-003": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-PAT-004": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-PAT-005": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-PAT-006": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-PAT-007": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ME-001": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ME-005": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ME-002": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ME-003": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-ME-004": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-RBAC-002": {
+    "spec": "iam-auth.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-001": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-011": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-002": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-003": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-004": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-005": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-006": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-007": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-008": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-009": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-STR-010": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-001": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-011": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "skipped",
+    "note": "UI only — covered by deploy-dialog TC-UI-024/025"
+  },
+  "TC-DEP-002": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-003": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-004": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-005": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-006": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-007": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-008": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-009": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-010": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-024": {
+    "spec": "deploy-dialog.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-012": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-021": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-013": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-014": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-015": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-016": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-017": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-018": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-019": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-020": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-022": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-034": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-023": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-024": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-025": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-026": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-027": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-028": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-029": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-030": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-031": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-032": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-033": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-035": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-037": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-036": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-038": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-046": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-039": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-040": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-041": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-042": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-043": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-044": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-045": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-047": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-048": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-049": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-051": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-DEP-050": {
+    "spec": "strategies-deployments.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-001": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-016": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-002": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-003": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-004": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-005": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-006": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-007": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-008": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-009": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-010": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-011": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-012": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-013": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-014": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-015": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-017": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-023": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-018": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-019": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-020": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-021": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-022": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-024": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-027": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-025": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-026": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-028": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-033": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-029": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-030": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-031": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-032": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-POS-001": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-POS-005": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-POS-002": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-POS-003": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-POS-004": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-034": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-036": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-TRD-035": {
+    "spec": "trades-positions.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-001": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-009": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-002": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-003": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-004": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-005": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-006": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-007": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-008": {
+    "spec": "auth-mfa.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-031": {
+    "spec": "crud-views.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-037": {
+    "spec": "crud-views.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-032": {
+    "spec": "crud-views.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-033": {
+    "spec": "crud-views.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-034": {
+    "spec": "crud-views.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-035": {
+    "spec": "crud-views.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-036": {
+    "spec": "crud-views.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-025": {
+    "spec": "deploy-dialog.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-026": {
+    "spec": "deploy-dialog.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-027": {
+    "spec": "deploy-dialog.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-028": {
+    "spec": "deploy-dialog.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-029": {
+    "spec": "deploy-dialog.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-030": {
+    "spec": "deploy-dialog.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-046": {
+    "spec": "profile-navigation.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-051": {
+    "spec": "profile-navigation.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-047": {
+    "spec": "profile-navigation.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-048": {
+    "spec": "profile-navigation.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-049": {
+    "spec": "profile-navigation.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-050": {
+    "spec": "profile-navigation.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-010": {
+    "spec": "token-refresh.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-017": {
+    "spec": "token-refresh.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-011": {
+    "spec": "token-refresh.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-012": {
+    "spec": "token-refresh.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-013": {
+    "spec": "token-refresh.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-014": {
+    "spec": "token-refresh.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-015": {
+    "spec": "token-refresh.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-016": {
+    "spec": "token-refresh.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-038": {
+    "spec": "transactions-analysis.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-045": {
+    "spec": "transactions-analysis.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-039": {
+    "spec": "transactions-analysis.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-040": {
+    "spec": "transactions-analysis.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-041": {
+    "spec": "transactions-analysis.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-042": {
+    "spec": "transactions-analysis.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-043": {
+    "spec": "transactions-analysis.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-044": {
+    "spec": "transactions-analysis.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-018": {
+    "spec": "websocket.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-019": {
+    "spec": "websocket.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-020": {
+    "spec": "websocket.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-021": {
+    "spec": "websocket.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-022": {
+    "spec": "websocket.spec.ts",
+    "status": "implemented"
+  },
+  "TC-UI-023": {
+    "spec": "websocket.spec.ts",
+    "status": "implemented"
+  }
+}

@@ -690,7 +690,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./certs/nginx.conf:/etc/nginx/nginx.conf:ro
+      # NGINX_CONF overrides the config file (CI sets ./certs/nginx.ci.conf).
+      # Use env substitution so compose-file merges do not double-mount nginx.conf.
+      - ${NGINX_CONF:-./certs/nginx.conf}:/etc/nginx/nginx.conf:ro
       - ./certs/self-signed.crt:/etc/nginx/self-signed.crt:ro
       - ./certs/self-signed.key:/etc/nginx/self-signed.key:ro
     depends_on:

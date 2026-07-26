@@ -157,17 +157,50 @@ const runCreateTrade = async (tradeData) => {
       throw new Error("user_id is required");
     }
 
+    // Resolve watchlist symbol before optional Manual deployment attachment.
+    if (!tradeData.user_symbol_id && tradeData.symbol) {
+      const UserSymbol = mongoose.model("UserSymbol");
+      const userSymbol = await UserSymbol.findOne({
+        user_id,
+        $or: [
+          { symbol: tradeData.symbol },
+          { symbol: tradeData.symbol.toUpperCase() },
+        ],
+      }).session(session);
+      if (userSymbol) {
+        tradeData.user_symbol_id = userSymbol._id;
+        tradeData.instrument_token = userSymbol.instrument_token;
+        tradeData.symbol = userSymbol.symbol;
+      } else {
+        throw new Error(`Symbol ${tradeData.symbol} not found in user's watchlisted symbols`);
+      }
+    }
+
     let deploymentId = tradeData.deployment_id;
     if (!deploymentId || deploymentId === "none" || deploymentId === "") {
       const account_id = tradeData.account_id;
       if (account_id) {
         const accountObj = await Account.findOne(buildAccountQuery(account_id)).session(session);
         if (accountObj) {
-          const manualDeployment = await Deployment.findOne({
+          let manualDeployment = await Deployment.findOne({
             user_id,
             account_id: accountObj._id,
             deployment_name: "Manual",
           }).session(session);
+          if (!manualDeployment) {
+            const { ensureManualStrategyAndSymbol, ensureManualDeploymentForAccount } = await import(
+              "../utils/accountInitializer.js"
+            );
+            const { manualStrategy, manualSymbol } = await ensureManualStrategyAndSymbol(user_id, {
+              session,
+            });
+            manualDeployment = await ensureManualDeploymentForAccount(user_id, accountObj._id, {
+              account: accountObj,
+              manualStrategy,
+              manualSymbol,
+              session,
+            });
+          }
           if (manualDeployment) {
             deploymentId = manualDeployment._id;
             tradeData.deployment_id = manualDeployment._id;
@@ -186,30 +219,14 @@ const runCreateTrade = async (tradeData) => {
         throw new Error("Associated deployment does not belong to the authenticated user");
       }
       tradeData.strategy_id = deployment.strategy_id;
-      tradeData.user_symbol_id = deployment.user_symbol_id;
-      tradeData.instrument_token = deployment.instrument_token;
-      tradeData.symbol = deployment.symbol;
       tradeData.deployment_id = deployment._id;
+      if (!tradeData.user_symbol_id) {
+        tradeData.user_symbol_id = deployment.user_symbol_id;
+        tradeData.instrument_token = deployment.instrument_token;
+        tradeData.symbol = deployment.symbol;
+      }
       if (!tradeData.account_id) {
         tradeData.account_id = deployment.account_id;
-      }
-    }
-
-    if (!tradeData.user_symbol_id && tradeData.symbol) {
-      const UserSymbol = mongoose.model("UserSymbol");
-      const userSymbol = await UserSymbol.findOne({
-        user_id,
-        $or: [
-          { symbol: tradeData.symbol },
-          { symbol: tradeData.symbol.toUpperCase() },
-        ],
-      }).session(session);
-      if (userSymbol) {
-        tradeData.user_symbol_id = userSymbol._id;
-        tradeData.instrument_token = userSymbol.instrument_token;
-        tradeData.symbol = userSymbol.symbol;
-      } else {
-        throw new Error(`Symbol ${tradeData.symbol} not found in user's watchlisted symbols`);
       }
     }
 

@@ -6,14 +6,13 @@ export function authenticateOrServiceToken(req, res, next) {
   if (SERVICE_TOKEN) {
     const headerToken = req.headers["x-service-token"];
     if (headerToken === SERVICE_TOKEN) {
-      const userId = req.headers["x-user-id"];
-      if (!userId || typeof userId !== "string" || !userId.trim()) {
-        return res.status(400).json({
-          message: "X-User-Id header is required when using X-Service-Token",
-        });
-      }
       req.serviceAuth = true;
-      req.auth = { userId: userId.trim() };
+      const userId = req.headers["x-user-id"];
+      if (userId && typeof userId === "string" && userId.trim()) {
+        req.auth = { userId: userId.trim() };
+      }
+      // X-User-Id is optional: sweep-signals/resolve-symbol infer user from deployment;
+      // lifecycle controllers resolve owner from deployment when auth is absent.
       return next();
     }
   }

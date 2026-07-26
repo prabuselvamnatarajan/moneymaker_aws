@@ -1,3 +1,4 @@
+import Deployment from "../models/deployment.js";
 import {
   createDeployment,
   getAllDeployments,
@@ -96,7 +97,19 @@ export const deleteDeploymentController = async (req, res, next) => {
 
 const lifecycleAction = (action) => async (req, res, next) => {
   try {
-    const userId = req.auth.userId;
+    let userId = req.auth?.userId;
+    if (!userId && req.serviceAuth) {
+      const deployment = await Deployment.findById(req.params.id).select("user_id");
+      if (!deployment) {
+        return res.status(404).json({ message: "Deployment not found" });
+      }
+      userId = String(deployment.user_id);
+    }
+    if (!userId) {
+      return res.status(400).json({
+        message: "Authentication required (JWT or X-Service-Token with resolvable user context)",
+      });
+    }
     const result = await transitionDeployment(userId, req.params.id, action);
     if (!result) {
       return res.status(404).json({ message: "Deployment not found" });

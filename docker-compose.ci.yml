@@ -1,0 +1,134 @@
+# CI overlay for docker-compose.yml — single-node GitHub Actions runners.
+# Usage:
+#   NGINX_CONF=./certs/nginx.ci.conf \
+#     ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+#
+# - replicas:0 for services not required by BackTest E2E (avoids missing-image
+#   crash loops and frees RAM for mongo/kafka/redis)
+# - Set NGINX_CONF=./certs/nginx.ci.conf so reverse-proxy uses the minimal
+#   config (only backtest-app / backtest-ui). Do NOT redeclare reverse-proxy
+#   volumes/ports here — compose merges append and would break mounts.
+
+version: '3.8'
+
+services:
+  # --- E2E-required services stay at default replicas ---
+  # mongo1/2/3, redis, zookeeper, kafka-broker-*, backtest-app, backtest-ui,
+  # reverse-proxy
+
+  # --- Scale down everything else ---
+  mongo-express:
+    deploy:
+      replicas: 0
+
+  redisinsight:
+    deploy:
+      replicas: 0
+
+  exporttofile:
+    deploy:
+      replicas: 0
+
+  wsdatasplitter-consumer:
+    deploy:
+      replicas: 0
+
+  price-storer-consumer:
+    deploy:
+      replicas: 0
+
+  order-storer-consumer:
+    deploy:
+      replicas: 0
+
+  strategy-chooser-consumer:
+    deploy:
+      replicas: 0
+
+  position-tracker-consumer:
+    deploy:
+      replicas: 0
+
+  deployment-symbol-resolver-consumer:
+    deploy:
+      replicas: 0
+
+  stream-to-client:
+    deploy:
+      replicas: 0
+
+  backtest-streamer:
+    deploy:
+      replicas: 0
+
+  backtest-client:
+    deploy:
+      replicas: 0
+
+  appinit:
+    deploy:
+      replicas: 0
+
+  upstock-login:
+    deploy:
+      replicas: 0
+
+  connect-upstox-web-socket:
+    deploy:
+      replicas: 0
+
+  get-ltp:
+    deploy:
+      replicas: 0
+
+  get-ohlc:
+    deploy:
+      replicas: 0
+
+  get-fullmarketquote:
+    deploy:
+      replicas: 0
+
+  placeorder:
+    deploy:
+      replicas: 0
+
+  get-orderbook:
+    deploy:
+      replicas: 0
+
+  get-funds-and-margin:
+    deploy:
+      replicas: 0
+
+  get-put-call-option-chain:
+    deploy:
+      replicas: 0
+
+  get-option-contracts:
+    deploy:
+      replicas: 0
+
+  msb-strategy:
+    deploy:
+      replicas: 0
+
+  msb-strategy-backtest:
+    deploy:
+      replicas: 0
+
+  msb-pts-strategy:
+    deploy:
+      replicas: 0
+
+  msb-pts-strategy-backtest:
+    deploy:
+      replicas: 0
+
+  liquidity-sweep-strategy:
+    deploy:
+      replicas: 0
+
+  liquidity-sweep-strategy-backtest:
+    deploy:
+      replicas: 0

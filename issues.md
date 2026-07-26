@@ -8,6 +8,8 @@ This document compiles the inconsistencies, architectural flaws, potential race 
 
 All 16 identified issues have been audited and verified as **RESOLVED / FIXED** in the current version of the codebase.
 
+**Test coverage:** Regression test cases are documented in [`test_case_plans/README.md`](test_case_plans/README.md) (678+ cases across 26 component plans).
+
 ---
 
 ## 1. Redis Key Collision for Active Strategy State (Critical)
