@@ -129,7 +129,7 @@ ensure_playwright_browsers() {
     return 0
   fi
 
-  if [ "$NO_INSTALL" = "1" ]; then
+  if [ "$NO_INSTALL" = "1" ] && [ "${PLAYWRIGHT_WITH_DEPS:-0}" != "1" ]; then
     die "Playwright chromium not found and --no-install was set.
   Install once (interactive sudo for OS libs), then re-run:
     cd e2e && sudo npx playwright install-deps && npx playwright install chromium

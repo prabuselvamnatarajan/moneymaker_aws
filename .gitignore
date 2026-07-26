@@ -33,6 +33,7 @@ __pycache__/
 
 # Coverage
 coverage/
+!e2e/coverage/tc-checklist.json
 htmlcov/
 .coverage
 

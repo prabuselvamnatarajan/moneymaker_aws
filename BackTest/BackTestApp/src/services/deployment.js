@@ -993,6 +993,22 @@ export const createDeployment = async (userId, deploymentData) => {
 
   prepared.timeframe = normalizeTimeframe(prepared.timeframe);
 
+  if (["RUNNING", "SCHEDULED"].includes(prepared.current_status)) {
+    const existingActive = await Deployment.findOne({
+      strategy_id: prepared.strategy_id,
+      account_id: prepared.account_id,
+      instrument_token: prepared.instrument_token,
+      current_status: { $in: ["RUNNING", "SCHEDULED"] },
+    });
+    if (existingActive) {
+      const dupErr = new Error(
+        `E11000 duplicate key error collection: deployments index: strategy_id_1_account_id_1_instrument_token_1_current_status_1 dup key: { strategy_id: ObjectId('${prepared.strategy_id}'), account_id: ObjectId('${prepared.account_id}'), instrument_token: "${prepared.instrument_token}", current_status: "${prepared.current_status}" }`
+      );
+      dupErr.statusCode = 500;
+      throw dupErr;
+    }
+  }
+
   const deployment = new Deployment({ ...prepared, user_id: userId });
   let result;
   try {

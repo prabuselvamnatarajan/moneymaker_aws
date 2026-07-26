@@ -440,6 +440,9 @@ test.describe('JWT and secrets', () => {
     const loginRes = await loginRaw(request, email, password);
     const { accessToken, refreshToken } = await loginRes.json();
 
+    // Wait 1 second so JWT iat timestamp increments, producing a fresh access token string
+    await new Promise((resolve) => setTimeout(resolve, 1050));
+
     const refreshRes = await request.post(apiPath('/auth/refresh-token'), {
       data: { refreshToken },
     });
