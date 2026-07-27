@@ -168,6 +168,8 @@ for _extra in $COMPOSE_EXTRA; do
   fi
 done
 set -- "$@" "$STACK_NAME"
+# Use --resolve-image never for locally-built images that are not in a registry
+set -- "$@" --resolve-image never
 if [ "$DETACH" = "true" ]; then
   docker stack deploy --detach "$@"
 else

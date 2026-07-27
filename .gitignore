@@ -1,55 +1,44 @@
-```
-# Dependencies
-node_modules/
-
-# Ignore exportedData in BackTest directory
-BackTest/exportedData
-
-# Build artifacts
-dist/
-build/
-target/
+```bash
+# Environment
+.env
+.env.local
+.env.*
 
 # Logs and temp files
 *.log
 *.tmp
-
-# Environment
-.env
-.env.local
-*.env.*
-upstock-login.env
+*.swp
 
 # Editors
 .vscode/
 .idea/
-*.swp
 
-# Python
-__pycache__/
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Compiled and build artifacts
 *.pyc
-*.pyo
-*.pyd
-
-# Coverage
+__pycache__/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+dist/
+build/
+target/
+.mypy_cache/
+.pytest_cache/
 coverage/
-!e2e/coverage/tc-checklist.json
 htmlcov/
 .coverage
 
-# MyPy
-.mypy_cache/
-
-# Pytest
-.pytest_cache/
-
-# Gradle
-.gradle/
-
-# macOS
+# System files
 .DS_Store
-
-# Windows
 Thumbs.db
 
 # Compressed files
