@@ -196,6 +196,7 @@ services:
       - backtest-data:/shared
     deploy:
       replicas: 1
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -221,6 +222,7 @@ services:
       - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 3
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -252,6 +254,7 @@ services:
       - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 3
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -283,6 +286,7 @@ services:
       - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 3
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -310,6 +314,7 @@ services:
       - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 3
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -342,6 +347,7 @@ services:
       - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 1
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -373,6 +379,7 @@ services:
       - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 1
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -392,6 +399,7 @@ services:
       - ./MicroServices/Shared/utils:/app/utils:ro
     deploy:
       replicas: 1
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -406,6 +414,7 @@ services:
       - backtest-data:/shared
     deploy:
       replicas: 3
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -426,6 +435,7 @@ services:
       KAFKA_TOPIC: backtest-stream-data
     deploy:
       replicas: 3
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -458,6 +468,7 @@ services:
       - backtest-data:/shared
     deploy:
       replicas: 1
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
@@ -467,6 +478,7 @@ services:
     image: backtestui:latest
     deploy:
       replicas: 1
+      pull_policy: never
       restart_policy:
         condition: any
     networks:
