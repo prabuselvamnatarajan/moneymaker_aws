@@ -26,6 +26,8 @@ cd "$ROOT"
 
 PROFILE="full"
 PARALLEL=""
+REGISTRY="${DOCKER_REGISTRY:-}"
+PUSH_IMAGES="${PUSH_IMAGES:-0}"
 FAIL=0
 
 usage() {
@@ -35,6 +37,8 @@ Usage: build-images.sh [options]
 Options:
   --profile full|e2e   Image set to build (default: full)
   --parallel N         Build up to N images concurrently (default: 1 local, 4 in CI)
+  --registry REGISTRY  Docker registry prefix (e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com/moneymaker)
+  --push               Push images to registry after building (requires --registry)
   --help               Show this help
 
 Profiles:
@@ -44,6 +48,7 @@ Profiles:
 Examples:
   ./scripts/build-images.sh
   ./scripts/build-images.sh --profile e2e --parallel 4
+  ./scripts/build-images.sh --registry myregistry.io/moneymaker --push
 EOF
 }
 
@@ -62,6 +67,15 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "ERROR: --parallel requires a number" >&2; exit 1; }
       PARALLEL="$2"
       shift 2
+      ;;
+    --registry)
+      [ $# -ge 2 ] || { echo "ERROR: --registry requires a registry path" >&2; exit 1; }
+      REGISTRY="$2"
+      shift 2
+      ;;
+    --push)
+      PUSH_IMAGES=1
+      shift
       ;;
     # Accepted so build-all.sh can forward deploy-stack flags harmlessly
     --detach|--no-detach|--no-pull)
@@ -101,6 +115,11 @@ case "$PARALLEL" in
     ;;
 esac
 
+if [ "$PUSH_IMAGES" = "1" ] && [ -z "$REGISTRY" ]; then
+  echo "ERROR: --push requires --registry to be set" >&2
+  exit 1
+fi
+
 log() {
   printf '[build-images] %s\n' "$*"
 }
@@ -118,22 +137,36 @@ run_one_job() {
   _kind="$1"
   _ctx="$2"
   _tag="$3"
-  log "Building $_tag ($_kind: $_ctx)"
+  
+  # If registry is set, tag with registry prefix
+  if [ -n "$REGISTRY" ]; then
+    _full_tag="${REGISTRY}/${_tag}"
+  else
+    _full_tag="$_tag"
+  fi
+  
+  log "Building $_full_tag ($_kind: $_ctx)"
   case "$_kind" in
     plain)
-      docker build -t "$_tag" "$_ctx"
+      docker build -t "$_full_tag" "$_ctx"
       ;;
     kafka)
-      build_kafka_service "$_ctx" "$_tag"
+      build_kafka_service "$_ctx" "$_full_tag"
       ;;
     strategy)
-      build_strategy "$_ctx" "$_tag"
+      build_strategy "$_ctx" "$_full_tag"
       ;;
     *)
       echo "ERROR: unknown job kind: $_kind" >&2
       return 1
       ;;
   esac
+  
+  # Push to registry if requested
+  if [ "$PUSH_IMAGES" = "1" ] && [ -n "$REGISTRY" ]; then
+    log "Pushing $_full_tag"
+    docker push "$_full_tag"
+  fi
 }
 
 register_e2e_jobs() {

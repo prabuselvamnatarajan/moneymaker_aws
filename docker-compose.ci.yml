@@ -8,6 +8,7 @@
 # - Set NGINX_CONF=./certs/nginx.ci.conf so reverse-proxy uses the minimal
 #   config (only backtest-app / backtest-ui). Do NOT redeclare reverse-proxy
 #   volumes/ports here — compose merges append and would break mounts.
+# - Images are pulled from Docker Hub (docker.io/prabuselvamnatarajan)
 
 version: '3.8'
 
@@ -15,6 +16,16 @@ services:
   # --- E2E-required services stay at default replicas ---
   # mongo1/2/3, redis, zookeeper, kafka-broker-*, backtest-app, backtest-ui,
   # reverse-proxy
+
+  # Override image names to use Docker Hub registry
+  backtest-app:
+    image: docker.io/prabuselvamnatarajan/backtestapp:latest
+
+  backtest-ui:
+    image: docker.io/prabuselvamnatarajan/backtestui:latest
+
+  appinit:
+    image: docker.io/prabuselvamnatarajan/appinit:latest
 
   # --- Scale down everything else ---
   mongo-express:
@@ -62,10 +73,6 @@ services:
       replicas: 0
 
   backtest-client:
-    deploy:
-      replicas: 0
-
-  appinit:
     deploy:
       replicas: 0
 

@@ -1,55 +1,51 @@
-```
-# Dependencies
-node_modules/
-
-# Ignore exportedData in BackTest directory
-BackTest/exportedData
-
-# Build artifacts
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
 dist/
 build/
-target/
+*.out
+
+# Dependencies
+.venv/
+venv/
+node_modules/
 
 # Logs and temp files
 *.log
 *.tmp
+*.swp
 
 # Environment
 .env
 .env.local
 *.env.*
-upstock-login.env
 
 # Editors
 .vscode/
 .idea/
-*.swp
 
-# Python
-__pycache__/
+# Coverage reports
+.coverage
+coverage/
+htmlcov/
+
+# Python specific
 *.pyc
 *.pyo
 *.pyd
+.Python
+*.so
+*.egg-info/
+.eggs/
 
-# Coverage
-coverage/
-!e2e/coverage/tc-checklist.json
-htmlcov/
-.coverage
-
-# MyPy
-.mypy_cache/
-
-# Pytest
-.pytest_cache/
-
-# Gradle
+# Build systems
+target/
 .gradle/
 
-# macOS
+# OS generated files
 .DS_Store
-
-# Windows
 Thumbs.db
 
 # Compressed files
@@ -75,4 +71,3 @@ Thumbs.db
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-```

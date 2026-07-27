@@ -35,8 +35,13 @@ jobs:
           chmod +x scripts/build-images.sh scripts/deploy-stack.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
 
-      - name: Build E2E images
-        run: ./scripts/build-images.sh --profile e2e --parallel 4
+      - name: Build E2E images and push to Docker Hub
+        run: |
+          echo "$DOCKER_HUB_TOKEN" | docker login --username "$DOCKER_HUB_USERNAME" --password-stdin
+          ./scripts/build-images.sh --profile e2e --parallel 4 --registry docker.io/prabuselvamnatarajan --push
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Deploy CI stack
         env:
@@ -115,4 +120,10 @@ jobs:
             cd /home/ubuntu/moneymaker_aws
             git pull origin main
             chmod +x build-all.sh scripts/build-images.sh scripts/deploy-stack.sh
-            ./build-all.sh
+            # Login to Docker Hub and build/push all images
+            echo "${DOCKER_HUB_TOKEN}" | docker login --username "${DOCKER_HUB_USERNAME}" --password-stdin
+            ./scripts/build-images.sh --profile full --parallel 4 --registry docker.io/prabuselvamnatarajan --push
+            ./scripts/deploy-stack.sh
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
