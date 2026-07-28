@@ -212,14 +212,16 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
                 const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                    await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                     const placed = await triggerOrder(requestBody);
                     if (placed) {
-                        await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                         position = null;
                         lastBuyPrice = null;
                         lastSellPrice = null;
                         closedByTargetOrSl = true;
                     } else {
+                        // Restore holdings on failure
+                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                         logger.warn('msb_pts: Target/SL SELL failed; keeping position for retry');
                     }
                     return placed;
@@ -236,14 +238,16 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
             if (requestBody && requestBody.quantity > 0) {
                 const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                    await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                     const placed = await triggerOrder(requestBody);
                     if (placed) {
-                        await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                         position = null;
                         lastBuyPrice = null;
                         lastSellPrice = null;
                         closedByTargetOrSl = true;
                     } else {
+                        // Restore short holdings on failure
+                        await setShortQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                         logger.warn('msb_pts: Target/SL BUY (cover short) failed; keeping position for retry');
                     }
                     return placed;
@@ -276,9 +280,9 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
                     const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                         const placed = await triggerOrder(requestBody);
                         if (placed) {
-                            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                             position = { direction: "LONG", entryPrice: ltp };
                             lastBuyPrice = ltp;
                             closedByTargetOrSl = false;
@@ -286,6 +290,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                             prevHigh.high = high;
                             prevHigh.low = low;
                         } else {
+                            await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                             logger.warn('msb_pts: Initial BUY failed; not opening position');
                         }
                         return placed;
@@ -325,12 +330,13 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
                     const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                         const placed = await triggerOrder(requestBody);
                         if (placed) {
-                            await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                             position = null;
                             lastBuyPrice = null;
                         } else {
+                            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                             logger.warn('msb_pts: Trend-break SELL failed; keeping position for retry');
                         }
                         return placed;
@@ -368,12 +374,13 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
                     const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                         const placed = await triggerOrder(requestBody);
                         if (placed) {
-                            await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                             position = null;
                             lastSellPrice = null;
                         } else {
+                            await setShortQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                             logger.warn('msb_pts: Trend-break short cover failed; keeping position for retry');
                         }
                         return placed;
@@ -399,13 +406,14 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                     let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
                     if (requestBody && requestBody.quantity > 0) {
                         const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                             const placed = await triggerOrder(requestBody);
                             if (placed) {
-                                await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                                 position = { direction: "LONG", entryPrice: ltp };
                                 lastBuyPrice = ltp;
                                 closedByTargetOrSl = false;
                             } else {
+                                await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                                 logger.warn('msb_pts: BUY order failed; not opening LONG position');
                             }
                             return placed;

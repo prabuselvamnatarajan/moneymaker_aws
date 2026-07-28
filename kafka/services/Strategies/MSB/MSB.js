@@ -165,11 +165,12 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
                     const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        // Immediately register holdings in Redis before HTTP call so any concurrent tick sees holdings > 0
+                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                         const placed = await triggerOrder(requestBody);
-                        if (placed) {
-                            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                        } else {
-                            logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                        if (!placed) {
+                            await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                            logger.warn('MSB: BUY order failed; rolled back bought_quantity');
                         }
                         return placed;
                     });
@@ -212,11 +213,12 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
                     const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        // Immediately clear holdings in Redis before HTTP call so any concurrent tick sees holdings = 0
+                        await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                         const placed = await triggerOrder(requestBody);
-                        if (placed) {
-                            await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
-                        } else {
-                            logger.warn('MSB: SELL order failed; leaving bought_quantity unchanged for retry');
+                        if (!placed) {
+                            await setBoughtQuantityWithTagToRedis(symbol, holdings, strategy_details.deployment_id);
+                            logger.warn('MSB: SELL order failed; restored bought_quantity for retry');
                         }
                         return placed;
                     });
@@ -255,11 +257,12 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
                     const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        // Immediately register holdings in Redis before HTTP call so any concurrent tick sees holdings > 0
+                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
                         const placed = await triggerOrder(requestBody);
-                        if (placed) {
-                            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                        } else {
-                            logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                        if (!placed) {
+                            await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                            logger.warn('MSB: BUY order failed; rolled back bought_quantity');
                         }
                         return placed;
                     });
