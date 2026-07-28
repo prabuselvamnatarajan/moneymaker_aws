@@ -9,23 +9,32 @@ app.use(express.json());
 
 import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance, buildBrokerOrderPayload } from './dependency.js';
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
-import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
+import { setAccountBalanceToRedis, acquireOrderLockInRedis, releaseOrderLockInRedis } from './redis_utils/account_utils.js';
 import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js';
 
 app.post('/', async (req, res) => {
+    const body = req.body;
+
+    if (!body.instrument_token || body.price === undefined || body.quantity === undefined || !body.transaction_type || !body.strategy_details || !body.strategy_details.user_id) {
+        return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
+    }
+
+    if (body.price === null || body.price <= 0) {
+        console.warn(`⚠️ Warning: Incoming order price is missing or zero (${body.price}). BackTestApp will attempt LTP fallback.`);
+    }
+
+    const { strategy_details = {}, ...filteredBody } = body;
+    const symbol = body.tag || body.instrument_token || 'symbol';
+    const deploymentId = strategy_details.deployment_id;
+
+    // Atomic Redis lock prevents duplicate in-flight vendor order placement
+    const lockAcquired = await acquireOrderLockInRedis(symbol, deploymentId);
+    if (!lockAcquired) {
+        console.warn(`⚠️ placeOrders: Order placement already in-flight for deployment ${deploymentId} symbol ${symbol}. Rejecting duplicate vendor order.`);
+        return res.status(409).json({ message: 'Order placement already in-flight for this deployment and symbol' });
+    }
+
     try {
-        const body = req.body;
-
-        if (!body.instrument_token || body.price === undefined || body.quantity === undefined || !body.transaction_type || !body.strategy_details || !body.strategy_details.user_id) {
-            return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
-        }
-
-        if (body.price === null || body.price <= 0) {
-            console.warn(`⚠️ Warning: Incoming order price is missing or zero (${body.price}). BackTestApp will attempt LTP fallback.`);
-        }
-
-        const { strategy_details = {}, ...filteredBody } = body;
-
         console.log('Request Body:', body);
 
         let result = null;
@@ -54,9 +63,6 @@ app.post('/', async (req, res) => {
                 console.error('Failed to record successful live trade in BackTestApp:', err);
             }
 
-            // Live availableMargin can lag (CNC settlement) or read 0 right after SELL.
-            // Never wipe a positive ledger balance with a zero/failed live reading — that
-            // starves use_full_amount and stalls MSB after the first buy→sell cycle.
             let liveBalance = null;
             try {
                 liveBalance = await getLiveAccountBalance(strategy_details.user_id);
@@ -96,6 +102,8 @@ app.post('/', async (req, res) => {
         console.error(e);
         const status = e.statusCode || 500;
         res.status(status).send(e.message || 'Internal Server Error');
+    } finally {
+        await releaseOrderLockInRedis(symbol, deploymentId);
     }
 });
 
