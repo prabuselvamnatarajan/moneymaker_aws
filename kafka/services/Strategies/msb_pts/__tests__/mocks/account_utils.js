@@ -37,3 +37,17 @@ export async function setShortQuantityWithTagToRedis(tag, quantity, deploymentId
     const key = deploymentId ? `${deploymentId}:${tag}` : tag;
     store.short[key] = quantity;
 }
+
+const activeLocks = new Set();
+
+export async function acquireOrderLockInRedis(tag, deploymentId) {
+    const key = deploymentId ? `${deploymentId}:${tag}` : tag;
+    if (activeLocks.has(key)) return false;
+    activeLocks.add(key);
+    return true;
+}
+
+export async function releaseOrderLockInRedis(tag, deploymentId) {
+    const key = deploymentId ? `${deploymentId}:${tag}` : tag;
+    activeLocks.delete(key);
+}

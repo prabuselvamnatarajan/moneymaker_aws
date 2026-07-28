@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis } from './redis_utils/account_utils.js';
+import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis, acquireOrderLockInRedis, releaseOrderLockInRedis } from './redis_utils/account_utils.js';
 import { logger } from '/app/utils/logUtils.js';
 
 async function triggerOrder(requestBody) {
@@ -23,6 +23,19 @@ async function triggerOrder(requestBody) {
     } catch (err) {
         logger.error('Order API error:', err.message);
         return false;
+    }
+}
+
+async function executeOrderWithLock(symbol, deploymentId, orderFn) {
+    const lockAcquired = await acquireOrderLockInRedis(symbol, deploymentId);
+    if (!lockAcquired) {
+        logger.warn(`MSB: Order placement already in-flight for ${symbol} (deployment: ${deploymentId}). Skipping duplicate tick trigger.`);
+        return false;
+    }
+    try {
+        return await orderFn();
+    } finally {
+        await releaseOrderLockInRedis(symbol, deploymentId);
     }
 }
 
@@ -151,12 +164,15 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
 
                 let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
-                    const orderPlaced = await triggerOrder(requestBody);
-                    if (orderPlaced) {
-                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                    } else {
-                        logger.warn('MSB: BUY order failed; not updating bought_quantity');
-                    }
+                    const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        const placed = await triggerOrder(requestBody);
+                        if (placed) {
+                            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                        } else {
+                            logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                        }
+                        return placed;
+                    });
                 } else {
                     logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
                 }
@@ -195,12 +211,15 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             } else {
                 let requestBody = await computeOrderPayload(strategy_details, "SELL", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
-                    const orderPlaced = await triggerOrder(requestBody);
-                    if (orderPlaced) {
-                        await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
-                    } else {
-                        logger.warn('MSB: SELL order failed; leaving bought_quantity unchanged for retry');
-                    }
+                    const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        const placed = await triggerOrder(requestBody);
+                        if (placed) {
+                            await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
+                        } else {
+                            logger.warn('MSB: SELL order failed; leaving bought_quantity unchanged for retry');
+                        }
+                        return placed;
+                    });
                 } else {
                     logger.warn(`MSB: Skipping SELL order due to zero/negative quantity: ${requestBody?.quantity}`);
                 }
@@ -235,12 +254,15 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
 
                 let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
                 if (requestBody && requestBody.quantity > 0) {
-                    const orderPlaced = await triggerOrder(requestBody);
-                    if (orderPlaced) {
-                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-                    } else {
-                        logger.warn('MSB: BUY order failed; not updating bought_quantity');
-                    }
+                    const orderPlaced = await executeOrderWithLock(symbol, strategy_details.deployment_id, async () => {
+                        const placed = await triggerOrder(requestBody);
+                        if (placed) {
+                            await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                        } else {
+                            logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                        }
+                        return placed;
+                    });
                 } else {
                     logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
                 }

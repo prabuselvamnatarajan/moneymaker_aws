@@ -91,11 +91,42 @@ async function setShortQuantityWithTagToRedis(tag, quantity, deploymentId) {
     }
 }
 
+async function acquireOrderLockInRedis(tag, deploymentId, ttlSeconds = 10) {
+    let redisKey = deploymentId ? `pending_order:${deploymentId}:${tag}` : `pending_order:${tag}`;
+    if (!redisClientInstance) return true;
+    try {
+        await redisClientInstance.connect();
+        const client = redisClientInstance.getClient();
+        if (!client) return true;
+        const res = await client.set(redisKey, '1', { NX: true, EX: ttlSeconds });
+        return res !== null;
+    } catch (error) {
+        console.error(`Error acquiring order lock for tag ${tag} in Redis (key: ${redisKey}):`, error.message);
+        return true;
+    }
+}
+
+async function releaseOrderLockInRedis(tag, deploymentId) {
+    let redisKey = deploymentId ? `pending_order:${deploymentId}:${tag}` : `pending_order:${tag}`;
+    if (!redisClientInstance) return;
+    try {
+        await redisClientInstance.connect();
+        const client = redisClientInstance.getClient();
+        if (client) {
+            await client.del(redisKey);
+        }
+    } catch (error) {
+        console.error(`Error releasing order lock for tag ${tag} in Redis (key: ${redisKey}):`, error.message);
+    }
+}
+
 export {
     getAccountBalanceFromRedis,
     setAccountBalanceToRedis,
     getBoughtQuantityWithTagFromRedis,
     setBoughtQuantityWithTagToRedis,
     getShortQuantityWithTagFromRedis,
-    setShortQuantityWithTagToRedis
+    setShortQuantityWithTagToRedis,
+    acquireOrderLockInRedis,
+    releaseOrderLockInRedis
 };
