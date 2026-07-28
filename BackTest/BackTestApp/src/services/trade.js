@@ -277,13 +277,23 @@ const runCreateTrade = async (tradeData) => {
     let positionSize = 0;
     let averageEntryPrice = 0;
 
-    if (deployment) {
-      positionSize = deployment.position_size || 0;
-      averageEntryPrice = deployment.average_entry_price || 0;
+    if (tradeData.deployment_id) {
+      const openPosDoc = await Position.findOne({
+        deployment_id: tradeData.deployment_id,
+        status: "OPEN",
+      }).session(session);
+      if (openPosDoc) {
+        positionSize = openPosDoc.direction === "LONG" ? (openPosDoc.open_size || 0) : -(openPosDoc.open_size || 0);
+        averageEntryPrice = openPosDoc.average_entry_price || 0;
+      } else {
+        positionSize = 0;
+        averageEntryPrice = 0;
+      }
     } else {
       const prevTradesQuery = {
         account_id: account._id,
         symbol: tradeData.symbol,
+        deployment_id: { $in: [null, "none", ""] },
       };
 
       const prevTrades = await Trade.find(prevTradesQuery)
