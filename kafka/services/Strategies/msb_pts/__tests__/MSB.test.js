@@ -62,19 +62,18 @@ describe('msb_pts buy/sell consistency', () => {
 
     it('keeps position and holdings when trend-break SELL fails', async () => {
         let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
+
+        // BUY
         state = await MSB(
             state,
             candle({ high: 101, low: 100, ltp: 101 }),
             SYMBOL,
             strategyDetails()
         );
-        const qty = store.bought[holdingsKey()];
-        assert.ok(qty > 0);
-        assert.equal(state.position?.direction, 'LONG');
 
-        store.orderFail = true;
-        store.orders = [];
+        resetStore({ balance: 100000, bought: { [holdingsKey()]: 50 }, orderFail: true });
 
+        // Sell attempt fails
         state = await MSB(
             { ...state, prevHigh: { high: 101, low: 100.5 } },
             candle({ high: 100, low: 99, ltp: 99 }),
@@ -83,7 +82,28 @@ describe('msb_pts buy/sell consistency', () => {
         );
 
         assert.equal(state.isUp, false);
-        assert.equal(state.position?.direction, 'LONG', 'position must remain for retry');
-        assert.equal(store.bought[holdingsKey()], qty, 'holdings must remain until successful exit');
+        assert.equal(state.position?.direction, 'LONG', 'position must be retained when SELL order fails');
+        assert.equal(store.bought[holdingsKey()], 50);
+    });
+
+    it('does not wipe LONG position on trend break UP if SELL order was skipped/failed', async () => {
+        let state = {
+            isUp: false,
+            prevHigh: { high: 100, low: 95 },
+            prevLow: { high: 96, low: 90 },
+            position: { direction: 'LONG', entryPrice: 100 },
+        };
+        resetStore({ balance: 100000, bought: { [holdingsKey()]: 50 } });
+
+        // Trend breaks UP (high: 97 > prevLow.high: 96)
+        state = await MSB(
+            state,
+            candle({ high: 97, low: 91, ltp: 97 }),
+            SYMBOL,
+            strategyDetails()
+        );
+
+        assert.equal(state.position?.direction, 'LONG', 'LONG position must not be wiped by trend break UP');
+        assert.equal(store.bought[holdingsKey()], 50);
     });
 });

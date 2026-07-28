@@ -239,7 +239,6 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
     if (isUp === null) {
         // Trend is not established yet
         if (prevLow.high < high) {
-            isUp = true;
             const existingHoldings = await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id);
             if (existingHoldings > 0 || position) {
                 // Recover LONG awareness after state wipe that preserved bought_quantity
@@ -250,6 +249,9 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                         `msb_pts: Skipping initial BUY — holdings already present (${existingHoldings}). Restored LONG state.`
                     );
                 }
+                isUp = true;
+                prevHigh.high = high;
+                prevHigh.low = low;
             } else {
                 logger.info(`msb_pts: Established initial trend UP at ${high}. Opening LONG position.`);
                 let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
@@ -260,13 +262,14 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                         position = { direction: "LONG", entryPrice: ltp };
                         lastBuyPrice = ltp;
                         closedByTargetOrSl = false;
+                        isUp = true;
+                        prevHigh.high = high;
+                        prevHigh.low = low;
                     } else {
                         logger.warn('msb_pts: Initial BUY failed; not opening position');
                     }
                 }
             }
-            prevHigh.high = high;
-            prevHigh.low = low;
         } else if (prevHigh.low > low) {
             isUp = false;
             logger.info(`msb_pts: Established initial trend DOWN at ${low}.`);
@@ -310,8 +313,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 } else {
                     logger.warn(`msb_pts: Skipping trend-break SELL due to zero/negative quantity: ${requestBody?.quantity}`);
                 }
-            } else {
-                position = null;
+            } else if (!position) {
                 lastBuyPrice = null;
             }
 
@@ -351,8 +353,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
                 } else {
                     logger.warn(`msb_pts: Skipping short cover due to zero/negative quantity: ${requestBody?.quantity}`);
                 }
-            } else {
-                position = null;
+            } else if (!position) {
                 lastSellPrice = null;
             }
 
@@ -383,7 +384,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
 
             prevHigh.high = high;
-            prevHigh.low = low;
+            prevLow.low = low;
         } else {
             // Trend continuation
             if (prevLow.low > low) {
