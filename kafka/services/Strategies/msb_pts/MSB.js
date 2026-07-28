@@ -78,9 +78,8 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
             quantity = await computeAffordableQty();
         } else if (lot) {
             quantity = lots * lot;
-        }
-        if (!quantity || quantity <= 0) {
-            quantity = lot ? (lots * lot) : (strategy_details.quantity || 1);
+        } else {
+            quantity = Number(strategy_details.quantity) > 0 ? Number(strategy_details.quantity) : 1;
         }
     } else if (transaction_type === "SELL") {
         // Closing a LONG takes priority
@@ -91,9 +90,8 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
             quantity = await computeAffordableQty();
         } else if (lot) {
             quantity = lots * lot;
-        }
-        if (!quantity || quantity <= 0) {
-            quantity = lot ? (lots * lot) : (strategy_details.quantity || 1);
+        } else {
+            quantity = Number(strategy_details.quantity) > 0 ? Number(strategy_details.quantity) : 1;
         }
     }
 
