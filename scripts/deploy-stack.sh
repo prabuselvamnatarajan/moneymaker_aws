@@ -173,7 +173,7 @@ set -- "$@" --resolve-image never
 if [ "$DETACH" = "true" ]; then
   docker stack deploy --detach "$@"
 else
-  docker stack deploy "$@"
+  docker stack deploy --detach=false "$@"
 fi
 log "Stack deploy finished"
 exit 0
