@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Strategy from "../models/strategy.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
+import { createClient } from "redis";
 
 const USER_UPDATABLE_FIELDS = ["strategy_name", "strategy_description", "is_active", "target_pts", "sl_pts", "advance_trade_decision", "target_type", "target_pct", "sl_pct"];
 const ADMIN_UPDATABLE_FIELDS = [...USER_UPDATABLE_FIELDS];
@@ -121,6 +122,35 @@ export const deleteStrategy = async (userId, id, isAdmin = false) => {
   await Strategy.deleteOne({ _id: strategy._id });
 
   console.log(`[Strategy Service] Cascading delete complete for strategy ${strategy.strategy_name}: removed ${deploymentIds.length} deployments and all associated trades/positions/ledgers.`);
+
+  // Clean runtime keys for all child deployments in Redis
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl && deploymentIds.length > 0) {
+    let client;
+    try {
+      client = createClient({ url: redisUrl });
+      await client.connect();
+      for (const depId of deploymentIds) {
+        const depIdStr = depId.toString();
+        let cursor = 0;
+        const pattern = `*${depIdStr}*`;
+        do {
+          const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+          cursor = reply.cursor;
+          const keys = reply.keys || [];
+          if (keys.length > 0) {
+            await client.del(keys);
+          }
+        } while (cursor !== 0);
+      }
+    } catch (err) {
+      console.error("[Strategy Service] Failed to clean Redis keys on strategy deletion:", err.message);
+    } finally {
+      if (client) {
+        await client.disconnect().catch(() => {});
+      }
+    }
+  }
 
   try {
     const { syncAllDeploymentsToRedis } = await import("./deployment.js");

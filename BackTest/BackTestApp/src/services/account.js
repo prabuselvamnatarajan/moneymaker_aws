@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Account from "../models/account.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
+import { createClient } from "redis";
 
 const USER_UPDATABLE_FIELDS = ["account_name", "description", "is_active", "commission_type", "commission_rate", "broker_id"];
 const ADMIN_UPDATABLE_FIELDS = [
@@ -156,6 +157,48 @@ export const deleteAccount = async (userId, id, isAdmin = false) => {
   await Account.deleteOne({ _id: account._id });
 
   console.log(`[Account Service] Cascading delete complete for account ${account.account_name}: removed ${deploymentIds.length} deployments and all associated trades/positions/ledgers.`);
+
+  // Step 6: Explicitly clean account balance and deployment keys from Redis
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    let client;
+    try {
+      client = createClient({ url: redisUrl });
+      await client.connect();
+
+      const accKeys = [
+        `account_balance:${account._id.toString()}`,
+        `liquidity_sweep:open:${account._id.toString()}`,
+      ];
+      if (account.account_id) {
+        accKeys.push(`account_balance:${account.account_id}`);
+        accKeys.push(`liquidity_sweep:open:${account.account_id}`);
+      }
+      for (const k of accKeys) {
+        await client.del(k).catch(() => {});
+      }
+
+      for (const depId of deploymentIds) {
+        const depIdStr = depId.toString();
+        let cursor = 0;
+        const pattern = `*${depIdStr}*`;
+        do {
+          const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+          cursor = reply.cursor;
+          const keys = reply.keys || [];
+          if (keys.length > 0) {
+            await client.del(keys);
+          }
+        } while (cursor !== 0);
+      }
+    } catch (err) {
+      console.error("[Account Service] Failed to clean Redis keys on account deletion:", err.message);
+    } finally {
+      if (client) {
+        await client.disconnect().catch(() => {});
+      }
+    }
+  }
 
   try {
     const { syncAllDeploymentsToRedis } = await import("./deployment.js");

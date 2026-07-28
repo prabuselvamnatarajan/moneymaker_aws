@@ -236,6 +236,35 @@ export const deleteSymbol = async (userId, id) => {
 
   console.log(`[Symbol Service] Cascading delete complete for symbol ${result.symbol}: removed ${deploymentIds.length} deployments and all associated trades/positions/ledgers.`);
 
+  // Clean runtime keys for all child deployments in Redis
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl && deploymentIds.length > 0) {
+    let client;
+    try {
+      client = createClient({ url: redisUrl });
+      await client.connect();
+      for (const depId of deploymentIds) {
+        const depIdStr = depId.toString();
+        let cursor = 0;
+        const pattern = `*${depIdStr}*`;
+        do {
+          const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+          cursor = reply.cursor;
+          const keys = reply.keys || [];
+          if (keys.length > 0) {
+            await client.del(keys);
+          }
+        } while (cursor !== 0);
+      }
+    } catch (err) {
+      console.error("[Symbol Service] Failed to clean Redis keys on symbol deletion:", err.message);
+    } finally {
+      if (client) {
+        await client.disconnect().catch(() => {});
+      }
+    }
+  }
+
   if (result.is_active) {
     await publishSymbolUpdate({
       action: "unsubscribe",

@@ -1789,6 +1789,32 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
       }
     }
 
+    // Clean up stale account balance keys and liquidity sweep keys for deleted accounts
+    const allAccounts = await Account.find({}, { _id: 1, account_id: 1 }).lean();
+    const validAccountIds = new Set();
+    for (const acc of allAccounts) {
+      if (acc._id) validAccountIds.add(acc._id.toString());
+      if (acc.account_id) validAccountIds.add(acc.account_id.toString());
+    }
+
+    const existingBalanceKeys = await client.keys("account_balance:*");
+    for (const key of existingBalanceKeys) {
+      const accId = key.replace("account_balance:", "");
+      if (!validAccountIds.has(accId)) {
+        await client.del(key);
+        console.log(`Deleted stale account balance Redis key: ${key}`);
+      }
+    }
+
+    const existingSweepKeys = await client.keys("liquidity_sweep:open:*");
+    for (const key of existingSweepKeys) {
+      const accId = key.replace("liquidity_sweep:open:", "");
+      if (!validAccountIds.has(accId)) {
+        await client.del(key);
+        console.log(`Deleted stale liquidity sweep open Redis key: ${key}`);
+      }
+    }
+
     for (const [key, activeStrategies] of Object.entries(newKeysData)) {
       await client.del(key);
       if (typeof client.json?.set === 'function') {

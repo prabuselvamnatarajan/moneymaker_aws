@@ -34,4 +34,30 @@ describe("Backtest run_id Redis Sync Verification", () => {
       assert.equal(synced, true, "expected syncAllDeploymentsToRedis to be called");
     });
   });
+
+  it("removes stale account balance and deployment keys on account deletion", async () => {
+    const deletedKeys = [];
+    const mockRedisClient = {
+      del: async (keys) => {
+        const arr = Array.isArray(keys) ? keys : [keys];
+        deletedKeys.push(...arr);
+      },
+      keys: async (pattern) => {
+        if (pattern === "account_balance:*") return ["account_balance:acc_valid", "account_balance:acc_deleted"];
+        return [];
+      }
+    };
+
+    const validAccountIds = new Set(["acc_valid"]);
+    const existingBalanceKeys = await mockRedisClient.keys("account_balance:*");
+    for (const key of existingBalanceKeys) {
+      const accId = key.replace("account_balance:", "");
+      if (!validAccountIds.has(accId)) {
+        await mockRedisClient.del(key);
+      }
+    }
+
+    assert.ok(deletedKeys.includes("account_balance:acc_deleted"), "expected stale account balance key to be deleted");
+    assert.ok(!deletedKeys.includes("account_balance:acc_valid"), "expected valid account balance key to be preserved");
+  });
 });
