@@ -382,7 +382,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
             }
 
             prevHigh.high = high;
-            prevLow.low = low;
+            prevHigh.low = low;
         } else {
             // Trend continuation
             if (prevLow.low > low) {
