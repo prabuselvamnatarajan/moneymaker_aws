@@ -527,6 +527,7 @@ const triggerBacktestIfNeeded = async (deployment) => {
     const runId = Date.now().toString();
     deployment.backtest_run_id = runId;
     await deployment.save();
+    await syncAllDeploymentsToRedis();
     
     const triggerUrl = `${process.env.BACKTEST_CLIENT_URL || "http://backtest-client"}/?symbolName=${encodeURIComponent(symbolName)}&date=${encodeURIComponent(date)}&time_ms=${timeMs}&deployment_id=${encodeURIComponent(deployment._id.toString())}&run_id=${runId}`;
     console.log(`[Backtest] Triggering backtest client with run_id ${runId}: ${triggerUrl}`);

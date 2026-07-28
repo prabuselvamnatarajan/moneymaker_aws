@@ -181,4 +181,33 @@ describe('MSB buy/sell consistency', () => {
         );
         assert.equal(store.orders.filter((o) => o.transaction_type === 'SELL').length, 0);
     });
+
+    it('establishes initial DOWN trend when isUp === null and price breaks down', async () => {
+        let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
+        assert.equal(state.isUp, null);
+
+        // Down break from initial state
+        state = await MSB(
+            state,
+            candle({ high: 99, low: 97, ltp: 97 }),
+            SYMBOL,
+            strategyDetails()
+        );
+        assert.equal(state.isUp, false, 'expected isUp to become false on initial down break');
+    });
+
+    it('falls back to default quantity when balance key is missing or lot_size is non-full-amount', async () => {
+        resetStore({ balance: null, bought: {} });
+        let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails({ use_full_amount: false, lot_size: 50, no_of_lots: 2 }));
+        state = await MSB(
+            state,
+            candle({ high: 101, low: 100, ltp: 101 }),
+            SYMBOL,
+            strategyDetails({ use_full_amount: false, lot_size: 50, no_of_lots: 2 })
+        );
+        assert.equal(state.isUp, true);
+        const buyOrders = store.orders.filter((o) => o.transaction_type === 'BUY');
+        assert.equal(buyOrders.length, 1);
+        assert.equal(buyOrders[0].quantity, 100, 'expected quantity to be lots * lot_size (100)');
+    });
 });

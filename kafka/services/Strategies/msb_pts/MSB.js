@@ -79,6 +79,9 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         } else if (lot) {
             quantity = lots * lot;
         }
+        if (!quantity || quantity <= 0) {
+            quantity = lot ? (lots * lot) : (strategy_details.quantity || 1);
+        }
     } else if (transaction_type === "SELL") {
         // Closing a LONG takes priority
         let boughtQty = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
@@ -88,6 +91,9 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
             quantity = await computeAffordableQty();
         } else if (lot) {
             quantity = lots * lot;
+        }
+        if (!quantity || quantity <= 0) {
+            quantity = lot ? (lots * lot) : (strategy_details.quantity || 1);
         }
     }
 

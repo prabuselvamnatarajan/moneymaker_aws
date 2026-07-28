@@ -55,21 +55,27 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     } else if (transaction_type === "BUY") {
         if (use_full_amount) {
             let current_acc_balance = await getAccountBalanceFromRedis(account_id);
-            let maxAffordableValue = current_acc_balance;
-            if (commission_type === "FLAT") {
-                maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
-            } else if (commission_type === "PERCENTAGE") {
-                maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
-            }
-            maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+            if (current_acc_balance != null && current_acc_balance >= 0) {
+                let maxAffordableValue = current_acc_balance;
+                if (commission_type === "FLAT") {
+                    maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
+                } else if (commission_type === "PERCENTAGE") {
+                    maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
+                }
+                maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
 
-            if (lot) {
-                quantity = Math.floor(maxAffordableValue / (ltp * lot)) * lot;
+                if (lot) {
+                    quantity = Math.floor(maxAffordableValue / (ltp * lot)) * lot;
+                } else {
+                    quantity = Math.floor(maxAffordableValue / ltp);
+                }
             } else {
-                quantity = Math.floor(maxAffordableValue / ltp);
+                quantity = lot ? (lots * lot) : (strategy_details.quantity || 1);
             }
         } else if (lot) {
             quantity = lots * lot;
+        } else {
+            quantity = Number(strategy_details.quantity) > 0 ? Number(strategy_details.quantity) : 1;
         }
     }
 
@@ -124,7 +130,53 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
 
     let { isUp, prevHigh, prevLow } = prevData;
     let { isTest } = strategy_details;
-    if (isUp) {
+
+    if (isUp === null) {
+        // Trend is not established yet
+        if (prevLow.high < high) {
+            prevHigh.high = high;
+            prevHigh.low = low;
+            isUp = true;
+            const existingHoldings = await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id);
+            if (existingHoldings > 0) {
+                logger.warn(
+                    `MSB: Skipping BUY — holdings already present in Redis (${existingHoldings}). Waiting for exit signal.`
+                );
+            } else {
+                if (isTest) {
+                    logger.info(`MSB Test: Opening Test long position at ${high}`);
+                } else {
+                    logger.info(`MSB: Opening Live long position at ${high}`);
+                }
+
+                let requestBody = await computeOrderPayload(strategy_details, "BUY", ltp, symbol, currentData.timestamp);
+                if (requestBody && requestBody.quantity > 0) {
+                    const orderPlaced = await triggerOrder(requestBody);
+                    if (orderPlaced) {
+                        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
+                    } else {
+                        logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                    }
+                } else {
+                    logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${requestBody?.quantity}`);
+                }
+            }
+        } else if (prevHigh.low > low) {
+            prevLow.high = high;
+            prevLow.low = low;
+            isUp = false;
+            logger.info(`MSB: Established initial trend DOWN at ${low}.`);
+        } else {
+            if (prevHigh.high < high) {
+                prevHigh.high = high;
+                prevHigh.low = low;
+            }
+            if (prevLow.low > low) {
+                prevLow.high = high;
+                prevLow.low = low;
+            }
+        }
+    } else if (isUp) {
         // check for break
         if (prevHigh.low > low) {
             prevLow.high = high;
