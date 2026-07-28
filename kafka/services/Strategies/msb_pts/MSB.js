@@ -62,7 +62,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         } else if (commission_type === "PERCENTAGE") {
             maxAffordableValue = current_acc_balance / (1 + (commission_rate / 100));
         }
-        maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
+        maxAffordableValue = Math.max(0, maxAffordableValue + 1e-5);
         if (lot) {
             return Math.floor(maxAffordableValue / (ltp * lot)) * lot;
         }

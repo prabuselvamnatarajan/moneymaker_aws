@@ -925,10 +925,10 @@ const resetDeploymentStrategyRuntimeState = async (deployment, { bumpEpoch = fal
     let cursor = 0;
     const pattern = `*${deploymentIdStr}*`;
     const epochKey = getStateEpochKey(deploymentIdStr);
+    const isBacktest = deployment.strategy_mode === "BACKTEST";
     const isProtectedKey = (k) =>
       k === epochKey
-      || k.startsWith("bought_quantity:")
-      || k.startsWith("short_quantity:");
+      || (!isBacktest && (k.startsWith("bought_quantity:") || k.startsWith("short_quantity:")));
     do {
       const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
       cursor = reply.cursor;
