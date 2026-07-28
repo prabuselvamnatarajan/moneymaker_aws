@@ -53,7 +53,7 @@ async function createConsumer() {
                 console.log(`msg: ${JSON.stringify(msg)}`);
                 let { strategy_details = {} } = msg;
                 const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
-                if (isBackTest && msg.run_id && strategy_details.backtest_run_id && msg.run_id !== strategy_details.backtest_run_id) {
+                if (isBackTest && msg.run_id && strategy_details.backtest_run_id && String(msg.run_id) !== String(strategy_details.backtest_run_id)) {
                     logger.info(`Discarding stale backtest message in MSB strategy. Msg run_id: ${msg.run_id}, Active: ${strategy_details.backtest_run_id}`);
                     return;
                 }

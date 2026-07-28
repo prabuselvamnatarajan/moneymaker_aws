@@ -75,7 +75,6 @@ export function extractTickTimeMs(data) {
  */
 export function tickTargetsPosition(isBacktestTopic, tickDeploymentId, positionDeploymentId) {
   if (!isBacktestTopic) return true;
-  if (!tickDeploymentId) return true;
-  if (!positionDeploymentId) return false;
+  if (!tickDeploymentId || !positionDeploymentId) return false;
   return String(tickDeploymentId) === String(positionDeploymentId);
 }

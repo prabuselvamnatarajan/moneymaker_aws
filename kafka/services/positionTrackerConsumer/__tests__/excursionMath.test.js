@@ -128,7 +128,7 @@ describe('tickTargetsPosition', () => {
     assert.equal(tickTargetsPosition(false, 'depA', 'depB'), true);
   });
 
-  it('falls back to allowing a backtest tick that carries no deployment id', () => {
-    assert.equal(tickTargetsPosition(true, null, 'depA'), true);
+  it('rejects a backtest tick that carries no deployment id to prevent cross-deployment pollution', () => {
+    assert.equal(tickTargetsPosition(true, null, 'depA'), false);
   });
 });

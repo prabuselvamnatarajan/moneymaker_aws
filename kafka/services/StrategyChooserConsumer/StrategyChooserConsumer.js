@@ -106,10 +106,14 @@ async function createConsumer() {
                 const data = JSON.parse(value.toString());
 
                 let filteredStrategies = strategies;
-                if (isBackTest && data.deployment_id) {
+                if (isBackTest) {
+                    if (!data.deployment_id) {
+                        logger.warn(`Discarding backtest message for symbol ${symbol}: missing deployment_id`);
+                        return;
+                    }
                     filteredStrategies = strategies.filter(strategy => {
-                        if (strategy.deployment_id !== data.deployment_id) return false;
-                        if (data.run_id && strategy.backtest_run_id && data.run_id !== strategy.backtest_run_id) {
+                        if (String(strategy.deployment_id) !== String(data.deployment_id)) return false;
+                        if (data.run_id && strategy.backtest_run_id && String(data.run_id) !== String(strategy.backtest_run_id)) {
                             logger.info(`Discarding stale backtest message for deployment ${data.deployment_id}. Msg run_id: ${data.run_id}, Active run_id: ${strategy.backtest_run_id}`);
                             return false;
                         }
