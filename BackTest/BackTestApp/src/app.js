@@ -15,6 +15,7 @@ import ledgerRoutes from "./routes/ledgerRoute.js";
 import adminRoutes from "./routes/adminRoute.js";
 import brokerRoutes from "./routes/brokerRoute.js";
 import externalBrokerRoutes from "./routes/externalBrokerRoute.js";
+import volumeRoutes from "./routes/volumeRoute.js";
 
 const app = express();
 
@@ -29,7 +30,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: "500mb" }));
+app.use(bodyParser.urlencoded({ limit: "500mb", extended: true }));
 
 // Health check
 app.get("/health", (req, res) => {
@@ -50,6 +52,7 @@ app.use("/ledger", ledgerRoutes);
 app.use("/admin", adminRoutes);
 app.use("/brokers", brokerRoutes);
 app.use("/external-brokers", externalBrokerRoutes);
+app.use("/volumes", volumeRoutes);
 
 // --- Mount routes at /api prefix (backward compatibility) ---
 app.use("/api", tradeRoutes);          // legacy /api/trade endpoint
@@ -66,6 +69,7 @@ app.use("/api/ledger", ledgerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/brokers", brokerRoutes);
 app.use("/api/external-brokers", externalBrokerRoutes);
+app.use("/api/volumes", volumeRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {

@@ -1052,4 +1052,113 @@ export const api = {
       return handleResponse<{ message: string }>(res);
     },
   },
+
+  // Volumes API for Docker volume management
+  volumes: {
+    async list() {
+      const res = await fetch(`${BASE_URL}/volumes`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    async getFiles(volumeName: string, path?: string) {
+      const query = new URLSearchParams();
+      if (path) {
+        query.append('path', path);
+      }
+      const res = await fetch(`${BASE_URL}/volumes/${encodeURIComponent(volumeName)}?${query.toString()}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    async createDirectory(volumeName: string, path: string, dirName: string) {
+      const res = await fetch(`${BASE_URL}/volumes/${encodeURIComponent(volumeName)}/directories`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ path, dirName }),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+
+    async uploadFile(volumeName: string, path: string, file: File) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('path', path);
+      
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const res = await fetch(`${BASE_URL}/volumes/${encodeURIComponent(volumeName)}/files`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+
+    async downloadFile(volumeName: string, filePath: string) {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const res = await fetch(`${BASE_URL}/volumes/${encodeURIComponent(volumeName)}/download?path=${encodeURIComponent(filePath)}`, {
+        method: 'GET',
+        headers,
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `HTTP error! status: ${res.status}`);
+      }
+      
+      return res.blob();
+    },
+
+    async downloadDirectory(volumeName: string, dirPath: string) {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const res = await fetch(`${BASE_URL}/volumes/${encodeURIComponent(volumeName)}/download-dir?path=${encodeURIComponent(dirPath)}`, {
+        method: 'GET',
+        headers,
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `HTTP error! status: ${res.status}`);
+      }
+      
+      return res.blob();
+    },
+
+    async deleteFile(volumeName: string, filePath: string) {
+      const res = await fetch(`${BASE_URL}/volumes/${encodeURIComponent(volumeName)}/files`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+        body: JSON.stringify({ path: filePath }),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+
+    async deleteDirectory(volumeName: string, dirPath: string) {
+      const res = await fetch(`${BASE_URL}/volumes/${encodeURIComponent(volumeName)}/directories`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+        body: JSON.stringify({ path: dirPath }),
+      });
+      return handleResponse<{ message: string }>(res);
+    },
+  },
 };
