@@ -161,7 +161,8 @@ export type ViewScreen =
   | 'profile'
   | 'brokers-list'
   | 'strategy-templates'
-  | 'deployment-analysis';
+  | 'deployment-analysis'
+  | 'volumes';
 
 export interface DeploymentAnalysis {
   deployment_id: string;
@@ -281,4 +282,22 @@ export interface Deployment {
   timeframe?: string;
   current_status: string;
   created_at: string;
+}
+
+export interface VolumeInfo {
+  id: string;
+  name: string;
+  driver: string;
+  mountpoint: string;
+  createdAt?: string;
+  size?: number;
+}
+
+export interface VolumeFile {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+  modifiedAt?: string;
+  isParent?: boolean;
 }

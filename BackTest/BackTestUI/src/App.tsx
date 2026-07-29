@@ -25,6 +25,7 @@ import BrokersListView from './components/BrokersListView';
 import StrategyTemplatesView from './components/StrategyTemplatesView';
 import DeploymentAnalysisView from './components/DeploymentAnalysisView';
 import LiveCandlestickView from './components/LiveCandlestickView';
+import VolumesView from './components/VolumesView';
 import { api } from './api';
 import { mapAccount, mapSymbol, mapTrade, mapDeployment, mapLedger } from './adapters';
 import { applyLiveQuote, tokensMatch, pruneLiveQuotes, LiveQuote } from './utils/instrumentToken';
@@ -875,6 +876,10 @@ export default function App() {
       case 'live-candlestick':
         return (
           <LiveCandlestickView symbols={symbols} timezone={timezone} />
+        );
+      case 'volumes':
+        return (
+          <VolumesView />
         );
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;
