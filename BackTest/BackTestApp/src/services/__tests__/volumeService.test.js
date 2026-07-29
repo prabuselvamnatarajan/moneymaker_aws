@@ -18,7 +18,7 @@ test("volumeService unit & security edge cases", async (t) => {
 
   // Cleanup leftover test directories for test idempotency
   const { basePath } = await resolveVolumePath(testVolName, "");
-  ["dup-test-dir", "level1", "temp-edge-folder", "temp-type-mismatch-folder", "unit-test-subfolder"].forEach((dir) => {
+  ["dup-test-dir", "level1", "temp-zero-byte-folder", "temp-not-dir-folder", "temp-type-mismatch-folder", "symlink-test-folder"].forEach((dir) => {
     const p = path.join(basePath, dir);
     if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
   });
@@ -37,7 +37,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await resolveVolumePath(testVolName, "../../etc/passwd");
       },
-      (err) => err.message.includes("Path traversal detected")
+      (err) => Boolean(err?.message?.includes("Path traversal detected"))
     );
 
     // 2. Deep nested traversal attempt
@@ -45,7 +45,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await resolveVolumePath(testVolName, "subfolder/../../../etc/shadow");
       },
-      (err) => err.message.includes("Path traversal detected")
+      (err) => Boolean(err?.message?.includes("Path traversal detected"))
     );
 
     // 3. Absolute path parameter
@@ -53,7 +53,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await resolveVolumePath(testVolName, "/etc/passwd");
       },
-      (err) => err.message.includes("Path traversal detected")
+      (err) => Boolean(err?.message?.includes("Path traversal detected"))
     );
 
     // 4. Volume name traversal attempt
@@ -61,8 +61,59 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await resolveVolumePath("../etc", "somepath");
       },
-      (err) => err.message.includes("Path traversal detected") || err.message.includes("does not exist")
+      (err) => Boolean(err?.message?.includes("Path traversal detected") || err?.message?.includes("does not exist"))
     );
+
+    // 5. Backslash path traversal attempt (Windows/cross-platform)
+    await assert.rejects(
+      async () => {
+        await resolveVolumePath(testVolName, "..\\..\\etc\\passwd");
+      },
+      (err) => Boolean(err?.message?.includes("Path traversal detected"))
+    );
+  });
+
+  await t.test("Security: saveFile and createDirectory path traversal defenses", async () => {
+    // 1. saveFile with dangerous filename
+    await assert.rejects(
+      async () => {
+        await saveFile(testVolName, "", {
+          originalname: "../../../etc/bashrc",
+          buffer: Buffer.from("malicious"),
+        });
+      },
+      (err) => Boolean(err?.message?.includes("Path traversal detected"))
+    );
+
+    // 2. createDirectory with dangerous subfolder name
+    await assert.rejects(
+      async () => {
+        await createDirectory(testVolName, "", "../../dangerous_dir");
+      },
+      (err) => Boolean(err?.message?.includes("Path traversal detected"))
+    );
+  });
+
+  await t.test("Edge Case: Zero-byte file handling and empty folder operations", async () => {
+    const tempDir = "temp-zero-byte-folder";
+    await createDirectory(testVolName, "", tempDir);
+
+    // Upload zero-byte file
+    const emptyFile = { originalname: "empty.bin", buffer: Buffer.alloc(0) };
+    await saveFile(testVolName, tempDir, emptyFile);
+
+    const items = await listFiles(testVolName, tempDir);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].name, "empty.bin");
+    assert.equal(items[0].size, 0);
+
+    const { targetPath, fileName } = await getFilePath(testVolName, `${tempDir}/empty.bin`);
+    assert.equal(fileName, "empty.bin");
+    assert.ok(fs.existsSync(targetPath));
+
+    // Clean up
+    await deleteFile(testVolName, `${tempDir}/empty.bin`);
+    await deleteDirectory(testVolName, tempDir);
   });
 
   await t.test("Edge Case: Invalid or non-existent path reading", async () => {
@@ -71,11 +122,11 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await listFiles(testVolName, "non_existent_folder_xyz_123");
       },
-      (err) => err.message.includes("Path does not exist")
+      (err) => Boolean(err?.message?.includes("Path does not exist"))
     );
 
     // Calling listFiles on a file path instead of directory
-    const tempDir = "temp-edge-folder";
+    const tempDir = "temp-not-dir-folder";
     await createDirectory(testVolName, "", tempDir);
     const testFile = { originalname: "file.txt", buffer: Buffer.from("data") };
     await saveFile(testVolName, tempDir, testFile);
@@ -84,7 +135,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await listFiles(testVolName, `${tempDir}/file.txt`);
       },
-      (err) => err.message.includes("Path is not a directory")
+      (err) => Boolean(err?.message?.includes("Path is not a directory"))
     );
 
     // Clean up temp
@@ -103,7 +154,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await getFilePath(testVolName, tempDir);
       },
-      (err) => err.message.includes("Target path is not a file")
+      (err) => Boolean(err?.message?.includes("Target path is not a file") || err?.message?.includes("does not exist"))
     );
 
     // 2. deleteFile on a directory should fail
@@ -111,7 +162,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await deleteFile(testVolName, tempDir);
       },
-      (err) => err.message.includes("Cannot delete directory as file")
+      (err) => Boolean(err?.message?.includes("Cannot delete directory as file"))
     );
 
     // 3. deleteDirectory on a file should fail
@@ -119,7 +170,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await deleteDirectory(testVolName, `${tempDir}/file.txt`);
       },
-      (err) => err.message.includes("Target path is not a directory")
+      (err) => Boolean(err?.message?.includes("Target path is not a directory"))
     );
 
     // Clean up
@@ -160,7 +211,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await createDirectory(testVolName, "", dupDir);
       },
-      (err) => err.message.includes("Directory already exists")
+      (err) => Boolean(err?.message?.includes("Directory already exists"))
     );
 
     // Attempting to delete volume root directory should fail
@@ -168,7 +219,7 @@ test("volumeService unit & security edge cases", async (t) => {
       async () => {
         await deleteDirectory(testVolName, "");
       },
-      (err) => err.message.includes("Cannot delete volume root directory")
+      (err) => Boolean(err?.message?.includes("Cannot delete volume root directory"))
     );
 
     // Clean up

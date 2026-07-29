@@ -246,6 +246,10 @@ export async function saveFile(volumeName, subPath = "", file) {
     throw new Error("Invalid file upload data");
   }
 
+  if (file.originalname.includes("..") || file.originalname.includes("/") || file.originalname.includes("\\")) {
+    throw new Error("Invalid filename: Path traversal detected");
+  }
+
   const sanitizedFileName = path.basename(file.originalname);
   const { targetPath, basePath } = await resolveVolumePath(volumeName, subPath);
 
@@ -276,7 +280,7 @@ export async function getFilePath(volumeName, filePath) {
   const { targetPath } = await resolveVolumePath(volumeName, filePath);
 
   if (!fs.existsSync(targetPath)) {
-    throw new Error(`File not found: ${filePath}`);
+    throw new Error(`Target path does not exist: ${filePath}`);
   }
 
   const stat = await fs.promises.stat(targetPath);
