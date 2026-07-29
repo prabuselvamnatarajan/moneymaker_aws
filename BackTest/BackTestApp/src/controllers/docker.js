@@ -1,32 +1,62 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// Strict regex pattern for safe container ID or name validation
+const SAFE_CONTAINER_ID_REGEX = /^[a-zA-Z0-9_.-]+$/;
+
+/**
+ * Filter helper to determine if a container belongs to the MoneyMaker / BackTest stack
+ */
+function isApplicationContainer(c) {
+  const name = (c.Names || '').toLowerCase();
+  const image = (c.Image || '').toLowerCase();
+  const labels = (c.Labels || '').toLowerCase();
+
+  return (
+    name.includes('moneymaker') ||
+    name.includes('backtest') ||
+    name.includes('mongo') ||
+    name.includes('kafka') ||
+    name.includes('redis') ||
+    name.includes('zookeeper') ||
+    name.includes('proxy') ||
+    name.includes('strategy') ||
+    image.includes('moneymaker') ||
+    image.includes('backtest') ||
+    labels.includes('moneymaker')
+  );
+}
 
 // Get list of running containers for the application
 export const getContainers = async (req, res, next) => {
   try {
-    // Filter containers by label or name pattern related to backtest application
-    const { all } = req.query;
-    const filter = all === 'true' ? '' : '--filter "status=running"';
+    const { all, scope } = req.query;
+    const args = ['ps', '--format', '{{json .}}'];
     
-    const { stdout } = await execAsync(
-      `docker ps --format "{{json .}}" ${filter}`
-    );
+    if (all === 'true') {
+      args.push('-a');
+    }
+
+    const { stdout } = await execFileAsync('docker', args);
     
     const lines = stdout.trim().split('\n').filter(line => line.trim());
     const containers = lines.map(line => {
       try {
         const c = JSON.parse(line);
-        // Only include containers related to backtest application
-        if (c.Names.includes('backtest') || c.Names.includes('backtest-')) {
+        const name = (c.Names || '').replace(/^\//, '');
+
+        // Return container if scope is 'all' or if it matches application stack
+        if (scope === 'all' || isApplicationContainer(c)) {
           return {
             id: c.ID,
-            name: c.Names.replace(/^\//, ''),
+            name: name,
             image: c.Image,
             status: c.Status,
-            ports: c.Ports,
-            state: c.State
+            ports: c.Ports || 'N/A',
+            state: c.State || (c.Status.toLowerCase().includes('up') ? 'running' : 'exited'),
+            createdAt: c.CreatedAt || ''
           };
         }
         return null;
@@ -48,60 +78,74 @@ export const getContainers = async (req, res, next) => {
 export const getContainerLogs = async (req, res, next) => {
   try {
     const { containerId } = req.params;
-    const { tail = '100', follow = 'false', timestamps = 'true' } = req.query;
+    const { tail = '200', timestamps = 'true' } = req.query;
     
-    if (!containerId) {
-      return res.status(400).json({ message: "Container ID is required" });
+    if (!containerId || !SAFE_CONTAINER_ID_REGEX.test(containerId)) {
+      return res.status(400).json({ message: "Invalid or missing Container ID parameter" });
     }
     
-    // Validate container exists and belongs to our application
+    const sanitizedTail = Math.min(Math.max(1, parseInt(tail, 10) || 200), 5000);
+    
+    // Validate container exists and inspect details safely
+    let containerInfo = null;
     try {
-      const { stdout: inspectOut } = await execAsync(
-        `docker inspect ${containerId}`
-      );
+      const { stdout: inspectOut } = await execFileAsync('docker', ['inspect', containerId]);
       const inspectData = JSON.parse(inspectOut);
       if (!inspectData || inspectData.length === 0) {
         return res.status(404).json({ message: "Container not found" });
       }
-      
-      const containerName = inspectData[0].Name.replace(/^\//, '');
-      if (!containerName.includes('backtest')) {
-        return res.status(403).json({ message: "Access denied: Container not part of application" });
-      }
+      containerInfo = inspectData[0];
     } catch (inspectErr) {
       return res.status(404).json({ message: "Container not found or inaccessible" });
     }
     
-    // Build docker logs command
-    let cmd = `docker logs --tail ${tail}`;
+    // Build parameterized docker logs arguments
+    const args = ['logs', '--tail', String(sanitizedTail)];
     if (timestamps === 'true') {
-      cmd += ' --timestamps';
+      args.push('--timestamps');
     }
-    cmd += ` ${containerId} 2>&1`;
+    args.push(containerId);
     
-    const { stdout } = await execAsync(cmd);
-    
-    // Parse logs with timestamps
-    const logLines = stdout.split('\n').filter(line => line.trim()).map(line => {
-      // Docker log format: TIMESTAMP MESSAGE
-      const match = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)$/);
-      if (match) {
-        return {
-          timestamp: match[1],
-          message: match[2],
-          level: detectLogLevel(match[2])
-        };
+    let rawOutput = '';
+    try {
+      const { stdout, stderr } = await execFileAsync('docker', args, {
+        maxBuffer: 15 * 1024 * 1024 // 15MB buffer limit for long outputs
+      });
+      rawOutput = (stdout || '') + (stderr || '');
+    } catch (cmdErr) {
+      // docker logs outputs to stderr when writing stderr streams
+      if (cmdErr.stdout || cmdErr.stderr) {
+        rawOutput = (cmdErr.stdout || '') + (cmdErr.stderr || '');
+      } else {
+        throw cmdErr;
       }
-      return {
-        timestamp: new Date().toISOString(),
-        message: line,
-        level: detectLogLevel(line)
-      };
-    });
+    }
+    
+    // Parse logs into structured lines with timestamp & log level detection
+    const logLines = rawOutput
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => {
+        // Docker log timestamp pattern ISO: YYYY-MM-DDTHH:mm:ss.SSSSSSSSSZ
+        const match = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(.*)$/);
+        if (match) {
+          return {
+            timestamp: match[1],
+            message: match[2],
+            level: detectLogLevel(match[2])
+          };
+        }
+        return {
+          timestamp: new Date().toISOString(),
+          message: line,
+          level: detectLogLevel(line)
+        };
+      });
     
     res.status(200).json({
       message: "Logs retrieved successfully",
       containerId,
+      containerName: (containerInfo.Name || '').replace(/^\//, ''),
       logs: logLines
     });
   } catch (error) {
@@ -109,19 +153,33 @@ export const getContainerLogs = async (req, res, next) => {
   }
 };
 
-// Helper to detect log level from message
+// Helper to detect log level from log text
 function detectLogLevel(message) {
   const lowerMsg = message.toLowerCase();
-  if (lowerMsg.includes('error') || lowerMsg.includes('fatal') || lowerMsg.includes('critical')) {
+  if (
+    lowerMsg.includes('error') ||
+    lowerMsg.includes('fatal') ||
+    lowerMsg.includes('critical') ||
+    lowerMsg.includes('exception') ||
+    lowerMsg.includes('500 internal') ||
+    lowerMsg.includes('502 bad') ||
+    lowerMsg.includes('503 service')
+  ) {
     return 'error';
   }
-  if (lowerMsg.includes('warn') || lowerMsg.includes('warning')) {
+  if (
+    lowerMsg.includes('warn') ||
+    lowerMsg.includes('warning') ||
+    lowerMsg.includes('404 ') ||
+    lowerMsg.includes('401 ') ||
+    lowerMsg.includes('403 ')
+  ) {
     return 'warn';
   }
-  if (lowerMsg.includes('debug')) {
+  if (lowerMsg.includes('debug') || lowerMsg.includes('trace')) {
     return 'debug';
   }
-  if (lowerMsg.includes('info')) {
+  if (lowerMsg.includes('info') || lowerMsg.includes('http') || lowerMsg.includes('listening')) {
     return 'info';
   }
   return 'log';

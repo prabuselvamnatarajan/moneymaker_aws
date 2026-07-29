@@ -1163,8 +1163,11 @@ export const api = {
   },
 
   docker: {
-    async listContainers(all?: boolean) {
-      const query = all ? '?all=true' : '';
+    async listContainers(options?: { all?: boolean; scope?: 'app' | 'all' }) {
+      const params = new URLSearchParams();
+      if (options?.all) params.append('all', 'true');
+      if (options?.scope) params.append('scope', options.scope);
+      const query = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`${BASE_URL}/docker/containers${query}`, {
         method: 'GET',
         headers: getHeaders(),
@@ -1182,7 +1185,7 @@ export const api = {
         method: 'GET',
         headers: getHeaders(),
       });
-      return handleResponse<{ logs: any[]; containerId: string }>(res);
+      return handleResponse<{ logs: any[]; containerId: string; containerName?: string }>(res);
     },
   },
 };
