@@ -13,7 +13,16 @@ import {
   deleteDirectory,
 } from "../volumeService.js";
 
-test("volumeService unit tests", async (t) => {
+test("volumeService unit & security edge cases", async (t) => {
+  const testVolName = "backtest-data";
+
+  // Cleanup leftover test directories for test idempotency
+  const { basePath } = await resolveVolumePath(testVolName, "");
+  ["dup-test-dir", "level1", "temp-edge-folder", "temp-type-mismatch-folder", "unit-test-subfolder"].forEach((dir) => {
+    const p = path.join(basePath, dir);
+    if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+  });
+
   await t.test("listVolumes should return an array of volumes", async () => {
     const volumes = await listVolumes();
     assert.ok(Array.isArray(volumes));
@@ -22,50 +31,147 @@ test("volumeService unit tests", async (t) => {
     assert.ok(volumes[0].mountpoint);
   });
 
-  await t.test("resolveVolumePath should prevent path traversal attacks", async () => {
+  await t.test("Security: resolveVolumePath path traversal defenses", async () => {
+    // 1. Relative parent directory traversal
     await assert.rejects(
       async () => {
-        await resolveVolumePath("backtest-data", "../../etc/passwd");
+        await resolveVolumePath(testVolName, "../../etc/passwd");
       },
-      (err) => {
-        return err.message.includes("Path traversal detected");
-      }
+      (err) => err.message.includes("Path traversal detected")
+    );
+
+    // 2. Deep nested traversal attempt
+    await assert.rejects(
+      async () => {
+        await resolveVolumePath(testVolName, "subfolder/../../../etc/shadow");
+      },
+      (err) => err.message.includes("Path traversal detected")
+    );
+
+    // 3. Absolute path parameter
+    await assert.rejects(
+      async () => {
+        await resolveVolumePath(testVolName, "/etc/passwd");
+      },
+      (err) => err.message.includes("Path traversal detected")
+    );
+
+    // 4. Volume name traversal attempt
+    await assert.rejects(
+      async () => {
+        await resolveVolumePath("../etc", "somepath");
+      },
+      (err) => err.message.includes("Path traversal detected") || err.message.includes("does not exist")
     );
   });
 
-  await t.test("directory and file operations inside test volume", async () => {
-    const testVolName = "backtest-data";
-    const testSubDir = "unit-test-subfolder";
+  await t.test("Edge Case: Invalid or non-existent path reading", async () => {
+    // Non-existent directory
+    await assert.rejects(
+      async () => {
+        await listFiles(testVolName, "non_existent_folder_xyz_123");
+      },
+      (err) => err.message.includes("Path does not exist")
+    );
 
-    // 1. Create a directory inside volume
-    const mkdirRes = await createDirectory(testVolName, "", testSubDir);
-    assert.ok(mkdirRes.message.includes("created successfully"));
+    // Calling listFiles on a file path instead of directory
+    const tempDir = "temp-edge-folder";
+    await createDirectory(testVolName, "", tempDir);
+    const testFile = { originalname: "file.txt", buffer: Buffer.from("data") };
+    await saveFile(testVolName, tempDir, testFile);
 
-    // 2. Save a file inside created directory
-    const testFile = {
-      originalname: "sample-data.txt",
-      buffer: Buffer.from("Hello Docker Volume Management", "utf-8"),
-    };
-    const saveRes = await saveFile(testVolName, testSubDir, testFile);
-    assert.ok(saveRes.message.includes("uploaded successfully"));
+    await assert.rejects(
+      async () => {
+        await listFiles(testVolName, `${tempDir}/file.txt`);
+      },
+      (err) => err.message.includes("Path is not a directory")
+    );
 
-    // 3. List files inside testSubDir
-    const items = await listFiles(testVolName, testSubDir);
-    assert.ok(Array.isArray(items));
+    // Clean up temp
+    await deleteFile(testVolName, `${tempDir}/file.txt`);
+    await deleteDirectory(testVolName, tempDir);
+  });
+
+  await t.test("Edge Case: Type mismatch on download and deletion", async () => {
+    const tempDir = "temp-type-mismatch-folder";
+    await createDirectory(testVolName, "", tempDir);
+    const testFile = { originalname: "file.txt", buffer: Buffer.from("data") };
+    await saveFile(testVolName, tempDir, testFile);
+
+    // 1. getFilePath on a directory should fail
+    await assert.rejects(
+      async () => {
+        await getFilePath(testVolName, tempDir);
+      },
+      (err) => err.message.includes("Target path is not a file")
+    );
+
+    // 2. deleteFile on a directory should fail
+    await assert.rejects(
+      async () => {
+        await deleteFile(testVolName, tempDir);
+      },
+      (err) => err.message.includes("Cannot delete directory as file")
+    );
+
+    // 3. deleteDirectory on a file should fail
+    await assert.rejects(
+      async () => {
+        await deleteDirectory(testVolName, `${tempDir}/file.txt`);
+      },
+      (err) => err.message.includes("Target path is not a directory")
+    );
+
+    // Clean up
+    await deleteFile(testVolName, `${tempDir}/file.txt`);
+    await deleteDirectory(testVolName, tempDir);
+  });
+
+  await t.test("Edge Case: Multi-level nested folder creation, upload & special characters", async () => {
+    const deepLevel = "level1/level2/level3";
+    const specialFileName = "special test #1 @2026.json";
+
+    // 1. Create deep directory
+    await createDirectory(testVolName, "", deepLevel);
+
+    // 2. List empty deep directory
+    const emptyItems = await listFiles(testVolName, deepLevel);
+    assert.equal(emptyItems.length, 0);
+
+    // 3. Upload file with special characters
+    const file = { originalname: specialFileName, buffer: Buffer.from('{"status":"ok"}') };
+    await saveFile(testVolName, deepLevel, file);
+
+    // 4. List files inside deep directory
+    const items = await listFiles(testVolName, deepLevel);
     assert.equal(items.length, 1);
-    assert.equal(items[0].name, "sample-data.txt");
-    assert.equal(items[0].type, "file");
+    assert.equal(items[0].name, specialFileName);
 
-    // 4. Get file path for downloading
-    const fileRes = await getFilePath(testVolName, `${testSubDir}/sample-data.txt`);
-    assert.ok(fs.existsSync(fileRes.targetPath));
+    // 5. Clean up deep level recursively
+    await deleteDirectory(testVolName, "level1");
+  });
 
-    // 5. Delete file
-    const delFileRes = await deleteFile(testVolName, `${testSubDir}/sample-data.txt`);
-    assert.ok(delFileRes.message.includes("deleted successfully"));
+  await t.test("Edge Case: Duplicate directory creation & root deletion prevention", async () => {
+    const dupDir = "dup-test-dir";
+    await createDirectory(testVolName, "", dupDir);
 
-    // 6. Delete directory
-    const delDirRes = await deleteDirectory(testVolName, testSubDir);
-    assert.ok(delDirRes.message.includes("deleted successfully"));
+    // Duplicate creation should fail
+    await assert.rejects(
+      async () => {
+        await createDirectory(testVolName, "", dupDir);
+      },
+      (err) => err.message.includes("Directory already exists")
+    );
+
+    // Attempting to delete volume root directory should fail
+    await assert.rejects(
+      async () => {
+        await deleteDirectory(testVolName, "");
+      },
+      (err) => err.message.includes("Cannot delete volume root directory")
+    );
+
+    // Clean up
+    await deleteDirectory(testVolName, dupDir);
   });
 });

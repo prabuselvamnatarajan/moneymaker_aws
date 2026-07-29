@@ -124,6 +124,10 @@ export async function resolveVolumePath(volumeName, subPath = "") {
     throw new Error("Volume name is required");
   }
 
+  if (volumeName.includes("..") || volumeName.includes("/") || volumeName.includes("\\")) {
+    throw new Error("Invalid volume name: Path traversal detected");
+  }
+
   // Sanitize volumeName to prevent directory traversal in volume name itself
   const safeVolumeName = path.basename(volumeName);
   
@@ -215,24 +219,23 @@ export async function createDirectory(volumeName, subPath = "", dirName) {
     throw new Error("Directory name is required");
   }
 
-  const sanitizedDirName = path.basename(dirName.trim());
-  const { targetPath } = await resolveVolumePath(volumeName, subPath);
+  const normalizedDirName = path.normalize(dirName.trim());
+  const { targetPath, basePath } = await resolveVolumePath(volumeName, subPath);
 
-  const newDirPath = path.join(targetPath, sanitizedDirName);
+  const newDirPath = path.resolve(targetPath, normalizedDirName);
   
   // Re-verify path traversal on the new directory target path
-  const { basePath } = await resolveVolumePath(volumeName, subPath);
   const relative = path.relative(basePath, newDirPath);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("Invalid directory name: Path traversal detected");
   }
 
   if (fs.existsSync(newDirPath)) {
-    throw new Error(`Directory already exists: ${sanitizedDirName}`);
+    throw new Error(`Directory already exists: ${dirName}`);
   }
 
   await fs.promises.mkdir(newDirPath, { recursive: true });
-  return { message: `Directory '${sanitizedDirName}' created successfully`, path: relative };
+  return { message: `Directory '${dirName}' created successfully`, path: relative };
 }
 
 /**
@@ -343,13 +346,13 @@ export async function deleteFile(volumeName, filePath) {
  * Delete a directory inside a volume recursively.
  */
 export async function deleteDirectory(volumeName, dirPath) {
-  if (!dirPath) {
+  if (dirPath === undefined || dirPath === null) {
     throw new Error("Directory path is required");
   }
 
   const { targetPath, relativePath } = await resolveVolumePath(volumeName, dirPath);
 
-  if (!relativePath) {
+  if (!dirPath || !relativePath || relativePath === "." || relativePath === "") {
     throw new Error("Cannot delete volume root directory");
   }
 
