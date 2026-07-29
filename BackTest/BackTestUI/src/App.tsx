@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useToast } from './components/Toast';
-import { Menu } from 'lucide-react';
+import { Menu, ShieldAlert } from 'lucide-react';
 import { 
   Account, Strategy, SymbolData, Transaction, TransactionFilters, ViewScreen, Broker
 } from './types';
@@ -877,10 +877,34 @@ export default function App() {
         return (
           <LiveCandlestickView symbols={symbols} timezone={timezone} />
         );
-      case 'volumes':
-        return (
-          <VolumesView />
-        );
+      case 'volumes': {
+        const isAdminUser = currentUser?.roles?.some((role: any) => 
+          (typeof role === 'string' && role === 'admin') || 
+          (typeof role === 'object' && role?.name === 'admin')
+        ) ?? false;
+
+        if (!isAdminUser) {
+          return (
+            <div className="p-8 max-w-lg mx-auto text-center space-y-4 my-12">
+              <div className="w-12 h-12 bg-rose-500/10 text-rose-400 rounded-full flex items-center justify-center mx-auto">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <h2 className="text-xl font-bold text-white">Access Restricted</h2>
+              <p className="text-sm text-slate-400">
+                Docker Volume Management is restricted to administrator accounts only.
+              </p>
+              <button
+                onClick={() => setActiveScreen('dashboard')}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                Return to Dashboard
+              </button>
+            </div>
+          );
+        }
+
+        return <VolumesView />;
+      }
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;
     }
