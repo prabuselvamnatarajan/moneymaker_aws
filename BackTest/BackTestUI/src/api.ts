@@ -1161,4 +1161,28 @@ export const api = {
       return handleResponse<{ message: string }>(res);
     },
   },
+
+  docker: {
+    async listContainers(all?: boolean) {
+      const query = all ? '?all=true' : '';
+      const res = await fetch(`${BASE_URL}/docker/containers${query}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    async getContainerLogs(containerId: string, options?: { tail?: number; timestamps?: boolean }) {
+      const params = new URLSearchParams();
+      if (options?.tail) params.append('tail', String(options.tail));
+      if (options?.timestamps !== undefined) params.append('timestamps', String(options.timestamps));
+      
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`${BASE_URL}/docker/containers/${encodeURIComponent(containerId)}/logs${query}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ logs: any[]; containerId: string }>(res);
+    },
+  },
 };

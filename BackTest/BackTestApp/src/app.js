@@ -16,6 +16,7 @@ import adminRoutes from "./routes/adminRoute.js";
 import brokerRoutes from "./routes/brokerRoute.js";
 import externalBrokerRoutes from "./routes/externalBrokerRoute.js";
 import volumeRoutes from "./routes/volumeRoute.js";
+import dockerRoutes from "./routes/dockerRoute.js";
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.use("/admin", adminRoutes);
 app.use("/brokers", brokerRoutes);
 app.use("/external-brokers", externalBrokerRoutes);
 app.use("/volumes", volumeRoutes);
+app.use("/docker", dockerRoutes);
 
 // --- Mount routes at /api prefix (backward compatibility) ---
 app.use("/api", tradeRoutes);          // legacy /api/trade endpoint
@@ -70,6 +72,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/brokers", brokerRoutes);
 app.use("/api/external-brokers", externalBrokerRoutes);
 app.use("/api/volumes", volumeRoutes);
+app.use("/api/docker", dockerRoutes);
 
 // --- Global Error Handler ---
 app.use((err, req, res, next) => {

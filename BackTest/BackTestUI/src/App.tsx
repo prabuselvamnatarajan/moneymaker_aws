@@ -26,6 +26,7 @@ import StrategyTemplatesView from './components/StrategyTemplatesView';
 import DeploymentAnalysisView from './components/DeploymentAnalysisView';
 import LiveCandlestickView from './components/LiveCandlestickView';
 import VolumesView from './components/VolumesView';
+import ContainerLogsView from './components/ContainerLogsView';
 import { api } from './api';
 import { mapAccount, mapSymbol, mapTrade, mapDeployment, mapLedger } from './adapters';
 import { applyLiveQuote, tokensMatch, pruneLiveQuotes, LiveQuote } from './utils/instrumentToken';
@@ -905,6 +906,10 @@ export default function App() {
 
         return <VolumesView />;
       }
+      case 'container-logs':
+        return (
+          <ContainerLogsView currentUser={currentUser} />
+        );
       default:
         return <div className="p-8 text-slate-400">View not found.</div>;
     }
