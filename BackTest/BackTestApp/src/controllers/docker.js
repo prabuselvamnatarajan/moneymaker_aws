@@ -29,6 +29,25 @@ function isApplicationContainer(c) {
   );
 }
 
+/**
+ * Handle Docker CLI execution errors gracefully
+ */
+function handleDockerError(error, res, next) {
+  if (error.code === 127 || error.code === 'ENOENT' || (error.stderr && error.stderr.includes('not found'))) {
+    return res.status(500).json({
+      message: "Docker CLI is not installed or accessible in the container environment. Ensure docker-cli is installed and /var/run/docker.sock is mounted.",
+      error: "Docker CLI Unavailable"
+    });
+  }
+  if (error.stderr && error.stderr.includes('permission denied')) {
+    return res.status(500).json({
+      message: "Permission denied accessing Docker daemon socket /var/run/docker.sock.",
+      error: "Docker Socket Permission Denied"
+    });
+  }
+  return next(error);
+}
+
 // Get list of running containers for the application
 export const getContainers = async (req, res, next) => {
   try {
@@ -70,7 +89,7 @@ export const getContainers = async (req, res, next) => {
       items: containers
     });
   } catch (error) {
-    next(error);
+    handleDockerError(error, res, next);
   }
 };
 
@@ -96,6 +115,9 @@ export const getContainerLogs = async (req, res, next) => {
       }
       containerInfo = inspectData[0];
     } catch (inspectErr) {
+      if (inspectErr.code === 127 || inspectErr.code === 'ENOENT') {
+        return handleDockerError(inspectErr, res, next);
+      }
       return res.status(404).json({ message: "Container not found or inaccessible" });
     }
     
@@ -117,7 +139,7 @@ export const getContainerLogs = async (req, res, next) => {
       if (cmdErr.stdout || cmdErr.stderr) {
         rawOutput = (cmdErr.stdout || '') + (cmdErr.stderr || '');
       } else {
-        throw cmdErr;
+        return handleDockerError(cmdErr, res, next);
       }
     }
     
@@ -149,7 +171,7 @@ export const getContainerLogs = async (req, res, next) => {
       logs: logLines
     });
   } catch (error) {
-    next(error);
+    handleDockerError(error, res, next);
   }
 };
 
