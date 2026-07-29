@@ -4,6 +4,8 @@ node_modules/
 
 # Ignore exportedData in BackTest directory
 BackTest/exportedData
+BackTest/BackTestApp/shared
+BackTest/shared
 
 # Build artifacts
 dist/

@@ -1161,4 +1161,31 @@ export const api = {
       return handleResponse<{ message: string }>(res);
     },
   },
+
+  docker: {
+    async listContainers(options?: { all?: boolean; scope?: 'app' | 'all' }) {
+      const params = new URLSearchParams();
+      if (options?.all) params.append('all', 'true');
+      if (options?.scope) params.append('scope', options.scope);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`${BASE_URL}/docker/containers${query}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ items: any[] }>(res);
+    },
+
+    async getContainerLogs(containerId: string, options?: { tail?: number; timestamps?: boolean }) {
+      const params = new URLSearchParams();
+      if (options?.tail) params.append('tail', String(options.tail));
+      if (options?.timestamps !== undefined) params.append('timestamps', String(options.timestamps));
+      
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const res = await fetch(`${BASE_URL}/docker/containers/${encodeURIComponent(containerId)}/logs${query}`, {
+        method: 'GET',
+        headers: getHeaders(),
+      });
+      return handleResponse<{ logs: any[]; containerId: string; containerName?: string }>(res);
+    },
+  },
 };

@@ -162,7 +162,8 @@ export type ViewScreen =
   | 'brokers-list'
   | 'strategy-templates'
   | 'deployment-analysis'
-  | 'volumes';
+  | 'volumes'
+  | 'container-logs';
 
 export interface DeploymentAnalysis {
   deployment_id: string;
