@@ -40,8 +40,19 @@ const lastUnrealisedWriteAt = new Map();
 
 registerFatalErrorHandlers();
 
-function openSymbolKey(symbol) {
-  return `position:open:${String(symbol || '').toUpperCase()}`;
+/**
+ * Generate Redis key for open positions set.
+ * For BACKTEST mode, include deployment_id to prevent cross-deployment contamination.
+ * For LIVE/PAPER modes, symbol-only key is correct (shared across users/org).
+ */
+function openSymbolKey(symbol, strategyMode, deploymentId) {
+  const symbolUpper = String(symbol || '').toUpperCase();
+  // BACKTEST positions must be isolated per deployment to prevent tick contamination
+  if (String(strategyMode || '').toUpperCase() === 'BACKTEST' && deploymentId) {
+    return `position:open:backtest:${deploymentId}:${symbolUpper}`;
+  }
+  // LIVE/PAPER positions can share symbol key (org-wide feed)
+  return `position:open:${symbolUpper}`;
 }
 
 function liveKey(positionId) {
