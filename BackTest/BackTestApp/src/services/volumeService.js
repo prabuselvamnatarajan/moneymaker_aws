@@ -2,11 +2,23 @@ import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const archiver = require("archiver");
+import * as archiverPkg from "archiver";
 
 const execAsync = promisify(exec);
+
+function createArchiver(format, options) {
+  const pkg = archiverPkg.default || archiverPkg;
+  if (typeof pkg === "function") {
+    return pkg(format, options);
+  }
+  if (typeof pkg.create === "function") {
+    return pkg.create(format, options);
+  }
+  if (format === "zip" && pkg.ZipArchive) {
+    return new pkg.ZipArchive(options);
+  }
+  throw new Error(`Unsupported archiver format: ${format}`);
+}
 
 // Function to resolve default shared directory safely
 function getSharedDirRoot() {
@@ -291,7 +303,7 @@ export async function archiveDirectory(volumeName, dirPath, res) {
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(folderName)}.zip"`);
 
-  const archive = archiver("zip", { zlib: { level: 6 } });
+  const archive = createArchiver("zip", { zlib: { level: 6 } });
 
   archive.on("error", (err) => {
     if (!res.headersSent) {
