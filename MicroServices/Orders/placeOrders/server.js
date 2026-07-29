@@ -14,6 +14,7 @@ import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js'
 
 app.post('/', async (req, res) => {
     const body = req.body;
+    const strategy_details = body.strategy_details || {};
 
     if (!body.instrument_token || body.price === undefined || body.quantity === undefined || !body.transaction_type || !body.strategy_details || !body.strategy_details.user_id) {
         return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
@@ -37,7 +38,7 @@ app.post('/', async (req, res) => {
             const access_token = await getAccessTokenFromRedis(strategy_details.user_id);
 
             // Zero MARKET price only for the broker payload; keep original body.price for ledger/analysis.
-            const brokerPayload = buildBrokerOrderPayload(filteredBody);
+            const brokerPayload = buildBrokerOrderPayload(body);
             result = await placeOrders(access_token, JSON.stringify(brokerPayload));
 
             let ledgerClosingBalance = null;
