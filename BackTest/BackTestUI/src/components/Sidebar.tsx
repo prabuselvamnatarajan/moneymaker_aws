@@ -21,7 +21,7 @@ interface SidebarProps {
   onSelectEntity: (type: 'account' | 'strategy' | 'symbol', id: string) => void;
   timezone: string;
   onTimezoneChange: (tz: 'UTC' | 'Local') => void;
-  currentUser: { name: string; email: string } | null;
+  currentUser: { name: string; email: string; roles?: any[] } | null;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -216,14 +216,19 @@ export default function Sidebar({
             <button
               id="nav-volumes-btn"
               onClick={() => handleNav('volumes')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                 activeScreen === 'volumes' 
                   ? 'bg-slate-900 text-white shadow-xs border-l-2 border-indigo-500 pl-2.5' 
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
               }`}
             >
-              <HardDrive className="w-4 h-4 text-purple-400 shrink-0" />
-              <span>Docker Volumes</span>
+              <div className="flex items-center gap-3">
+                <HardDrive className="w-4 h-4 text-purple-400 shrink-0" />
+                <span>Docker Volumes</span>
+              </div>
+              <span className="text-[9px] font-mono font-bold bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded border border-purple-500/20">
+                ADMIN
+              </span>
             </button>
           </div>
 
