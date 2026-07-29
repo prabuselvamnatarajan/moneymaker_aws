@@ -9,7 +9,7 @@ app.use(express.json());
 
 import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance, buildBrokerOrderPayload } from './dependency.js';
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
-import { setAccountBalanceToRedis, acquireOrderLockInRedis, releaseOrderLockInRedis } from './redis_utils/account_utils.js';
+import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js';
 
 app.post('/', async (req, res) => {
@@ -21,17 +21,6 @@ app.post('/', async (req, res) => {
 
     if (body.price === null || body.price <= 0) {
         console.warn(`⚠️ Warning: Incoming order price is missing or zero (${body.price}). BackTestApp will attempt LTP fallback.`);
-    }
-
-    const { strategy_details = {}, ...filteredBody } = body;
-    const symbol = body.tag || body.instrument_token || 'symbol';
-    const deploymentId = strategy_details.deployment_id;
-
-    // Atomic Redis lock prevents duplicate in-flight vendor order placement
-    const lockAcquired = await acquireOrderLockInRedis(symbol, deploymentId);
-    if (!lockAcquired) {
-        console.warn(`⚠️ placeOrders: Order placement already in-flight for deployment ${deploymentId} symbol ${symbol}. Rejecting duplicate vendor order.`);
-        return res.status(409).json({ message: 'Order placement already in-flight for this deployment and symbol' });
     }
 
     try {
@@ -102,8 +91,6 @@ app.post('/', async (req, res) => {
         console.error(e);
         const status = e.statusCode || 500;
         res.status(status).send(e.message || 'Internal Server Error');
-    } finally {
-        await releaseOrderLockInRedis(symbol, deploymentId);
     }
 });
 

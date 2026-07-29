@@ -126,7 +126,7 @@ pre_pull_images() {
 
 if ! docker info 2>/dev/null | grep -q "Swarm: active"; then
   log "Initializing Docker Swarm..."
-  docker swarm init
+  docker swarm init --advertise-addr 127.0.0.1 2>/dev/null || docker swarm init
   log "Waiting for Swarm network control plane..."
   sleep 3
 fi
