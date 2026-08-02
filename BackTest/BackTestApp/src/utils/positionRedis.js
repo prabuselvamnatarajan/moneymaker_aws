@@ -117,7 +117,14 @@ export async function readLiveCache(positionMongoId) {
 
 export async function setDeploymentCloseTime(deploymentId, closeTime) {
   if (!deploymentId) return;
-  const timeMs = closeTime instanceof Date ? closeTime.getTime() : Number(closeTime);
+  let timeMs;
+  if (closeTime instanceof Date) {
+    timeMs = closeTime.getTime();
+  } else if (typeof closeTime === "string") {
+    timeMs = new Date(closeTime).getTime();
+  } else {
+    timeMs = Number(closeTime);
+  }
   if (!Number.isFinite(timeMs)) return;
   await withRedis(async (client) => {
     await client.set(`deployment:close_time:${deploymentId}`, String(timeMs));
