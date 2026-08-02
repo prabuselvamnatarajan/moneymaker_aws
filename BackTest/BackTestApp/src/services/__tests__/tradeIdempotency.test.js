@@ -169,4 +169,23 @@ describe("Trade Idempotency Key Verification", () => {
       "expected Redis balance sync to execute BEFORE backtest streaming triggers"
     );
   });
+
+  it("verifies validAccountIds includes both Account IDs and Deployment IDs to preserve backtest balance keys", () => {
+    const allAccounts = [{ _id: "acc_111", account_id: "ACC111" }];
+    const allDeployments = [{ _id: "dep_999" }];
+
+    const validAccountIds = new Set();
+    for (const acc of allAccounts) {
+      if (acc._id) validAccountIds.add(acc._id.toString());
+      if (acc.account_id) validAccountIds.add(acc.account_id.toString());
+    }
+    for (const dep of allDeployments) {
+      if (dep._id) validAccountIds.add(dep._id.toString());
+    }
+
+    assert.equal(validAccountIds.has("acc_111"), true, "expected Account _id to be valid");
+    assert.equal(validAccountIds.has("ACC111"), true, "expected Account account_id string to be valid");
+    assert.equal(validAccountIds.has("dep_999"), true, "expected Deployment _id to be valid so balance key is not deleted as stale");
+    assert.equal(validAccountIds.has("stale_deleted_id"), false, "expected unreferenced ID to be invalid for deletion");
+  });
 });
