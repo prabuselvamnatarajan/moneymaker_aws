@@ -1023,8 +1023,8 @@ export const createDeployment = async (userId, deploymentData) => {
     throw err;
   }
   await resetBacktestDeployment(result);
-  await triggerBacktestIfNeeded(result);
   await syncAllDeploymentsToRedis();
+  await triggerBacktestIfNeeded(result);
   await syncControlledDeploymentsIndex();
   return result;
 };
@@ -1343,15 +1343,15 @@ export const transitionDeployment = async (userId, id, action, options = {}) => 
     // Reload clean Mongoose document after resolve (avoid Object.assign of plain objects)
     const refreshed = await Deployment.findById(deployment._id);
     if (refreshed) {
-      await triggerBacktestIfNeeded(refreshed);
       await syncAllDeploymentsToRedis();
+      await triggerBacktestIfNeeded(refreshed);
       return refreshed;
     }
   }
 
   await deployment.save();
-  await triggerBacktestIfNeeded(deployment);
   await syncAllDeploymentsToRedis();
+  await triggerBacktestIfNeeded(deployment);
 
   // STOPPED is now published, so the strategy will not act on further ticks.
   // The stop itself has already committed, so a flatten failure is reported

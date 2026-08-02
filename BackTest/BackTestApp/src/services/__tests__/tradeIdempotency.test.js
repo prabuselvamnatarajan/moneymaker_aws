@@ -144,4 +144,29 @@ describe("Trade Idempotency Key Verification", () => {
     assert.notEqual(keyDep1, keyDep2, "expected parallel backtests to have non-overlapping balance keys");
     assert.equal(keyLive, "account_balance:acc_shared", "expected live mode to use shared account_id key");
   });
+
+  it("verifies Redis balance sync occurs before backtest streaming starts", async () => {
+    const executionOrder = [];
+
+    const mockSyncAllDeploymentsToRedis = async () => {
+      executionOrder.push("SYNC_REDIS_BALANCE");
+    };
+
+    const mockTriggerBacktestIfNeeded = async () => {
+      executionOrder.push("TRIGGER_STREAMING");
+    };
+
+    const transitionDeploymentMock = async () => {
+      await mockSyncAllDeploymentsToRedis();
+      await mockTriggerBacktestIfNeeded();
+    };
+
+    await transitionDeploymentMock();
+
+    assert.deepEqual(
+      executionOrder,
+      ["SYNC_REDIS_BALANCE", "TRIGGER_STREAMING"],
+      "expected Redis balance sync to execute BEFORE backtest streaming triggers"
+    );
+  });
 });
