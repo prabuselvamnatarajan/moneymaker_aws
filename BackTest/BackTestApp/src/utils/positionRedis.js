@@ -115,6 +115,40 @@ export async function readLiveCache(positionMongoId) {
   return withRedis(async (client) => getJson(client, liveKey(positionMongoId)));
 }
 
+export async function setDeploymentCloseTime(deploymentId, closeTime) {
+  if (!deploymentId) return;
+  const timeMs = closeTime instanceof Date ? closeTime.getTime() : Number(closeTime);
+  if (!Number.isFinite(timeMs)) return;
+  await withRedis(async (client) => {
+    await client.set(`deployment:close_time:${deploymentId}`, String(timeMs));
+  });
+}
+
+export async function deleteDeploymentCloseTime(deploymentId) {
+  if (!deploymentId) return;
+  await withRedis(async (client) => {
+    await client.del(`deployment:close_time:${deploymentId}`);
+  });
+}
+
+export async function removePositionFromOpenSymbolSet(symbol, positionMongoId) {
+  if (!symbol || !positionMongoId) return;
+  const s = String(symbol).toUpperCase();
+  const id = positionMongoId.toString();
+  await withRedis(async (client) => {
+    await client.sRem(openSymbolKey(s), id);
+  });
+}
+
+export async function addPositionToOpenSymbolSet(symbol, positionMongoId) {
+  if (!symbol || !positionMongoId) return;
+  const s = String(symbol).toUpperCase();
+  const id = positionMongoId.toString();
+  await withRedis(async (client) => {
+    await client.sAdd(openSymbolKey(s), id);
+  });
+}
+
 export {
   openSymbolKey,
   liveKey,
@@ -122,3 +156,4 @@ export {
   setJson,
   getJson,
 };
+

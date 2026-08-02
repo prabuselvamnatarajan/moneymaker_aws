@@ -179,6 +179,18 @@ async function updatePositionForTick(positionMongoId, ltp, symbolHint, tickTimeM
     return;
   }
 
+  if (cache.strategyMode === 'BACKTEST' && cache.deploymentId) {
+    const closeTimeStr = await redisClient.get(`deployment:close_time:${cache.deploymentId}`).catch(() => null);
+    if (closeTimeStr) {
+      const closeTime = parseInt(closeTimeStr, 10);
+      if (Number.isFinite(closeTime) && tickTimeMs > closeTime) {
+        logger.info(`Ignoring tick ${tickTimeMs} for deployment ${cache.deploymentId} because it is after close time ${closeTime}`);
+        return;
+      }
+    }
+  }
+
+
   if (!(cache.openSize > 0) || !(cache.entryPrice > 0)) {
     return;
   }

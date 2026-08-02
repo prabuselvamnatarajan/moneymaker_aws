@@ -16,7 +16,12 @@ import {
   syncOpenPositionToRedis,
   removeOpenPositionFromRedis,
   readLiveCache,
+  setDeploymentCloseTime,
+  deleteDeploymentCloseTime,
+  removePositionFromOpenSymbolSet,
+  addPositionToOpenSymbolSet,
 } from "../utils/positionRedis.js";
+
 
 function buildAccountQuery(accountId) {
   if (mongoose.isValidObjectId(accountId)) {
@@ -153,11 +158,34 @@ function isTransientTransactionError(error) {
 }
 
 const runCreateTrade = async (tradeData) => {
+  const { deployment_id, symbol, type_of_order, execution_time } = tradeData;
+  let isCloseOrReduction = false;
+  let openPos = null;
+
+  if (deployment_id && execution_time) {
+    openPos = await Position.findOne({
+      deployment_id,
+      status: "OPEN",
+    });
+    if (openPos) {
+      isCloseOrReduction =
+        (openPos.direction === "LONG" && type_of_order === "SELL") ||
+        (openPos.direction === "SHORT" && type_of_order === "BUY");
+    }
+  }
+
+  if (isCloseOrReduction && openPos) {
+    const symbolStr = symbol || openPos.symbol;
+    await setDeploymentCloseTime(deployment_id, execution_time);
+    await removePositionFromOpenSymbolSet(symbolStr, openPos._id);
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
 
   /** Redis sync payloads applied only after successful Mongo commit */
   const redisOps = [];
+
 
   try {
     const { price, quantity, type_of_order, user_id, force_close, client_order_id } = tradeData;
@@ -685,8 +713,17 @@ const runCreateTrade = async (tradeData) => {
       }
     }
 
+    if (isCloseOrReduction) {
+      await deleteDeploymentCloseTime(deployment_id);
+    }
+
     return { trade, account, closing_balance };
   } catch (error) {
+    if (isCloseOrReduction && openPos) {
+      const symbolStr = symbol || openPos.symbol;
+      await addPositionToOpenSymbolSet(symbolStr, openPos._id);
+      await deleteDeploymentCloseTime(deployment_id);
+    }
     await session.abortTransaction();
     session.endSession();
     throw error;

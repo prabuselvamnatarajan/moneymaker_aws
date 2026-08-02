@@ -582,3 +582,44 @@ describe("Bug 12: max_up/max_down must merge liveCache and DB value at position 
       "fixed: parallel deployments produce same max_down");
   });
 });
+
+// ---------------------------------------------------------------------------
+// BUG 13: backtest close-time locks and tick filtering
+// ---------------------------------------------------------------------------
+describe("Bug 13: backtest close-time locks and tick filtering", () => {
+  it("filters out ticks that occur after the close time in BACKTEST mode", () => {
+    const isTickAllowed = (tickTimeMs, closeTimeMs, strategyMode) => {
+      if (strategyMode === "BACKTEST" && closeTimeMs) {
+        if (tickTimeMs > closeTimeMs) return false;
+      }
+      return true;
+    };
+
+    const closeTime = 1785680998000;
+    
+    // Ticks at or before close time are allowed
+    assert.equal(isTickAllowed(closeTime - 1000, closeTime, "BACKTEST"), true);
+    assert.equal(isTickAllowed(closeTime, closeTime, "BACKTEST"), true);
+    
+    // Ticks after close time are filtered out
+    assert.equal(isTickAllowed(closeTime + 1000, closeTime, "BACKTEST"), false);
+    
+    // LIVE mode ignores close time filtering
+    assert.equal(isTickAllowed(closeTime + 1000, closeTime, "LIVE"), true);
+  });
+
+  it("correctly identifies close or reduction trades", () => {
+    const checkIsCloseOrReduction = (positionDirection, orderType) => {
+      return (
+        (positionDirection === "LONG" && orderType === "SELL") ||
+        (positionDirection === "SHORT" && orderType === "BUY")
+      );
+    };
+
+    assert.equal(checkIsCloseOrReduction("LONG", "SELL"), true, "LONG position exited with SELL is a close/reduction");
+    assert.equal(checkIsCloseOrReduction("SHORT", "BUY"), true, "SHORT position exited with BUY is a close/reduction");
+    assert.equal(checkIsCloseOrReduction("LONG", "BUY"), false, "Adding to LONG position is not a close/reduction");
+    assert.equal(checkIsCloseOrReduction("SHORT", "SELL"), false, "Adding to SHORT position is not a close/reduction");
+  });
+});
+
