@@ -9,31 +9,40 @@ MoneyMaker is a collection of event-driven containerized microservices built on 
 ```mermaid
 graph TD
     Upstox[Upstox WebSocket API] -->|Proto Feed| ConnectWS[ConnectWS-Upstox]
-    ConnectWS -->|incoming-ws-msg| Kafka((Kafka Brokers))
+    ConnectWS -->|incoming-ws-msg| Kafka((Kafka Brokers - 50 Partitions))
     
-    Splitter[wsDataSplitterConsumer] -->|Consume| Kafka
-    Splitter -->|splited-live-data| Kafka
+    Splitter[wsDataSplitterConsumer - 3 Replicas] -->|Consume| Kafka
+    Splitter -->|splited-live-data Key: symbol| Kafka
     Splitter -->|Publish| RedisPub[(Redis Pub/Sub)]
     
     Streamer[BacktestStreamer] -->|Stream Files| BTClient[BacktestClient]
     BTClient -->|backtest-stream-data| Kafka
     
-    Chooser[StrategyChooserConsumer] -->|Consume splited-live-data & backtest-stream-data| Kafka
+    Chooser[StrategyChooserConsumer - 3 Replicas] -->|Consume splited-live-data & backtest-stream-data| Kafka
     Chooser -->|activeStrategies query| RedisCache[(Redis Cache)]
     Chooser -->|msb_live_data / msb_backtest_data| Kafka
+
+    PosTracker[position-tracker-consumer] -->|Consume splited-live-data| Kafka
+    PosTracker -->|Excursion & MTM| MongoDB[(MongoDB Replica Set)]
+
+    Resolver[deployment-symbol-resolver-consumer] -->|Consume splited-live-data| Kafka
+    Resolver -->|Option Strike Resolve| BTApp[BacktestApp API]
     
-    MSBLive[msb-strategy-live] -->|Consume msb_live_data| Kafka
-    MSBTest[msb-strategy-backtest] -->|Consume msb_backtest_data| Kafka
+    PriceStorer[price-storer-consumer - 3 Replicas] -->|Consume splited-live-data| Kafka
+    PriceStorer -->|Save Raw Ticks| MongoDB
+    
+    MSBLive[msb-strategy-live Engine] -->|Consume msb_live_data| Kafka
+    MSBTest[msb-strategy-backtest Engine] -->|Consume msb_backtest_data| Kafka
     
     MSBLive -->|Order Request| PlaceOrder[placeorder API]
     MSBTest -->|Order Request| PlaceOrder
     
     PlaceOrder -->|Live Order| UpstoxAPI[Upstox Order REST API]
-    PlaceOrder -->|Paper/Backtest Order| BTApp[BacktestApp API]
+    PlaceOrder -->|Paper/Backtest Order| BTApp
     PlaceOrder -->|order_details| Kafka
     
-    OrderStorer[order-storer-consumer] -->|Consume order_details| Kafka
-    OrderStorer -->|Save| MongoDB[(MongoDB replica set)]
+    OrderStorer[order-storer-consumer - 3 Replicas] -->|Consume order_details| Kafka
+    OrderStorer -->|Save Order Logs| MongoDB
     
     BTApp -->|Write Trades/Ledger| MongoDB
     
@@ -47,10 +56,9 @@ graph TD
 
 Please refer to the specific files below for detailed deep dives:
 
-1. **[Backtest Flow](backtest_flow.md)**: Details the chronological flow of historical data starting from the `backtest-streamer`, through the `backtest-client`, strategy chooser, the MSB backtest consumer, up to the mock trade execution in `BackTestApp`.
-2. **[Live Trading Flow](live_trading_flow.md)**: Details how the real-time Upstox WebSocket feed is ingested by `ConnectWS-Upstox`, parsed using Protobuf, split by symbol, cached in Redis, and evaluated by the live MSB strategy.
-3. **[Kafka Topics & Services](kafka_and_services.md)**: Documenting all Kafka brokers, topics, consumers, partitioners, and the shape of JSON messages.
-4. **[Microservices & REST APIs](microservices_and_api.md)**: Describes all Express endpoints, controllers, and utility classes, including database collections and authentication.
-5. **[Docker & Infrastructure](docker_and_stack.md)**: Summarizes the container definitions in `docker-compose.yml`, overlay networks, configurations, and volumes.
-6. **[Identified Issues Audit](../issues.md)**: A detailed log of bugs, race conditions, naming inconsistencies, and architectural concerns discovered during this code review.
-7. **[Test Case Plans](../test_case_plans/README.md)**: Master index of 678+ test cases across 26 plans covering every docker-compose service, BackTestApp/UI flows, and regression tests for all open issues.
+1. **[Vendor to Order Data Flow](vendor_to_order_flow.md)**: Master comprehensive architecture guide detailing tick ingestion from Upstox, multi-replica Kafka 50-partition key routing, data spike buffering, write throttling, and multi-entity matrix cases (symbols, deployments, strategies, accounts).
+2. **[Live Trading Flow](live_trading_flow.md)**: Details how the real-time Upstox WebSocket feed is ingested by `ConnectWS-Upstox`, parsed using Protobuf, split by symbol, cached in Redis, and evaluated by the live strategy engines.
+3. **[Backtest Flow](backtest_flow.md)**: Details the chronological flow of historical data starting from the `backtest-streamer`, through the `backtest-client`, strategy chooser, strategy consumer, up to the mock trade execution in `BackTestApp`.
+4. **[Kafka Topics & Services](kafka_and_services.md)**: Documenting all Kafka brokers, topics, consumers, partitioners, and the shape of JSON messages.
+5. **[Microservices & REST APIs](microservices_and_api.md)**: Describes all Express endpoints, controllers, and utility classes, including database collections and authentication.
+6. **[Docker & Infrastructure](docker_and_stack.md)**: Summarizes the container definitions in `docker-compose.yml`, overlay networks, configurations, and volumes.

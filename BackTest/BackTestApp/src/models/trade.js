@@ -79,6 +79,10 @@ const tradeSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  client_order_id: {
+    type: String,
+    default: undefined,
+  },
 });
 
 // Indexes
@@ -89,5 +93,9 @@ tradeSchema.index({ user_symbol_id: 1 });
 tradeSchema.index({ user_id: 1 });
 tradeSchema.index({ created_at: 1 });
 tradeSchema.index({ deployment_id: 1, created_at: 1 });
+tradeSchema.index(
+  { client_order_id: 1 },
+  { unique: true, partialFilterExpression: { client_order_id: { $type: "string" } } }
+);
 
 export default mongoose.model("Trade", tradeSchema);

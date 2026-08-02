@@ -98,12 +98,13 @@ async function createConsumer() {
     await consumer.run({
         eachMessage: async ({ topic, message: { key, value } }) => {
             try {
-                const symbol = key.toString();
+                const rawKey = key ? key.toString() : '';
+                const data = JSON.parse(value.toString());
+                const symbol = String(data.symbol || data.name || data.symbolName || rawKey).toUpperCase();
                 const isBackTest = topic === BACKTEST_TOPIC;
                 logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
                 const strategies = await getStrategiesForSymbol(isBackTest, symbol);
                 logger.debug(`Active strategies for ${symbol}: ${JSON.stringify(strategies)}`);
-                const data = JSON.parse(value.toString());
 
                 let filteredStrategies = strategies;
                 if (isBackTest) {
@@ -137,10 +138,13 @@ async function createConsumer() {
                     } else {
                         strategyData.strategy_details.isTest = false;
                     }
+                    const partitionKey = isTestMode && strategy.deployment_id
+                        ? `${symbol}:${strategy.deployment_id}`
+                        : symbol;
                     await producer.send({
                         topic: topicName,
                         messages: [
-                            { key: symbol, value: JSON.stringify(strategyData) },
+                            { key: partitionKey, value: JSON.stringify(strategyData) },
                         ],
                     });
                     logger.debug(`Produced message to topic ${topicName} with key ${symbol}`);

@@ -139,10 +139,12 @@ async function triggerBackTestApp(body) {
             }
         }
 
+        const clientOrderId = body.client_order_id || strategy_details.client_order_id;
         let testAPIBody = {
             "type_of_order": body.transaction_type,
             "price": price,
             "quantity": body.quantity,
+            ...(clientOrderId ? { client_order_id: clientOrderId } : {}),
             ...strategy_details
         }
         console.log('Triggering Test API Call Body:', testAPIBody);

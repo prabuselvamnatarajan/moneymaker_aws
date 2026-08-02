@@ -8,6 +8,7 @@ import Position from "../models/position.js";
 import Account from "../models/account.js";
 import UserSymbol from "../models/userSymbol.js";
 import Strategy from "../models/strategy.js";
+import Broker from "../models/broker.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
@@ -522,7 +523,7 @@ const triggerBacktestIfNeeded = async (deployment) => {
   if (deployment.strategy_mode === "BACKTEST" && deployment.current_status === "RUNNING") {
     const symbolName = deployment.symbol;
     const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
-    const timeMs = (deployment.backtest_speed !== undefined && deployment.backtest_speed !== null) ? deployment.backtest_speed : 1000;
+    const timeMs = (deployment.backtest_speed !== undefined && deployment.backtest_speed !== null) ? deployment.backtest_speed : 0;
     
     const runId = Date.now().toString();
     deployment.backtest_run_id = runId;
@@ -1023,8 +1024,8 @@ export const createDeployment = async (userId, deploymentData) => {
     throw err;
   }
   await resetBacktestDeployment(result);
-  await triggerBacktestIfNeeded(result);
   await syncAllDeploymentsToRedis();
+  await triggerBacktestIfNeeded(result);
   await syncControlledDeploymentsIndex();
   return result;
 };
@@ -1343,15 +1344,15 @@ export const transitionDeployment = async (userId, id, action, options = {}) => 
     // Reload clean Mongoose document after resolve (avoid Object.assign of plain objects)
     const refreshed = await Deployment.findById(deployment._id);
     if (refreshed) {
-      await triggerBacktestIfNeeded(refreshed);
       await syncAllDeploymentsToRedis();
+      await triggerBacktestIfNeeded(refreshed);
       return refreshed;
     }
   }
 
   await deployment.save();
-  await triggerBacktestIfNeeded(deployment);
   await syncAllDeploymentsToRedis();
+  await triggerBacktestIfNeeded(deployment);
 
   // STOPPED is now published, so the strategy will not act on further ticks.
   // The stop itself has already committed, so a flatten failure is reported
@@ -1758,9 +1759,9 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
         backtest_run_id: dep.backtest_run_id || "",
       });
 
-      // Sync account balance to Redis
+      // Sync account balance to Redis (namespaced by deploymentId for backtest mode to prevent cross-deployment collision)
       const accountId = dep.account_id.account_id || dep.account_id._id.toString();
-      const balanceKey = `account_balance:${accountId}`;
+      const balanceKey = isBacktest ? `account_balance:${deploymentIdStr}` : `account_balance:${accountId}`;
       const balanceData = { balance: dep.account_id.current_balance };
       try {
         if (typeof client.json?.set === 'function') {
@@ -1768,9 +1769,9 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
         } else {
           await client.set(balanceKey, JSON.stringify(balanceData));
         }
-        console.log(`[Sync] Synced account balance for ${accountId} to Redis: ${dep.account_id.current_balance}`);
+        console.log(`[Sync] Synced account balance for key ${balanceKey} to Redis: ${dep.account_id.current_balance}`);
       } catch (err) {
-        console.error(`[Sync] Failed to sync account balance for ${accountId} to Redis: ${err.message}`);
+        console.error(`[Sync] Failed to sync account balance for key ${balanceKey} to Redis: ${err.message}`);
         if (failLoud) {
           throw err;
         }
@@ -1789,12 +1790,16 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
       }
     }
 
-    // Clean up stale account balance keys and liquidity sweep keys for deleted accounts
+    // Clean up stale account balance keys and liquidity sweep keys for deleted accounts and deployments
     const allAccounts = await Account.find({}, { _id: 1, account_id: 1 }).lean();
+    const allDeployments = await Deployment.find({}, { _id: 1 }).lean();
     const validAccountIds = new Set();
     for (const acc of allAccounts) {
       if (acc._id) validAccountIds.add(acc._id.toString());
       if (acc.account_id) validAccountIds.add(acc.account_id.toString());
+    }
+    for (const dep of allDeployments) {
+      if (dep._id) validAccountIds.add(dep._id.toString());
     }
 
     const existingBalanceKeys = await client.keys("account_balance:*");

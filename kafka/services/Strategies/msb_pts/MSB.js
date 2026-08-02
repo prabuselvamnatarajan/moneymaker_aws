@@ -10,7 +10,7 @@ import {
 } from './redis_utils/account_utils.js';
 import { logger } from '/app/utils/logUtils.js';
 
-async function triggerOrder(requestBody) {
+async function triggerOrder(requestBody, retries = 3) {
     if (!requestBody || requestBody.quantity <= 0) {
         logger.warn('Order quantity is zero or negative, skipping order trigger.');
         return false;
@@ -20,18 +20,22 @@ async function triggerOrder(requestBody) {
         logger.error('PLACEORDER_API env variable not set');
         return false;
     }
-    try {
-        const res = await axios.post(placeOrderApi, requestBody);
-        if (res.status >= 200 && res.status < 300) {
-            logger.debug('Order API response:', res.data);
-            return true;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const res = await axios.post(placeOrderApi, requestBody);
+            if (res.status >= 200 && res.status < 300) {
+                logger.debug('Order API response:', res.data);
+                return true;
+            }
+            logger.error(`Order API non-success status on attempt ${attempt}: ${res.status}`);
+        } catch (err) {
+            logger.error(`Order API error on attempt ${attempt}/${retries}: ${err.message}`);
         }
-        logger.error(`Order API non-success status: ${res.status}`);
-        return false;
-    } catch (err) {
-        logger.error('Order API error:', err.message);
-        return false;
+        if (attempt < retries) {
+            await new Promise((res) => setTimeout(res, 50 * attempt));
+        }
     }
+    return false;
 }
 
 async function executeOrderWithLock(symbol, deploymentId, orderFn) {
@@ -70,7 +74,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     const lots = Number(no_of_lots) >= 1 ? Math.floor(Number(no_of_lots)) : 1;
 
     const computeAffordableQty = async () => {
-        let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+        let current_acc_balance = await getAccountBalanceFromRedis(account_id, strategy_details.deployment_id, strategy_details.strategy_mode === 'BACKTEST' || strategy_details.isTest === true);
         let maxAffordableValue = current_acc_balance;
         if (commission_type === "FLAT") {
             maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);
@@ -113,12 +117,16 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     if (timestamp) {
         strategy_details.execution_time = new Date(timestamp).toISOString();
     }
+    const tsMs = timestamp ? new Date(timestamp).getTime() : Date.now();
+    const cleanTag = tag ? tag.replace(/[^a-zA-Z0-9_-]/g, "_") : "symbol";
+    const client_order_id = `${strategy_details.deployment_id || 'manual'}_${cleanTag}_${transaction_type}_${tsMs}`;
+
     let orderPayLoad = {
         quantity,
         product,
         validity,
         price: ltp,
-        tag: tag ? tag.replace(/[^a-zA-Z0-9_-]/g, "_") : "",
+        tag: cleanTag,
         instrument_token,
         order_type,
         transaction_type,
@@ -126,6 +134,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         trigger_price: Number(trigger_price),
         is_amo: String(is_amo) === 'true',
         slice: String(slice) === 'true',
+        client_order_id,
         strategy_details
     };
     return orderPayLoad;

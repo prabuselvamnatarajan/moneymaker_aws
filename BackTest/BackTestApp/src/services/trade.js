@@ -16,7 +16,12 @@ import {
   syncOpenPositionToRedis,
   removeOpenPositionFromRedis,
   readLiveCache,
+  setDeploymentCloseTime,
+  deleteDeploymentCloseTime,
+  removePositionFromOpenSymbolSet,
+  addPositionToOpenSymbolSet,
 } from "../utils/positionRedis.js";
+
 
 function buildAccountQuery(accountId) {
   if (mongoose.isValidObjectId(accountId)) {
@@ -87,12 +92,21 @@ async function finalizeClosePosition(position, trade, price, pnlContribution, se
   if (price > 0 && openBeforeClose > 0 && entry > 0) {
     const unrealised = calcUnrealizedPnl(entry, direction, openBeforeClose, price);
     const pct = calcProfitPct(entry, direction, price);
+    // Always take the BEST observed extremum from either the Redis live-cache
+    // (up-to-date tick stream) or the MongoDB position doc (last throttled write).
+    // Using ?? would pass 0 from a freshly-opened position's cache and discard the
+    // DB value — causing max_up=0 on positions whose Redis cache missed the peak
+    // (race window between BUY commit and position-tracker Redis sync).
+    const seedMaxUp    = Math.max(liveCache?.maxUp    ?? 0, position.max_up    || 0);
+    const seedMaxDown  = Math.min(liveCache?.maxDown  ?? 0, position.max_down  || 0);
+    const seedMaxUpPct = Math.max(liveCache?.maxUpPct ?? 0, position.max_up_pct || 0);
+    const seedMaxDownPct = Math.min(liveCache?.maxDownPct ?? 0, position.max_down_pct || 0);
     const extremum = applyExcursion(
       {
-        max_up: liveCache?.maxUp ?? position.max_up,
-        max_down: liveCache?.maxDown ?? position.max_down,
-        max_up_pct: liveCache?.maxUpPct ?? position.max_up_pct,
-        max_down_pct: liveCache?.maxDownPct ?? position.max_down_pct,
+        max_up: seedMaxUp,
+        max_down: seedMaxDown,
+        max_up_pct: seedMaxUpPct,
+        max_down_pct: seedMaxDownPct,
       },
       unrealised,
       pct
@@ -144,17 +158,47 @@ function isTransientTransactionError(error) {
 }
 
 const runCreateTrade = async (tradeData) => {
+  const { deployment_id, symbol, type_of_order, execution_time } = tradeData;
+  let isCloseOrReduction = false;
+  let openPos = null;
+
+  if (deployment_id && execution_time) {
+    openPos = await Position.findOne({
+      deployment_id,
+      status: "OPEN",
+    });
+    if (openPos) {
+      isCloseOrReduction =
+        (openPos.direction === "LONG" && type_of_order === "SELL") ||
+        (openPos.direction === "SHORT" && type_of_order === "BUY");
+    }
+  }
+
+  if (isCloseOrReduction && openPos) {
+    await setDeploymentCloseTime(deployment_id, execution_time);
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
 
   /** Redis sync payloads applied only after successful Mongo commit */
   const redisOps = [];
 
+
   try {
-    const { price, quantity, type_of_order, user_id, force_close } = tradeData;
+    const { price, quantity, type_of_order, user_id, force_close, client_order_id } = tradeData;
 
     if (!user_id) {
       throw new Error("user_id is required");
+    }
+
+    if (client_order_id) {
+      const existingTrade = await Trade.findOne({ client_order_id }).session(session);
+      if (existingTrade) {
+        await session.commitTransaction();
+        session.endSession();
+        return existingTrade;
+      }
     }
 
     // Resolve watchlist symbol before optional Manual deployment attachment.
@@ -442,6 +486,9 @@ const runCreateTrade = async (tradeData) => {
       position_id: null,
     };
     delete tradePayload.force_close;
+    if (!tradePayload.client_order_id) {
+      delete tradePayload.client_order_id;
+    }
     if (tradeData.execution_time) {
       tradePayload.execution_time = new Date(tradeData.execution_time);
       tradePayload.created_at = new Date(tradeData.execution_time);
@@ -470,6 +517,7 @@ const runCreateTrade = async (tradeData) => {
       created.trades.push(trade._id);
       await created.save({ session });
       linkedPositionId = created._id;
+      await syncOpenPositionToRedis(created);
       redisOps.push({ type: "sync", position: created.toObject() });
     } else if (isFullClose && openPositionDoc) {
       const liveCache = await readLiveCache(openPositionDoc._id.toString());
@@ -517,6 +565,7 @@ const runCreateTrade = async (tradeData) => {
       applyBuySellPrice(created, type_of_order, price, remainderSize);
       await created.save({ session });
       linkedPositionId = linkedPositionId || created._id;
+      await syncOpenPositionToRedis(created);
       redisOps.push({ type: "sync", position: created.toObject() });
     } else if ((isScaleIn || isPartialClose) && openPositionDoc) {
       applyBuySellPrice(openPositionDoc, type_of_order, price, quantity);
@@ -635,6 +684,23 @@ const runCreateTrade = async (tradeData) => {
       }
     }
 
+    // Sync updated account balance to Redis so next strategy calculation uses accurate closing balance
+    try {
+      const isBacktestMode = deployment?.strategy_mode === "BACKTEST";
+      const depIdStr = deployment?._id?.toString() || tradeData.deployment_id;
+      const accIdStr = account?._id?.toString() || account?.account_id;
+      const balanceKey = isBacktestMode && depIdStr ? `account_balance:${depIdStr}` : `account_balance:${accIdStr}`;
+      if (balanceKey) {
+        if (typeof client.json?.set === 'function') {
+          await client.json.set(balanceKey, '.', { balance: closing_balance });
+        } else {
+          await client.set(balanceKey, JSON.stringify({ balance: closing_balance }));
+        }
+      }
+    } catch (err) {
+      console.error(`[createTrade] Redis account balance update failed: ${err.message}`);
+    }
+
     // After a full flat close, flush any deferred symbol_control re-resolve
     if (isFullClose && deployment?._id) {
       try {
@@ -649,6 +715,9 @@ const runCreateTrade = async (tradeData) => {
 
     return { trade, account, closing_balance };
   } catch (error) {
+    if (isCloseOrReduction && openPos) {
+      await deleteDeploymentCloseTime(deployment_id);
+    }
     await session.abortTransaction();
     session.endSession();
     throw error;

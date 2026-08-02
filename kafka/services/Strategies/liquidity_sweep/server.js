@@ -53,21 +53,22 @@ async function createConsumer() {
 
     await consumer.run({
         eachMessage: async ({ message }) => {
-            const symbol = message.key?.toString();
+            let msg;
+            try {
+                msg = JSON.parse(message.value.toString());
+            } catch (err) {
+                logger.error(`Failed to parse message value JSON for ${message.key}:`, err.message);
+                return;
+            }
+
+            const rawKey = message.key ? message.key.toString() : '';
+            const strategy_details = msg.strategy_details || {};
+            const symbol = String(msg.symbol || msg.symbol_name || strategy_details.symbol || rawKey.split(':')[0]).toUpperCase();
             if (!symbol) {
                 logger.warn('Received Kafka message without symbol key, skipping.');
                 return;
             }
 
-            let msg;
-            try {
-                msg = JSON.parse(message.value.toString());
-            } catch (err) {
-                logger.error(`Failed to parse Kafka message for ${symbol}: ${err.message}`);
-                return;
-            }
-
-            const { strategy_details = {} } = msg;
             const isBackTestMsg = resolveIsBackTest(strategy_details);
             if (isBackTestMsg && msg.run_id && strategy_details.backtest_run_id && msg.run_id !== strategy_details.backtest_run_id) {
                 logger.info(`Discarding stale backtest message in liquidity_sweep strategy. Msg run_id: ${msg.run_id}, Active: ${strategy_details.backtest_run_id}`);

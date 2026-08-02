@@ -37,6 +37,26 @@ async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5
     throw new Error(`Failed to connect to ${name} after maximum retries.`);
 }
 
+const deploymentLocks = new Map();
+
+async function handleMessageForDeployment(deploymentId, fn) {
+    if (!deploymentId) return await fn();
+    const previousPromise = deploymentLocks.get(deploymentId) || Promise.resolve();
+    let resolveLock;
+    const currentPromise = new Promise((res) => { resolveLock = res; });
+    deploymentLocks.set(deploymentId, currentPromise);
+
+    try {
+        await previousPromise;
+        return await fn();
+    } finally {
+        resolveLock();
+        if (deploymentLocks.get(deploymentId) === currentPromise) {
+            deploymentLocks.delete(deploymentId);
+        }
+    }
+}
+
 async function createConsumer() {
     const consumer = kafka.consumer({ groupId: TARGET_GROUP_ID, sessionTimeout: 30000 });
     registerKafkaCrashHandler(consumer);
@@ -47,11 +67,15 @@ async function createConsumer() {
 
     await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
-            try {
-                const symbol = message.key.toString();
-                const msg = JSON.parse(message.value.toString());
-                console.log(`msg: ${JSON.stringify(msg)}`);
-                let { strategy_details = {} } = msg;
+            const rawKey = message.key ? message.key.toString() : '';
+            const msg = JSON.parse(message.value.toString());
+            let { strategy_details = {} } = msg;
+            const deploymentId = strategy_details.deployment_id || 'default';
+
+            await handleMessageForDeployment(deploymentId, async () => {
+                try {
+                    const symbol = String(msg.symbol || msg.symbol_name || strategy_details.symbol || rawKey.split(':')[0]).toUpperCase();
+                    console.log(`msg: ${JSON.stringify(msg)}`);
                 const isBackTest = IS_BACKTEST || strategy_details.isTest === true;
                 if (isBackTest && msg.run_id && strategy_details.backtest_run_id && String(msg.run_id) !== String(strategy_details.backtest_run_id)) {
                     logger.info(`Discarding stale backtest message in MSB strategy. Msg run_id: ${msg.run_id}, Active: ${strategy_details.backtest_run_id}`);
@@ -140,6 +164,7 @@ async function createConsumer() {
                 }
                 handleFatalError(error, 'message handling');
             }
+            });
         },
     });
 }

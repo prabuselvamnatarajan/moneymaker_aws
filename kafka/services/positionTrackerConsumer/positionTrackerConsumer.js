@@ -35,17 +35,27 @@ const mongoClient = new MongoClient(MONGO_URI);
 let redisClient;
 let positionsCollection;
 
-/** In-memory throttle: positionMongoId -> last unrealised write timestamp (tick or wall clock) */
-const lastUnrealisedWriteAt = new Map();
-
-registerFatalErrorHandlers();
-
 function openSymbolKey(symbol) {
   return `position:open:${String(symbol || '').toUpperCase()}`;
 }
 
 function liveKey(positionId) {
   return `position:live:${positionId}`;
+}
+
+function throttleKey(positionId) {
+  return `position:throttle:unrealised:${positionId}`;
+}
+
+async function isThrottleExpired(positionMongoId) {
+  const raw = await redisClient.get(throttleKey(positionMongoId)).catch(() => null);
+  const lastWrite = raw ? parseInt(raw, 10) : 0;
+  return Date.now() - lastWrite >= UNREALISED_WRITE_THROTTLE_MS;
+}
+
+async function markThrottleWritten(positionMongoId) {
+  const ttlSec = Math.max(10, Math.ceil(UNREALISED_WRITE_THROTTLE_MS / 1000) * 2);
+  await redisClient.set(throttleKey(positionMongoId), String(Date.now()), { EX: ttlSec }).catch(() => {});
 }
 
 function topicAllowsMode(topic, strategyMode) {
@@ -108,13 +118,13 @@ function buildCacheFromDoc(doc) {
 
 async function evictPositionFromRedis(positionMongoId, symbolHint, docSymbol) {
   await redisClient.del(liveKey(positionMongoId)).catch(() => {});
+  await redisClient.del(throttleKey(positionMongoId)).catch(() => {});
   if (symbolHint) {
     await redisClient.sRem(openSymbolKey(symbolHint), positionMongoId).catch(() => {});
   }
   if (docSymbol) {
     await redisClient.sRem(openSymbolKey(docSymbol), positionMongoId).catch(() => {});
   }
-  lastUnrealisedWriteAt.delete(positionMongoId);
 }
 
 async function selfHealCache(positionMongoId, symbolHint) {
@@ -134,7 +144,7 @@ async function selfHealCache(positionMongoId, symbolHint) {
     return cache;
   } catch (err) {
     logger.error(`Self-heal failed for ${positionMongoId}: ${err.message}`);
-    lastUnrealisedWriteAt.delete(positionMongoId);
+    await redisClient.del(throttleKey(positionMongoId)).catch(() => {});
     return null;
   }
 }
@@ -169,6 +179,18 @@ async function updatePositionForTick(positionMongoId, ltp, symbolHint, tickTimeM
     return;
   }
 
+  if (cache.strategyMode === 'BACKTEST' && cache.deploymentId) {
+    const closeTimeStr = await redisClient.get(`deployment:close_time:${cache.deploymentId}`).catch(() => null);
+    if (closeTimeStr) {
+      const closeTime = parseInt(closeTimeStr, 10);
+      if (Number.isFinite(closeTime) && tickTimeMs > closeTime) {
+        logger.info(`Ignoring tick ${tickTimeMs} for deployment ${cache.deploymentId} because it is after close time ${closeTime}`);
+        return;
+      }
+    }
+  }
+
+
   if (!(cache.openSize > 0) || !(cache.entryPrice > 0)) {
     return;
   }
@@ -196,33 +218,49 @@ async function updatePositionForTick(positionMongoId, ltp, symbolHint, tickTimeM
 
   await setJson(liveKey(positionMongoId), nextCache);
 
-  const clockMs = Date.now();
-  const lastWrite = lastUnrealisedWriteAt.get(positionMongoId) || 0;
-  const throttleOk = clockMs - lastWrite >= UNREALISED_WRITE_THROTTLE_MS;
+  const throttleExpired = await isThrottleExpired(positionMongoId);
 
-  if (!extremeChanged && !throttleOk) {
+  if (!extremeChanged && !throttleExpired) {
     return;
   }
 
-  const update = {
+  const updateSet = {
     unrealised_pnl: unrealised,
     last_ltp: ltp,
   };
   if (tickTimeMs != null && tickTimeMs > 0) {
-    update.last_tick_at = new Date(tickTimeMs);
-  }
-  if (extremeChanged) {
-    update.max_up = extremum.maxUp;
-    update.max_down = extremum.maxDown;
-    update.max_up_pct = extremum.maxUpPct;
-    update.max_down_pct = extremum.maxDownPct;
+    updateSet.last_tick_at = new Date(tickTimeMs);
   }
 
-  await positionsCollection.updateOne(
-    { _id: new ObjectId(positionMongoId), status: 'OPEN' },
-    { $set: update }
-  );
-  lastUnrealisedWriteAt.set(positionMongoId, clockMs);
+  const updateDoc = {
+    $set: updateSet,
+  };
+
+  if (extremeChanged) {
+    updateDoc.$max = {
+      max_up: extremum.maxUp,
+      max_up_pct: extremum.maxUpPct,
+    };
+    updateDoc.$min = {
+      max_down: extremum.maxDown,
+      max_down_pct: extremum.maxDownPct,
+    };
+  }
+
+  const query = {
+    _id: new ObjectId(positionMongoId),
+  };
+  if (tickTimeMs != null && tickTimeMs > 0) {
+    query.$or = [
+      { status: 'OPEN' },
+      { closed_at: { $gte: new Date(tickTimeMs - 5000) } },
+    ];
+  } else {
+    query.status = 'OPEN';
+  }
+
+  await positionsCollection.updateOne(query, updateDoc);
+  await markThrottleWritten(positionMongoId);
 }
 
 async function handleTick(symbol, data, topic) {
@@ -270,9 +308,11 @@ async function createConsumer() {
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
       try {
-        const symbol = message.key?.toString?.() || '';
-        if (!symbol) return;
+        if (!message.value) return;
         const data = JSON.parse(message.value.toString());
+        const rawKey = message.key?.toString?.() || '';
+        const symbol = String(data.symbol || data.name || data.symbolName || rawKey).toUpperCase();
+        if (!symbol) return;
         await handleTick(symbol, data, topic);
       } catch (error) {
         handleFatalError(error, `message handling on ${topic}`);
