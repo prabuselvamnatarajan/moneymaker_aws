@@ -69,7 +69,6 @@ async function createConsumer() {
                 return;
             }
 
-            const { strategy_details = {} } = msg;
             const isBackTestMsg = resolveIsBackTest(strategy_details);
             if (isBackTestMsg && msg.run_id && strategy_details.backtest_run_id && msg.run_id !== strategy_details.backtest_run_id) {
                 logger.info(`Discarding stale backtest message in liquidity_sweep strategy. Msg run_id: ${msg.run_id}, Active: ${strategy_details.backtest_run_id}`);
