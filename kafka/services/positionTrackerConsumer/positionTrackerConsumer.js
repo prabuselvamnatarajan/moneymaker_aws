@@ -278,9 +278,11 @@ async function createConsumer() {
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
       try {
-        const symbol = message.key?.toString?.() || '';
-        if (!symbol) return;
+        if (!message.value) return;
         const data = JSON.parse(message.value.toString());
+        const rawKey = message.key?.toString?.() || '';
+        const symbol = String(data.symbol || data.name || data.symbolName || rawKey).toUpperCase();
+        if (!symbol) return;
         await handleTick(symbol, data, topic);
       } catch (error) {
         handleFatalError(error, `message handling on ${topic}`);

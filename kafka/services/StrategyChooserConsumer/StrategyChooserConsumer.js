@@ -98,12 +98,13 @@ async function createConsumer() {
     await consumer.run({
         eachMessage: async ({ topic, message: { key, value } }) => {
             try {
-                const symbol = key.toString();
+                const rawKey = key ? key.toString() : '';
+                const data = JSON.parse(value.toString());
+                const symbol = String(data.symbol || data.name || data.symbolName || rawKey).toUpperCase();
                 const isBackTest = topic === BACKTEST_TOPIC;
                 logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
                 const strategies = await getStrategiesForSymbol(isBackTest, symbol);
                 logger.debug(`Active strategies for ${symbol}: ${JSON.stringify(strategies)}`);
-                const data = JSON.parse(value.toString());
 
                 let filteredStrategies = strategies;
                 if (isBackTest) {
