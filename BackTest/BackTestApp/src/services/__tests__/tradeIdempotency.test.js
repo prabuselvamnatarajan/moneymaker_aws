@@ -129,4 +129,19 @@ describe("Trade Idempotency Key Verification", () => {
     assert.equal(apiBody1.client_order_id, "key_top_123");
     assert.equal(apiBody2.client_order_id, "key_nested_456");
   });
+
+  it("isolates account balance keys by deployment_id in backtest mode", () => {
+    const resolveBalanceKey = (accountId, isBacktest, deploymentId) => {
+      return isBacktest && deploymentId ? `account_balance:${deploymentId}` : `account_balance:${accountId}`;
+    };
+
+    const keyDep1 = resolveBalanceKey("acc_shared", true, "dep_111");
+    const keyDep2 = resolveBalanceKey("acc_shared", true, "dep_222");
+    const keyLive = resolveBalanceKey("acc_shared", false, "dep_333");
+
+    assert.equal(keyDep1, "account_balance:dep_111", "expected deployment_id namespace for dep 1");
+    assert.equal(keyDep2, "account_balance:dep_222", "expected deployment_id namespace for dep 2");
+    assert.notEqual(keyDep1, keyDep2, "expected parallel backtests to have non-overlapping balance keys");
+    assert.equal(keyLive, "account_balance:acc_shared", "expected live mode to use shared account_id key");
+  });
 });

@@ -67,7 +67,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         quantity = boughtQty > 0 ? boughtQty : 0;
     } else if (transaction_type === "BUY") {
         if (use_full_amount) {
-            let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+            let current_acc_balance = await getAccountBalanceFromRedis(account_id, strategy_details.deployment_id);
             if (current_acc_balance != null && current_acc_balance >= 0) {
                 let maxAffordableValue = current_acc_balance;
                 if (commission_type === "FLAT") {

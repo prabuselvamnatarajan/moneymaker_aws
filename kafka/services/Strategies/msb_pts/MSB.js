@@ -70,7 +70,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     const lots = Number(no_of_lots) >= 1 ? Math.floor(Number(no_of_lots)) : 1;
 
     const computeAffordableQty = async () => {
-        let current_acc_balance = await getAccountBalanceFromRedis(account_id);
+        let current_acc_balance = await getAccountBalanceFromRedis(account_id, strategy_details.deployment_id);
         let maxAffordableValue = current_acc_balance;
         if (commission_type === "FLAT") {
             maxAffordableValue = Math.max(0, current_acc_balance - commission_rate);

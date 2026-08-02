@@ -647,6 +647,23 @@ const runCreateTrade = async (tradeData) => {
       }
     }
 
+    // Sync updated account balance to Redis so next strategy calculation uses accurate closing balance
+    try {
+      const isBacktestMode = deployment?.strategy_mode === "BACKTEST";
+      const depIdStr = deployment?._id?.toString() || tradeData.deployment_id;
+      const accIdStr = account?._id?.toString() || account?.account_id;
+      const balanceKey = isBacktestMode && depIdStr ? `account_balance:${depIdStr}` : `account_balance:${accIdStr}`;
+      if (balanceKey) {
+        if (typeof client.json?.set === 'function') {
+          await client.json.set(balanceKey, '.', { balance: closing_balance });
+        } else {
+          await client.set(balanceKey, JSON.stringify({ balance: closing_balance }));
+        }
+      }
+    } catch (err) {
+      console.error(`[createTrade] Redis account balance update failed: ${err.message}`);
+    }
+
     // After a full flat close, flush any deferred symbol_control re-resolve
     if (isFullClose && deployment?._id) {
       try {

@@ -1758,9 +1758,9 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
         backtest_run_id: dep.backtest_run_id || "",
       });
 
-      // Sync account balance to Redis
+      // Sync account balance to Redis (namespaced by deploymentId for backtest mode to prevent cross-deployment collision)
       const accountId = dep.account_id.account_id || dep.account_id._id.toString();
-      const balanceKey = `account_balance:${accountId}`;
+      const balanceKey = isBacktest ? `account_balance:${deploymentIdStr}` : `account_balance:${accountId}`;
       const balanceData = { balance: dep.account_id.current_balance };
       try {
         if (typeof client.json?.set === 'function') {
@@ -1768,9 +1768,9 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
         } else {
           await client.set(balanceKey, JSON.stringify(balanceData));
         }
-        console.log(`[Sync] Synced account balance for ${accountId} to Redis: ${dep.account_id.current_balance}`);
+        console.log(`[Sync] Synced account balance for key ${balanceKey} to Redis: ${dep.account_id.current_balance}`);
       } catch (err) {
-        console.error(`[Sync] Failed to sync account balance for ${accountId} to Redis: ${err.message}`);
+        console.error(`[Sync] Failed to sync account balance for key ${balanceKey} to Redis: ${err.message}`);
         if (failLoud) {
           throw err;
         }
