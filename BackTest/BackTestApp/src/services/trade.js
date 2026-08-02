@@ -151,10 +151,19 @@ const runCreateTrade = async (tradeData) => {
   const redisOps = [];
 
   try {
-    const { price, quantity, type_of_order, user_id, force_close } = tradeData;
+    const { price, quantity, type_of_order, user_id, force_close, client_order_id } = tradeData;
 
     if (!user_id) {
       throw new Error("user_id is required");
+    }
+
+    if (client_order_id) {
+      const existingTrade = await Trade.findOne({ client_order_id }).session(session);
+      if (existingTrade) {
+        await session.commitTransaction();
+        session.endSession();
+        return existingTrade;
+      }
     }
 
     // Resolve watchlist symbol before optional Manual deployment attachment.
