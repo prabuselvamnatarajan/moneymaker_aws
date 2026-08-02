@@ -127,7 +127,7 @@ export async function setDeploymentCloseTime(deploymentId, closeTime) {
   }
   if (!Number.isFinite(timeMs)) return;
   await withRedis(async (client) => {
-    await client.set(`deployment:close_time:${deploymentId}`, String(timeMs));
+    await client.set(`deployment:close_time:${deploymentId}`, String(timeMs), { EX: 300 });
   });
 }
 

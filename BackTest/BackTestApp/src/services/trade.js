@@ -175,9 +175,7 @@ const runCreateTrade = async (tradeData) => {
   }
 
   if (isCloseOrReduction && openPos) {
-    const symbolStr = symbol || openPos.symbol;
     await setDeploymentCloseTime(deployment_id, execution_time);
-    await removePositionFromOpenSymbolSet(symbolStr, openPos._id);
   }
 
   const session = await mongoose.startSession();
@@ -713,15 +711,9 @@ const runCreateTrade = async (tradeData) => {
       }
     }
 
-    if (isCloseOrReduction) {
-      await deleteDeploymentCloseTime(deployment_id);
-    }
-
     return { trade, account, closing_balance };
   } catch (error) {
     if (isCloseOrReduction && openPos) {
-      const symbolStr = symbol || openPos.symbol;
-      await addPositionToOpenSymbolSet(symbolStr, openPos._id);
       await deleteDeploymentCloseTime(deployment_id);
     }
     await session.abortTransaction();

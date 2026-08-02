@@ -224,24 +224,42 @@ async function updatePositionForTick(positionMongoId, ltp, symbolHint, tickTimeM
     return;
   }
 
-  const update = {
+  const updateSet = {
     unrealised_pnl: unrealised,
     last_ltp: ltp,
   };
   if (tickTimeMs != null && tickTimeMs > 0) {
-    update.last_tick_at = new Date(tickTimeMs);
-  }
-  if (extremeChanged) {
-    update.max_up = extremum.maxUp;
-    update.max_down = extremum.maxDown;
-    update.max_up_pct = extremum.maxUpPct;
-    update.max_down_pct = extremum.maxDownPct;
+    updateSet.last_tick_at = new Date(tickTimeMs);
   }
 
-  await positionsCollection.updateOne(
-    { _id: new ObjectId(positionMongoId), status: 'OPEN' },
-    { $set: update }
-  );
+  const updateDoc = {
+    $set: updateSet,
+  };
+
+  if (extremeChanged) {
+    updateDoc.$max = {
+      max_up: extremum.maxUp,
+      max_up_pct: extremum.maxUpPct,
+    };
+    updateDoc.$min = {
+      max_down: extremum.maxDown,
+      max_down_pct: extremum.maxDownPct,
+    };
+  }
+
+  const query = {
+    _id: new ObjectId(positionMongoId),
+  };
+  if (tickTimeMs != null && tickTimeMs > 0) {
+    query.$or = [
+      { status: 'OPEN' },
+      { closed_at: { $gte: new Date(tickTimeMs) } },
+    ];
+  } else {
+    query.status = 'OPEN';
+  }
+
+  await positionsCollection.updateOne(query, updateDoc);
   await markThrottleWritten(positionMongoId);
 }
 
