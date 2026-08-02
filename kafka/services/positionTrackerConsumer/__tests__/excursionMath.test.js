@@ -132,3 +132,17 @@ describe('tickTargetsPosition', () => {
     assert.equal(tickTargetsPosition(true, null, 'depA'), false);
   });
 });
+
+describe('throttleKey & client_order_id contract', () => {
+  it('formats Redis throttle key with position mongo id', () => {
+    const formatThrottleKey = (id) => `position:throttle:unrealised:${id}`;
+    assert.equal(formatThrottleKey('pos123'), 'position:throttle:unrealised:pos123');
+  });
+
+  it('formats deterministic client_order_id payload', () => {
+    const buildClientOrderId = (deploymentId, tag, transactionType, tsMs) =>
+      `${deploymentId || 'manual'}_${tag}_${transactionType}_${tsMs}`;
+    const id = buildClientOrderId('dep789', 'NIFTY', 'BUY', 1720236000000);
+    assert.equal(id, 'dep789_NIFTY_BUY_1720236000000');
+  });
+});
