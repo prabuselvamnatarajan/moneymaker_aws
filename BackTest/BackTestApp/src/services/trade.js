@@ -451,6 +451,9 @@ const runCreateTrade = async (tradeData) => {
       position_id: null,
     };
     delete tradePayload.force_close;
+    if (!tradePayload.client_order_id) {
+      delete tradePayload.client_order_id;
+    }
     if (tradeData.execution_time) {
       tradePayload.execution_time = new Date(tradeData.execution_time);
       tradePayload.created_at = new Date(tradeData.execution_time);
