@@ -253,7 +253,7 @@ async function updatePositionForTick(positionMongoId, ltp, symbolHint, tickTimeM
   if (tickTimeMs != null && tickTimeMs > 0) {
     query.$or = [
       { status: 'OPEN' },
-      { closed_at: { $gte: new Date(tickTimeMs) } },
+      { closed_at: { $gte: new Date(tickTimeMs - 5000) } },
     ];
   } else {
     query.status = 'OPEN';
