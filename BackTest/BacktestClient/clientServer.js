@@ -80,13 +80,14 @@ app.get('/', (req, res) => {
         processing = true;
         while (queue.length > 0) {
             const batch = queue.splice(0, 100);
-            const messages = batch.map(msg => ({ value: msg, key: symbolName }));
+            const kafkaKey = deployment_id ? String(deployment_id) : symbolName;
+            const messages = batch.map(msg => ({ value: msg, key: kafkaKey }));
             try {
                 await producer.send({
                     topic,
                     messages
                 });
-                console.log(`Sent batch of ${messages.length} messages to Kafka topic ${topic} with key ${symbolName}`);
+                console.log(`Sent batch of ${messages.length} messages to Kafka topic ${topic} with key ${kafkaKey}`);
             } catch (err) {
                 console.error('Kafka produce error:', err.message);
             }
