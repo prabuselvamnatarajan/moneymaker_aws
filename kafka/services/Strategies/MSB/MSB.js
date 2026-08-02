@@ -95,12 +95,16 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     if (timestamp) {
         strategy_details.execution_time = new Date(timestamp).toISOString();
     }
+    const tsMs = timestamp ? new Date(timestamp).getTime() : Date.now();
+    const cleanTag = tag ? tag.replace(/[^a-zA-Z0-9_-]/g, "_") : "symbol";
+    const client_order_id = `${strategy_details.deployment_id || 'manual'}_${cleanTag}_${transaction_type}_${tsMs}`;
+
     let orderPayLoad = {
         quantity,
         product,
         validity,
         price: ltp,
-        tag: tag ? tag.replace(/[^a-zA-Z0-9_-]/g, "_") : "",
+        tag: cleanTag,
         instrument_token,
         order_type,
         transaction_type,
@@ -108,6 +112,7 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
         trigger_price: Number(trigger_price),
         is_amo: String(is_amo) === 'true',
         slice: String(slice) === 'true',
+        client_order_id,
         strategy_details
     };
     return orderPayLoad;
