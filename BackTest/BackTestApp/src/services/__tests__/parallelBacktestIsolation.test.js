@@ -462,3 +462,123 @@ describe("Integration: isBacktest flag derivation from strategy_details", () => 
   it("LIVE strategy_mode → isBacktest=false", () => assert.equal(resolveIsBacktest({ strategy_mode: "LIVE" }), false));
   it("empty strategy_details → isBacktest=false (defaults to live behaviour)", () => assert.equal(resolveIsBacktest({}), false));
 });
+
+// ---------------------------------------------------------------------------
+// BUG 12: max_up/max_down excursion seed at close — Math.max not ?? operator
+// ---------------------------------------------------------------------------
+describe("Bug 12: max_up/max_down must merge liveCache and DB value at position close (not ?? which drops 0)", () => {
+  // Mirror the real applyExcursion logic
+  function applyExcursion(current, unrealised, pct) {
+    return {
+      max_up:      Math.max(Number(current.max_up)      || 0, unrealised),
+      max_down:    Math.min(Number(current.max_down)    || 0, unrealised),
+      max_up_pct:  Math.max(Number(current.max_up_pct)  || 0, pct),
+      max_down_pct: Math.min(Number(current.max_down_pct) || 0, pct),
+    };
+  }
+
+  // The FIXED seed logic
+  function buildSeedFixed(liveCache, positionDoc) {
+    return {
+      max_up:      Math.max(liveCache?.maxUp    ?? 0, positionDoc.max_up    || 0),
+      max_down:    Math.min(liveCache?.maxDown  ?? 0, positionDoc.max_down  || 0),
+      max_up_pct:  Math.max(liveCache?.maxUpPct ?? 0, positionDoc.max_up_pct || 0),
+      max_down_pct: Math.min(liveCache?.maxDownPct ?? 0, positionDoc.max_down_pct || 0),
+    };
+  }
+
+  // The BUGGY seed logic (using ??)
+  function buildSeedBuggy(liveCache, positionDoc) {
+    return {
+      max_up:      liveCache?.maxUp    ?? positionDoc.max_up,
+      max_down:    liveCache?.maxDown  ?? positionDoc.max_down,
+      max_up_pct:  liveCache?.maxUpPct ?? positionDoc.max_up_pct,
+      max_down_pct: liveCache?.maxDownPct ?? positionDoc.max_down_pct,
+    };
+  }
+
+  it("fixed: liveCache.maxUp=0 + DB.max_up=5000 → seed=5000 (takes DB value)", () => {
+    const liveCache = { maxUp: 0, maxDown: -1000, maxUpPct: 0, maxDownPct: -0.5 };
+    const positionDoc = { max_up: 5000, max_down: -1000, max_up_pct: 2.5, max_down_pct: -0.5 };
+    const seed = buildSeedFixed(liveCache, positionDoc);
+    assert.equal(seed.max_up, 5000, "fixed: DB max_up wins over cache zero");
+  });
+
+  it("buggy: liveCache.maxUp=0 + DB.max_up=5000 → seed=0 (BUG: ?? uses 0 from cache)", () => {
+    const liveCache = { maxUp: 0, maxDown: -1000, maxUpPct: 0, maxDownPct: -0.5 };
+    const positionDoc = { max_up: 5000, max_down: -1000, max_up_pct: 2.5, max_down_pct: -0.5 };
+    const seed = buildSeedBuggy(liveCache, positionDoc);
+    assert.equal(seed.max_up, 0, "buggy: ?? passes 0 from fresh cache, discards DB value");
+  });
+
+  it("fixed: liveCache.maxUp=8000 > DB.max_up=5000 → seed=8000 (takes cache value when higher)", () => {
+    const liveCache = { maxUp: 8000, maxDown: -1000, maxUpPct: 4.0, maxDownPct: -0.5 };
+    const positionDoc = { max_up: 5000, max_down: -500, max_up_pct: 2.5, max_down_pct: -0.25 };
+    const seed = buildSeedFixed(liveCache, positionDoc);
+    assert.equal(seed.max_up, 8000, "fixed: cache value wins when higher than DB");
+    assert.equal(seed.max_down, -1000, "fixed: most adverse down wins");
+  });
+
+  it("fixed: liveCache=null → seed uses DB value entirely (no crash)", () => {
+    const positionDoc = { max_up: 3000, max_down: -500, max_up_pct: 1.5, max_down_pct: -0.25 };
+    const seed = buildSeedFixed(null, positionDoc);
+    assert.equal(seed.max_up, 3000, "fixed: null cache falls back to DB value");
+    assert.equal(seed.max_down, -500);
+  });
+
+  it("the bug reproduces: LONG position closes at a loss, peak was in DB not cache, max_up=0 incorrectly", () => {
+    // Scenario: position opened at 325.6, peaked at 340 (captured in DB as max_up=3419880)
+    // but Redis cache was freshly seeded at max_up=0 (race window missed the peak)
+    // Closing price = 320 (below entry = losing trade)
+    const entry = 325.6;
+    const openSize = 300850; // qty
+    const closingLtp = 320;
+    const direction = "LONG";
+
+    // Fresh cache from syncOpenPositionToRedis (opened AFTER peak tick was processed)
+    const freshCache = { maxUp: 0, maxDown: 0, maxUpPct: 0, maxDownPct: 0 };
+    // DB still has max_up=0 (throttle prevented write of intermediate peak)
+    const positionDocBuggy = { max_up: 0, max_down: 0, max_up_pct: 0, max_down_pct: 0 };
+
+    const closingUnrealised = (closingLtp - entry) * openSize; // negative (loss)
+    const closingPct = ((closingLtp - entry) / entry) * 100;
+
+    const seedBuggy = buildSeedBuggy(freshCache, positionDocBuggy);
+    const resultBuggy = applyExcursion(seedBuggy, closingUnrealised, closingPct);
+    assert.equal(resultBuggy.max_up, 0, "buggy: max_up=0 because closing price is below entry and seed was 0");
+
+    // DB has max_up=3419880.75 from an intermediate DB write (position tracker caught the peak)
+    const positionDocFixed = { max_up: 3419880.75, max_down: -429884, max_up_pct: 4.4, max_down_pct: -0.55 };
+    const seedFixed = buildSeedFixed(freshCache, positionDocFixed);
+    const resultFixed = applyExcursion(seedFixed, closingUnrealised, closingPct);
+    assert.equal(resultFixed.max_up, 3419880.75, "fixed: max_up preserved from DB intermediate write");
+    assert.ok(resultFixed.max_down <= positionDocFixed.max_down, "fixed: max_down takes most adverse");
+  });
+
+  it("parallel backtests: same position replay must produce same max_up regardless of registration timing", () => {
+    // Dep1 opened AFTER peak tick → cache.maxUp=0, but DB has a previous write max_up=3419880
+    // Dep2 opened BEFORE peak tick → cache.maxUp=3419880 (tracker updated it)
+    const closingLtp = 320;
+    const entry = 325.6;
+    const openSize = 300850;
+    const closingUnrealised = (closingLtp - entry) * openSize;
+    const closingPct = ((closingLtp - entry) / entry) * 100;
+
+    // Dep1: cache missed the peak (registered after peak tick)
+    const dep1Cache = { maxUp: 0, maxDown: -429884, maxUpPct: 0, maxDownPct: -0.55 };
+    const dep1Doc   = { max_up: 3419880.75, max_down: -429884, max_up_pct: 4.4, max_down_pct: -0.55 };
+    const dep1Seed  = buildSeedFixed(dep1Cache, dep1Doc);
+    const dep1Final = applyExcursion(dep1Seed, closingUnrealised, closingPct);
+
+    // Dep2: cache has the peak (registered before peak tick)
+    const dep2Cache = { maxUp: 3419880.75, maxDown: -429884, maxUpPct: 4.4, maxDownPct: -0.55 };
+    const dep2Doc   = { max_up: 0, max_down: 0, max_up_pct: 0, max_down_pct: 0 };
+    const dep2Seed  = buildSeedFixed(dep2Cache, dep2Doc);
+    const dep2Final = applyExcursion(dep2Seed, closingUnrealised, closingPct);
+
+    assert.equal(dep1Final.max_up, dep2Final.max_up,
+      "fixed: parallel deployments produce same max_up regardless of cache vs DB source");
+    assert.equal(dep1Final.max_down, dep2Final.max_down,
+      "fixed: parallel deployments produce same max_down");
+  });
+});

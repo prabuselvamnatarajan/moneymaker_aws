@@ -87,12 +87,21 @@ async function finalizeClosePosition(position, trade, price, pnlContribution, se
   if (price > 0 && openBeforeClose > 0 && entry > 0) {
     const unrealised = calcUnrealizedPnl(entry, direction, openBeforeClose, price);
     const pct = calcProfitPct(entry, direction, price);
+    // Always take the BEST observed extremum from either the Redis live-cache
+    // (up-to-date tick stream) or the MongoDB position doc (last throttled write).
+    // Using ?? would pass 0 from a freshly-opened position's cache and discard the
+    // DB value — causing max_up=0 on positions whose Redis cache missed the peak
+    // (race window between BUY commit and position-tracker Redis sync).
+    const seedMaxUp    = Math.max(liveCache?.maxUp    ?? 0, position.max_up    || 0);
+    const seedMaxDown  = Math.min(liveCache?.maxDown  ?? 0, position.max_down  || 0);
+    const seedMaxUpPct = Math.max(liveCache?.maxUpPct ?? 0, position.max_up_pct || 0);
+    const seedMaxDownPct = Math.min(liveCache?.maxDownPct ?? 0, position.max_down_pct || 0);
     const extremum = applyExcursion(
       {
-        max_up: liveCache?.maxUp ?? position.max_up,
-        max_down: liveCache?.maxDown ?? position.max_down,
-        max_up_pct: liveCache?.maxUpPct ?? position.max_up_pct,
-        max_down_pct: liveCache?.maxDownPct ?? position.max_down_pct,
+        max_up: seedMaxUp,
+        max_down: seedMaxDown,
+        max_up_pct: seedMaxUpPct,
+        max_down_pct: seedMaxDownPct,
       },
       unrealised,
       pct
