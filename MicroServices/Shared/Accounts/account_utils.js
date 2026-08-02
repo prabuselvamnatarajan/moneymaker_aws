@@ -4,8 +4,12 @@ const redisUrl = process.env.REDIS_URL;
 const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
 let redisJson;
 
-async function getAccountBalanceFromRedis(account_id, deploymentId) {
-    let redisKey = deploymentId ? `account_balance:${deploymentId}` : `account_balance:${account_id}`;
+async function getAccountBalanceFromRedis(account_id, deploymentId, isBacktest = false) {
+    // Only namespace by deploymentId in BACKTEST mode to prevent cross-deployment balance collisions.
+    // Live/paper deployments share a real brokerage account so they MUST read the account-level key.
+    let redisKey = (isBacktest && deploymentId)
+        ? `account_balance:${deploymentId}`
+        : `account_balance:${account_id}`;
     if (!redisJson) {
         await redisClientInstance.connect();
         redisJson = new RedisJson(redisClientInstance.getClient());
@@ -19,8 +23,11 @@ async function getAccountBalanceFromRedis(account_id, deploymentId) {
     }
 }
 
-async function setAccountBalanceToRedis(account_id, balance, deploymentId) {
-    let redisKey = deploymentId ? `account_balance:${deploymentId}` : `account_balance:${account_id}`;
+async function setAccountBalanceToRedis(account_id, balance, deploymentId, isBacktest = false) {
+    // Only namespace by deploymentId in BACKTEST mode.
+    let redisKey = (isBacktest && deploymentId)
+        ? `account_balance:${deploymentId}`
+        : `account_balance:${account_id}`;
     if (!redisJson) {
         await redisClientInstance.connect();
         redisJson = new RedisJson(redisClientInstance.getClient());

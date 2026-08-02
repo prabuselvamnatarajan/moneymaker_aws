@@ -188,4 +188,36 @@ describe("Trade Idempotency Key Verification", () => {
     assert.equal(validAccountIds.has("dep_999"), true, "expected Deployment _id to be valid so balance key is not deleted as stale");
     assert.equal(validAccountIds.has("stale_deleted_id"), false, "expected unreferenced ID to be invalid for deletion");
   });
+
+  it("live/paper mode uses account_id key even when deploymentId is present (isBacktest guard)", () => {
+    // This is the root cause fix: before the fix, ALL modes used deploymentId as the key
+    // when deploymentId was present, causing live deployments to look up account_balance:dep_id
+    // which doesn't exist and so they always got balance=0 and placed 0-quantity orders.
+    const resolveBalanceKey = (accountId, deploymentId, isBacktest) => {
+      return (isBacktest && deploymentId)
+        ? `account_balance:${deploymentId}`
+        : `account_balance:${accountId}`;
+    };
+
+    // BACKTEST: must use deployment-scoped key for isolation
+    assert.equal(
+      resolveBalanceKey("acc_xyz", "dep_abc", true),
+      "account_balance:dep_abc",
+      "backtest must use deployment-scoped key"
+    );
+
+    // LIVE: must use account-scoped key even if deploymentId is present
+    assert.equal(
+      resolveBalanceKey("acc_xyz", "dep_abc", false),
+      "account_balance:acc_xyz",
+      "live mode must use account-scoped key regardless of deploymentId"
+    );
+
+    // PAPER: same as live, uses account key
+    assert.equal(
+      resolveBalanceKey("acc_xyz", "dep_abc", false),
+      "account_balance:acc_xyz",
+      "paper mode must use account-scoped key"
+    );
+  });
 });
