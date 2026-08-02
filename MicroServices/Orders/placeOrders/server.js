@@ -47,7 +47,7 @@ app.post('/', async (req, res) => {
                 let { data: { closing_balance } = {} } = orderResponse || {};
                 ledgerClosingBalance = closing_balance;
                 if (closing_balance !== undefined && closing_balance !== null) {
-                    await setAccountBalanceToRedis(strategy_details.account_id, closing_balance);
+                    await setAccountBalanceToRedis(strategy_details.account_id, closing_balance, strategy_details.deployment_id);
                 }
             } catch (err) {
                 console.error('Failed to record successful live trade in BackTestApp:', err);
@@ -63,7 +63,7 @@ app.post('/', async (req, res) => {
             const { balanceToStore, balanceSource } = resolveBalanceAfterLiveOrder(ledgerClosingBalance, liveBalance);
 
             if (balanceToStore !== null) {
-                await setAccountBalanceToRedis(strategy_details.account_id, balanceToStore);
+                await setAccountBalanceToRedis(strategy_details.account_id, balanceToStore, strategy_details.deployment_id);
                 if (balanceSource === 'ledger_kept_over_zero_live') {
                     console.warn(
                         `Keeping ledger balance ${ledgerClosingBalance} for account ${strategy_details.account_id}; live availableMargin was ${liveBalance}`
@@ -74,7 +74,7 @@ app.post('/', async (req, res) => {
             orderResponse = await triggerBackTestApp(body);
             let { data: { closing_balance } = {} } = orderResponse || {};
             if (closing_balance !== undefined && closing_balance !== null) {
-                await setAccountBalanceToRedis(strategy_details.account_id, closing_balance);
+                await setAccountBalanceToRedis(strategy_details.account_id, closing_balance, strategy_details.deployment_id);
             } else {
                 console.warn('⚠️ Warning: Received invalid closing balance from BackTestApp:', closing_balance);
             }

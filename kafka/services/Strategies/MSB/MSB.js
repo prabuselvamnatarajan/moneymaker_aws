@@ -2,7 +2,7 @@ import axios from 'axios';
 import { getAccountBalanceFromRedis, getBoughtQuantityWithTagFromRedis, setBoughtQuantityWithTagToRedis, acquireOrderLockInRedis, releaseOrderLockInRedis } from './redis_utils/account_utils.js';
 import { logger } from '/app/utils/logUtils.js';
 
-async function triggerOrder(requestBody) {
+async function triggerOrder(requestBody, retries = 3) {
     if (!requestBody || requestBody.quantity <= 0) {
         logger.warn('Order quantity is zero or negative, skipping order trigger.');
         return false;
@@ -12,18 +12,22 @@ async function triggerOrder(requestBody) {
         logger.error('PLACEORDER_API env variable not set');
         return false;
     }
-    try {
-        const res = await axios.post(placeOrderApi, requestBody);
-        if (res.status >= 200 && res.status < 300) {
-            logger.debug('Order API response:', res.data);
-            return true;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const res = await axios.post(placeOrderApi, requestBody);
+            if (res.status >= 200 && res.status < 300) {
+                logger.debug('Order API response:', res.data);
+                return true;
+            }
+            logger.error(`Order API non-success status on attempt ${attempt}: ${res.status}`);
+        } catch (err) {
+            logger.error(`Order API error on attempt ${attempt}/${retries}: ${err.message}`);
         }
-        logger.error(`Order API non-success status: ${res.status}`);
-        return false;
-    } catch (err) {
-        logger.error('Order API error:', err.message);
-        return false;
+        if (attempt < retries) {
+            await new Promise((res) => setTimeout(res, 50 * attempt));
+        }
     }
+    return false;
 }
 
 async function executeOrderWithLock(symbol, deploymentId, orderFn) {
