@@ -517,6 +517,7 @@ const runCreateTrade = async (tradeData) => {
       created.trades.push(trade._id);
       await created.save({ session });
       linkedPositionId = created._id;
+      await syncOpenPositionToRedis(created);
       redisOps.push({ type: "sync", position: created.toObject() });
     } else if (isFullClose && openPositionDoc) {
       const liveCache = await readLiveCache(openPositionDoc._id.toString());
@@ -564,6 +565,7 @@ const runCreateTrade = async (tradeData) => {
       applyBuySellPrice(created, type_of_order, price, remainderSize);
       await created.save({ session });
       linkedPositionId = linkedPositionId || created._id;
+      await syncOpenPositionToRedis(created);
       redisOps.push({ type: "sync", position: created.toObject() });
     } else if ((isScaleIn || isPartialClose) && openPositionDoc) {
       applyBuySellPrice(openPositionDoc, type_of_order, price, quantity);
