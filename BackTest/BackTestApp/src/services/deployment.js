@@ -8,6 +8,7 @@ import Position from "../models/position.js";
 import Account from "../models/account.js";
 import UserSymbol from "../models/userSymbol.js";
 import Strategy from "../models/strategy.js";
+import Broker from "../models/broker.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
@@ -522,7 +523,7 @@ const triggerBacktestIfNeeded = async (deployment) => {
   if (deployment.strategy_mode === "BACKTEST" && deployment.current_status === "RUNNING") {
     const symbolName = deployment.symbol;
     const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
-    const timeMs = (deployment.backtest_speed !== undefined && deployment.backtest_speed !== null) ? deployment.backtest_speed : 1000;
+    const timeMs = (deployment.backtest_speed !== undefined && deployment.backtest_speed !== null) ? deployment.backtest_speed : 0;
     
     const runId = Date.now().toString();
     deployment.backtest_run_id = runId;
@@ -1789,12 +1790,16 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
       }
     }
 
-    // Clean up stale account balance keys and liquidity sweep keys for deleted accounts
+    // Clean up stale account balance keys and liquidity sweep keys for deleted accounts and deployments
     const allAccounts = await Account.find({}, { _id: 1, account_id: 1 }).lean();
+    const allDeployments = await Deployment.find({}, { _id: 1 }).lean();
     const validAccountIds = new Set();
     for (const acc of allAccounts) {
       if (acc._id) validAccountIds.add(acc._id.toString());
       if (acc.account_id) validAccountIds.add(acc.account_id.toString());
+    }
+    for (const dep of allDeployments) {
+      if (dep._id) validAccountIds.add(dep._id.toString());
     }
 
     const existingBalanceKeys = await client.keys("account_balance:*");

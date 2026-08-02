@@ -138,10 +138,13 @@ async function createConsumer() {
                     } else {
                         strategyData.strategy_details.isTest = false;
                     }
+                    const partitionKey = isTestMode && strategy.deployment_id
+                        ? `${symbol}:${strategy.deployment_id}`
+                        : symbol;
                     await producer.send({
                         topic: topicName,
                         messages: [
-                            { key: symbol, value: JSON.stringify(strategyData) },
+                            { key: partitionKey, value: JSON.stringify(strategyData) },
                         ],
                     });
                     logger.debug(`Produced message to topic ${topicName} with key ${symbol}`);

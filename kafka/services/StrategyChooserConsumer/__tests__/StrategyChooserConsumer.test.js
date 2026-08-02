@@ -63,6 +63,21 @@ describe('StrategyChooserConsumer Routing & Multi-Deployment Isolation', () => {
     assert.equal(matched[0].deployment_id, 'dep_222');
   });
 
+  it('formats partition key with deployment_id for backtest mode to prevent parallel tick interleaving', () => {
+    function getPartitionKey(symbol, isTestMode, deploymentId) {
+      return isTestMode && deploymentId ? `${symbol}:${deploymentId}` : symbol;
+    }
+
+    assert.equal(getPartitionKey('NIFTY', true, 'dep_111'), 'NIFTY:dep_111');
+    assert.equal(getPartitionKey('NIFTY', true, 'dep_222'), 'NIFTY:dep_222');
+    assert.notEqual(
+      getPartitionKey('NIFTY', true, 'dep_111'),
+      getPartitionKey('NIFTY', true, 'dep_222'),
+      'expected parallel backtests to land on distinct partition keys'
+    );
+    assert.equal(getPartitionKey('NIFTY', false, 'dep_111'), 'NIFTY', 'expected live mode to use symbol key');
+  });
+
   it('discards backtest tick if data has no deployment_id', () => {
     const corruptTick = { symbol: 'NIFTY', ltp: 24000 };
     const matched = filterStrategiesForMessage(activeStrategiesInRedis, true, corruptTick);
