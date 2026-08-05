@@ -796,8 +796,9 @@ export const getAllTrades = async (userId, queryParams) => {
   }
 
   if (queryParams.deployment_id) {
-    const deploymentIds = ensureArray(queryParams.deployment_id);
-    filter.deployment_id = { $in: deploymentIds };
+    const rawDeploymentIds = ensureArray(queryParams.deployment_id);
+    const validObjectIds = rawDeploymentIds.filter(id => mongoose.isValidObjectId(id)).map(id => new mongoose.Types.ObjectId(id));
+    filter.deployment_id = { $in: [...validObjectIds, ...rawDeploymentIds] };
   }
 
   const projection = queryParams.fields ? getProjectionFields(queryParams.fields) : undefined;
