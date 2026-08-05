@@ -113,7 +113,8 @@ async function createConsumer() {
                         return;
                     }
                     filteredStrategies = strategies.filter(strategy => {
-                        if (String(strategy.deployment_id) !== String(data.deployment_id)) return false;
+                        const stratDepId = String(strategy.deployment_id || strategy._id || '');
+                        if (stratDepId !== String(data.deployment_id)) return false;
                         if (data.run_id && strategy.backtest_run_id && String(data.run_id) !== String(strategy.backtest_run_id)) {
                             logger.info(`Discarding stale backtest message for deployment ${data.deployment_id}. Msg run_id: ${data.run_id}, Active run_id: ${strategy.backtest_run_id}`);
                             return false;
