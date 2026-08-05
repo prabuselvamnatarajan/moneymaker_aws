@@ -73,7 +73,10 @@ async function isUserAdmin(userId) {
     const adminRoleIdStr = adminRole._id.toString();
     const user = await User.findById(userId);
     if (!user || !Array.isArray(user.roles)) return false;
-    return user.roles.some((r) => String(r._id || r) === adminRoleIdStr);
+    return user.roles.some((r) => {
+      const roleIdStr = typeof r === "object" && r !== null ? String(r._id || r) : String(r);
+      return roleIdStr === adminRoleIdStr;
+    });
   } catch (err) {
     console.error("[Broker Service] Failed to check admin role:", err.message);
     return false;
@@ -188,37 +191,55 @@ export async function syncOrgAccessTokenIfAdmin(userOrUserId) {
     if (userOrUserId) {
       let userId = typeof userOrUserId === "string" ? userOrUserId : userOrUserId?._id;
       user = typeof userOrUserId === "object" && userOrUserId.username ? userOrUserId : await User.findById(userId);
-    } else {
-      user = await User.findOne({
-        roles: { $in: [adminRole._id, adminRoleIdStr] }
-      });
     }
 
-    if (!user) return;
+    let broker = null;
+    let targetUserId = "";
 
-    const isAdmin = user.roles && Array.isArray(user.roles) && user.roles.some((r) => String(r._id || r) === adminRoleIdStr);
-    if (!isAdmin) return;
-
-    const broker = await Broker.findOne({
-      user_id: user._id.toString(),
-      external_broker_id: "upstox",
-    });
+    if (user) {
+      const isAdmin = user.roles && Array.isArray(user.roles) && user.roles.some((r) => {
+        const roleIdStr = typeof r === "object" && r !== null ? String(r._id || r) : String(r);
+        return roleIdStr === adminRoleIdStr;
+      });
+      if (!isAdmin) return;
+      targetUserId = user._id.toString();
+      broker = await Broker.findOne({
+        user_id: targetUserId,
+        external_broker_id: "upstox",
+        access_token: { $ne: "" },
+      });
+    } else {
+      const adminUsers = await User.find({
+        roles: { $in: [adminRole._id, adminRoleIdStr] }
+      }).select("_id").lean();
+      const adminUserIds = adminUsers.map((u) => u._id.toString());
+      if (adminUserIds.length > 0) {
+        broker = await Broker.findOne({
+          user_id: { $in: adminUserIds },
+          external_broker_id: "upstox",
+          access_token: { $ne: "" },
+        });
+        if (broker) targetUserId = broker.user_id;
+      }
+    }
 
     if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
       await withRedisClient(async (client) => {
         await client.set(`${DEFAULT_REDIS_KEY}:admin`, broker.access_token);
         await client.set(`${DEFAULT_REDIS_KEY}:org`, broker.access_token);
         await client.set(DEFAULT_REDIS_KEY, broker.access_token);
-        await client.set(`redis_upstox_access_token:${user._id.toString()}`, broker.access_token);
+        if (targetUserId) {
+          await client.set(`redis_upstox_access_token:${targetUserId}`, broker.access_token);
+        }
 
         const payload = JSON.stringify({
           event: "broker_updated",
-          userId: user._id.toString(),
+          userId: targetUserId,
           brokerId: "upstox",
         });
         await client.publish("broker_updates", payload);
       });
-      console.log(`[Broker Service] Synced Org/Admin Upstox access token to Redis for admin user: ${user._id}`);
+      console.log(`[Broker Service] Synced Org/Admin Upstox access token to Redis for admin user: ${targetUserId}`);
     }
   } catch (err) {
     console.error("[Broker Service] Error syncing Org access token for admin:", err.message);

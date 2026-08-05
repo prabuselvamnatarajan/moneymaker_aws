@@ -75,9 +75,14 @@ async function withMongoClient(callback) {
 async function getUpstoxBrokerFromDb(userId, { requireSecret = false } = {}) {
     const cleanUserId = requireUserId(userId);
 
+    const userIds = [cleanUserId];
+    if (ObjectId.isValid(cleanUserId)) {
+        userIds.push(new ObjectId(cleanUserId));
+    }
+
     const broker = await withMongoClient(async (db) =>
         db.collection('brokers').findOne({
-            user_id: cleanUserId,
+            user_id: { $in: userIds },
             external_broker_id: 'upstox',
         })
     );
@@ -129,7 +134,10 @@ async function isAdminUser(userId) {
             return false;
         }
 
-        return user.roles.some((role) => adminRoleIds.has(String(role)));
+        return user.roles.some((role) => {
+            const roleIdStr = typeof role === 'object' && role !== null ? String(role._id || role) : String(role);
+            return adminRoleIds.has(roleIdStr);
+        });
     });
 }
 
@@ -208,9 +216,14 @@ async function get_new_access_token(code, userId) {
 }
 
 async function persistAccessTokenInMongo(userId, accessToken) {
+    const userIds = [userId];
+    if (ObjectId.isValid(userId)) {
+        userIds.push(new ObjectId(userId));
+    }
+
     const updateResult = await withMongoClient(async (db) =>
         db.collection('brokers').updateOne(
-            { user_id: userId, external_broker_id: 'upstox' },
+            { user_id: { $in: userIds }, external_broker_id: 'upstox' },
             {
                 $set: {
                     access_token: accessToken,

@@ -245,10 +245,19 @@ async function initRedisSubscriber() {
         console.log('[WS Upstox Redis Sub] Received broker_update event:', payload);
         orgTokenInvalidated = false;
         reconnectAttempt = 0;
-        if (!activeWS || activeWS.readyState !== WebSocket.OPEN) {
-          console.log('[WS Upstox] Broker update received & WS connection not open. Auto-initiating connection...');
-          await ensureWSConnection();
+
+        if (activeWS) {
+          console.log('[WS Upstox] Closing existing WebSocket connection to reconnect with updated broker token...');
+          try {
+            activeWS.close();
+          } catch (e) {
+            console.error('[WS Upstox] Error closing active WS:', e.message);
+          }
+          activeWS = null;
         }
+
+        console.log('[WS Upstox] Auto-initiating connection with updated broker token...');
+        await ensureWSConnection();
       } catch (err) {
         console.error('[WS Upstox Redis Sub] Error processing broker_update message:', err);
       }

@@ -99,48 +99,49 @@ async function getAccessTokenFromRedis(userId = '') {
         throw httpError(`Failed to read Upstox access token from Redis: ${error.message}`, 500);
     }
 
-    if (!access_token) {
-        const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-        if (mongoUri) {
-            try {
-                const { MongoClient } = await import('mongodb');
-                const client = new MongoClient(mongoUri);
-                await client.connect();
-                try {
-                    const db = client.db('BacktestApp');
-                    const broker = await db.collection('brokers').findOne({
-                        user_id: cleanUserId,
-                        external_broker_id: 'upstox',
-                    });
-                    if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
-                        console.log(`[AuthoriseUpstox] Fetched valid token from MongoDB brokers collection for key ${redisKey}`);
-                        await redisString.set(redisKey, broker.access_token);
-                        return broker.access_token;
-                    }
-                } finally {
-                    await client.close();
-                }
-            } catch (mongoErr) {
-                console.error(`[AuthoriseUpstox] Error fetching token from MongoDB for ${redisKey}:`, mongoErr.message);
-            }
-        }
-        throw httpError(
-            `Unauthorized: Upstox access token missing or expired for user ${cleanUserId}`,
-            401
-        );
+    if (access_token && !isUpstoxTokenExpired(access_token)) {
+        console.log(`Fetched valid access token from key ${redisKey}`);
+        return access_token;
     }
 
-    if (isUpstoxTokenExpired(access_token)) {
-        console.warn(`[AuthoriseUpstox] Access token expired for key ${redisKey}`);
+    if (access_token) {
+        console.warn(`[AuthoriseUpstox] Access token expired in Redis for key ${redisKey}. Cleaning Redis key and attempting Mongo fallback.`);
         await deleteExpiredToken(redisKey);
-        throw httpError(
-            `Unauthorized: Upstox access token expired for user ${cleanUserId}`,
-            401
-        );
     }
 
-    console.log(`Fetched valid access token from key ${redisKey}`);
-    return access_token;
+    const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+    if (mongoUri) {
+        try {
+            const { MongoClient, ObjectId } = await import('mongodb');
+            const client = new MongoClient(mongoUri);
+            await client.connect();
+            try {
+                const db = client.db('BacktestApp');
+                const userIds = [cleanUserId];
+                if (ObjectId.isValid(cleanUserId)) {
+                    userIds.push(new ObjectId(cleanUserId));
+                }
+                const broker = await db.collection('brokers').findOne({
+                    user_id: { $in: userIds },
+                    external_broker_id: 'upstox',
+                });
+                if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
+                    console.log(`[AuthoriseUpstox] Fetched valid token from MongoDB brokers collection for key ${redisKey}`);
+                    await redisString.set(redisKey, broker.access_token);
+                    return broker.access_token;
+                }
+            } finally {
+                await client.close();
+            }
+        } catch (mongoErr) {
+            console.error(`[AuthoriseUpstox] Error fetching token from MongoDB for ${redisKey}:`, mongoErr.message);
+        }
+    }
+
+    throw httpError(
+        `Unauthorized: Upstox access token missing or expired for user ${cleanUserId}`,
+        401
+    );
 }
 
 async function getOrgAccessTokenFromRedis() {
@@ -158,6 +159,9 @@ async function getOrgAccessTokenFromRedis() {
             if (token && !isUpstoxTokenExpired(token)) {
                 console.log(`[AuthoriseUpstox] Found valid Org/Admin access token under Redis key: ${key}`);
                 return token;
+            }
+            if (token) {
+                await deleteExpiredToken(key);
             }
         } catch (err) {
             console.error(`[AuthoriseUpstox] Error checking key ${key}:`, err.message);
@@ -180,17 +184,20 @@ async function getOrgAccessTokenFromRedis() {
                 try {
                     const db = client.db('BacktestApp');
                     const adminRole = await db.collection('roles').findOne({ name: 'admin' });
-                    const adminUser = adminRole ? await db.collection('users').findOne({
-                        roles: { $in: [adminRole._id, adminRole._id.toString()] }
-                    }) : null;
+                    let adminUserIds = [];
+                    if (adminRole) {
+                        const adminUsers = await db.collection('users').find({
+                            roles: { $in: [adminRole._id, adminRole._id.toString()] }
+                        }).toArray();
+                        adminUserIds = adminUsers.flatMap(u => [u._id, u._id.toString()]);
+                    }
 
-                    // Only use an admin user's broker — never fall back to an arbitrary Upstox broker.
                     let broker = null;
-                    if (adminUser) {
-                        const userIds = [adminUser._id, adminUser._id.toString()];
+                    if (adminUserIds.length > 0) {
                         broker = await db.collection('brokers').findOne({
-                            user_id: { $in: userIds },
-                            external_broker_id: 'upstox'
+                            user_id: { $in: adminUserIds },
+                            external_broker_id: 'upstox',
+                            access_token: { $ne: '' }
                         });
                     }
 
@@ -222,7 +229,7 @@ async function resetAuthorisedClient() {
 
 /**
  * Clear a user's Upstox token from Redis (and Mongo when available) after Upstox rejects it.
- * JWT exp can still look valid while Upstox returns UDAPI100050 Invalid token.
+ * Only clears Mongo token if Mongo token is also missing or expired (to protect newly re-authed tokens).
  */
 async function invalidateUserAccessToken(userId) {
     const cleanUserId = String(userId || '').trim();
@@ -237,13 +244,26 @@ async function invalidateUserAccessToken(userId) {
     if (!mongoUri) return;
 
     try {
-        const { MongoClient } = await import('mongodb');
+        const { MongoClient, ObjectId } = await import('mongodb');
         const client = new MongoClient(mongoUri);
         await client.connect();
         try {
             const db = client.db('BacktestApp');
+            const userIds = [cleanUserId];
+            if (ObjectId.isValid(cleanUserId)) {
+                userIds.push(new ObjectId(cleanUserId));
+            }
+            const broker = await db.collection('brokers').findOne({
+                user_id: { $in: userIds },
+                external_broker_id: 'upstox',
+            });
+            if (broker && broker.access_token && !isUpstoxTokenExpired(broker.access_token)) {
+                console.log(`[AuthoriseUpstox] Mongo still has a valid token for user ${cleanUserId}; skipping Mongo wipe.`);
+                return;
+            }
+
             await db.collection('brokers').updateOne(
-                { user_id: cleanUserId, external_broker_id: 'upstox' },
+                { user_id: { $in: userIds }, external_broker_id: 'upstox' },
                 { $set: { access_token: '' } }
             );
             console.warn(`[AuthoriseUpstox] Cleared invalid Upstox access_token in Mongo for user ${cleanUserId}`);
@@ -298,18 +318,28 @@ async function invalidateOrgAccessToken() {
             const adminRole = await db.collection('roles').findOne({ name: 'admin' });
             if (!adminRole) return;
 
-            const adminUser = await db.collection('users').findOne({
+            const adminUsers = await db.collection('users').find({
                 roles: { $in: [adminRole._id, adminRole._id.toString()] },
-            });
-            if (!adminUser) return;
+            }).toArray();
+            if (!adminUsers.length) return;
 
-            const userIds = [adminUser._id.toString(), String(adminUser._id)];
+            const adminUserIds = adminUsers.flatMap(u => [u._id, u._id.toString()]);
+            const validBroker = await db.collection('brokers').findOne({
+                user_id: { $in: adminUserIds },
+                external_broker_id: 'upstox',
+                access_token: { $ne: '' }
+            });
+            if (validBroker && validBroker.access_token && !isUpstoxTokenExpired(validBroker.access_token)) {
+                console.log('[AuthoriseUpstox] Mongo still has a valid Org/Admin token; skipping Mongo wipe.');
+                return;
+            }
+
             await db.collection('brokers').updateMany(
-                { user_id: { $in: userIds }, external_broker_id: 'upstox' },
+                { user_id: { $in: adminUserIds }, external_broker_id: 'upstox' },
                 { $set: { access_token: '' } }
             );
             console.warn('[AuthoriseUpstox] Cleared invalid Org/Admin Upstox access_token in MongoDB.');
-            await publishBrokerUpdated(adminUser._id.toString());
+            await publishBrokerUpdated(adminUserIds[0]?.toString() || '');
         } finally {
             await client.close();
         }
