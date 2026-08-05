@@ -106,4 +106,48 @@ describe('msb_pts buy/sell consistency', () => {
         assert.equal(state.position?.direction, 'LONG', 'LONG position must not be wiped by trend break UP');
         assert.equal(store.bought[holdingsKey()], 50);
     });
+
+    it('15m Timeframe: ignores intra-bar ticks for MSB breakouts but executes real-time Target/SL immediately', async () => {
+        resetStore({ balance: 100000, bought: {} });
+        const details = strategyDetails({
+            timeframe: '15m',
+            advance_trade_decision: true,
+            target_pts: 10,
+            sl_pts: 5,
+        });
+
+        // 1. Position is OPEN at entryPrice = 100 in DOWN trend context
+        let state = {
+            isUp: false,
+            prevHigh: { high: 105, low: 104 },
+            prevLow: { high: 100, low: 99 },
+            position: { direction: 'LONG', entryPrice: 100 },
+        };
+        resetStore({ balance: 100000, bought: { [holdingsKey()]: 10 } });
+
+        // 2. Intra-bar tick arrives at 09:18:00 (mid-bar, isClosed: false) with LTP = 110 (Target hit!)
+        const tickMidBarTarget = { high: 110, low: 99, ltp: 110, isClosed: false };
+
+        state = await MSB(state, tickMidBarTarget, null, SYMBOL, details);
+
+        assert.equal(store.orders.length, 1, 'Target exit must fire immediately on intra-bar tick without waiting for candle close');
+        assert.equal(store.orders[0].transaction_type, 'SELL');
+        assert.equal(state.position, null, 'Position must be cleared on Target hit');
+
+        // 3. Additional intra-bar ticks arrive during forming 15m candle — no new MSB breakout entries must fire
+        const formingTick = { high: 108, low: 97, ltp: 108, isClosed: false };
+        for (let i = 0; i < 10; i++) {
+            state = await MSB(state, formingTick, null, SYMBOL, details);
+        }
+
+        assert.equal(store.orders.length, 1, 'No new MSB entry orders must fire on intra-bar ticks');
+
+        // 4. Closed 15m candle arrives at 09:30:01 AM
+        const closed15mCandle = { open: 98, high: 108, low: 97, close: 107, isClosed: true };
+        state = await MSB(state, formingTick, closed15mCandle, SYMBOL, details);
+
+        // Trend breaks UP on closed candle -> new LONG entry
+        assert.equal(store.orders.length, 2, 'New MSB entry order fires ONLY on closed 15m candle');
+        assert.equal(store.orders[1].transaction_type, 'BUY');
+    });
 });

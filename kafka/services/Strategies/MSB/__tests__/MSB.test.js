@@ -210,4 +210,38 @@ describe('MSB buy/sell consistency', () => {
         assert.equal(buyOrders.length, 1);
         assert.equal(buyOrders[0].quantity, 100, 'expected quantity to be lots * lot_size (100)');
     });
+
+    it('15m Timeframe: ignores intra-bar forming ticks and executes ONLY on closed candle completion', async () => {
+        resetStore({ balance: 100000, bought: {} });
+        const details = strategyDetails({ timeframe: '15m' });
+
+        // Initialized swing state
+        let state = {
+            isUp: false,
+            prevHigh: { high: 105, low: 104 },
+            prevLow: { high: 100, low: 99 },
+        };
+
+        const formingTick1 = { high: 106, low: 99, ltp: 106, isClosed: false };
+        const formingTick2 = { high: 107, low: 98, ltp: 98, isClosed: false };
+        const formingTick3 = { high: 108, low: 97, ltp: 108, isClosed: false };
+
+        // 20 intra-bar ticks arrive during forming 15m candle
+        for (let i = 0; i < 20; i++) {
+            const tick = i % 2 === 0 ? formingTick1 : formingTick2;
+            state = await MSB(state, tick, null, SYMBOL, details);
+        }
+
+        assert.equal(store.orders.length, 0, 'must trigger ZERO trades on intra-bar ticks inside 15m candle');
+
+        // Now 15m candle closes at 09:30:01 AM
+        const closed15mCandle = { open: 100, high: 108, low: 97, close: 107, isClosed: true };
+        const formingNextBarTick = { high: 107, low: 107, ltp: 107, isClosed: false };
+
+        state = await MSB(state, formingNextBarTick, closed15mCandle, SYMBOL, details);
+
+        assert.equal(state.isUp, true, 'must update trend to UP on 15m closed candle breakout');
+        assert.equal(store.orders.length, 1, 'must trigger exactly 1 BUY order on 15m candle close');
+        assert.equal(store.orders[0].transaction_type, 'BUY');
+    });
 });

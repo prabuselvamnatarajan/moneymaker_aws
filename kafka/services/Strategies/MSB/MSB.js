@@ -134,9 +134,36 @@ function isValidState(prevData) {
         && isValidSwing(prevData.prevLow);
 }
 
-async function MSB(prevData, currentData, symbol, strategy_details) {
-    const { high, low, ltp, candleState } = currentData;
+async function MSB(prevData, currentData, closedCandleOrSymbol, symbolOrDetails, strategyDetailsOpt) {
+    let closedCandle = null;
+    let symbol = '';
+    let strategy_details = {};
+
+    if (typeof closedCandleOrSymbol === 'string') {
+        symbol = closedCandleOrSymbol;
+        strategy_details = symbolOrDetails || {};
+        closedCandle = currentData?.isClosed ? currentData : (currentData?.isClosed === false ? null : currentData);
+    } else {
+        closedCandle = closedCandleOrSymbol;
+        symbol = symbolOrDetails || '';
+        strategy_details = strategyDetailsOpt || {};
+    }
+
+    const { high: tickHigh, low: tickLow, ltp, candleState } = currentData;
     const currentCandleState = candleState || prevData?.candleState;
+
+    if (!closedCandle) {
+        // Intra-bar tick update: preserve state and candleState, skip structure break evaluation
+        return {
+            isUp: prevData?.isUp ?? null,
+            prevHigh: prevData?.prevHigh ?? null,
+            prevLow: prevData?.prevLow ?? null,
+            candleState: currentCandleState,
+        };
+    }
+
+    const high = closedCandle.high;
+    const low = closedCandle.low;
 
     if (!isValidState(prevData)) {
         if (prevData) {

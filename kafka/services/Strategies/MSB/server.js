@@ -131,7 +131,7 @@ async function createConsumer() {
                 const timeframe = strategy_details.timeframe || '1m';
                 strategy_details.timeframe = timeframe;
                 const existingCandleState = lastState?.candleState || null;
-                const { candle, newCandleState } = buildTimeframeCandle(msg, timeframe, existingCandleState);
+                const { candle, closedCandle, newCandleState } = buildTimeframeCandle(msg, timeframe, existingCandleState);
 
                 if (!candle || candle.high == null || candle.low == null || candle.ltp == null) {
                     // Soft-skip bad/incomplete/out-of-order ticks — do not fatal the consumer
@@ -143,7 +143,7 @@ async function createConsumer() {
                 candle.candleState = newCandleState;
 
                 // call the actual strategy function here
-                let newState = await MSB(lastState, candle, symbol, strategy_details);
+                let newState = await MSB(lastState, candle, closedCandle, symbol, strategy_details);
                 newState.state_epoch = Number(strategy_details.state_epoch);
                 newState.timeframe = timeframe;
 

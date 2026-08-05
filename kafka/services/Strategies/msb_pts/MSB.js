@@ -140,9 +140,23 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     return orderPayLoad;
 }
 
-async function MSB(prevData, currentData, symbol, strategy_details) {
+async function MSB(prevData, currentData, closedCandleOrSymbol, symbolOrDetails, strategyDetailsOpt) {
+    let closedCandle = null;
+    let symbol = '';
+    let strategy_details = {};
+
+    if (typeof closedCandleOrSymbol === 'string') {
+        symbol = closedCandleOrSymbol;
+        strategy_details = symbolOrDetails || {};
+        closedCandle = currentData?.isClosed ? currentData : (currentData?.isClosed === false ? null : currentData);
+    } else {
+        closedCandle = closedCandleOrSymbol;
+        symbol = symbolOrDetails || '';
+        strategy_details = strategyDetailsOpt || {};
+    }
+
     const currentCandleState = currentData.candleState || prevData?.candleState;
-    let { high, low, ltp } = currentData;
+    let { high: tickHigh, low: tickLow, ltp } = currentData;
     let { isTest } = strategy_details;
 
     let isUp;
@@ -162,9 +176,11 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
         // Fall through to target/SL checks on this same tick (do not delay exit by one bar).
         const preservedPosition = prevData?.position
             || (prevData?.lastBuyPrice ? { direction: "LONG", entryPrice: prevData.lastBuyPrice } : null);
+        const initHigh = closedCandle?.high ?? tickHigh;
+        const initLow = closedCandle?.low ?? tickLow;
         isUp = null;
-        prevHigh = { high, low };
-        prevLow = { high, low };
+        prevHigh = { high: initHigh, low: initLow };
+        prevLow = { high: initHigh, low: initLow };
         lastBuyPrice = preservedPosition?.direction === "LONG"
             ? (preservedPosition.entryPrice ?? prevData?.lastBuyPrice ?? null)
             : (prevData?.lastBuyPrice ?? null);
@@ -187,7 +203,7 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
         position = { direction: "LONG", entryPrice: lastBuyPrice };
     }
 
-    // 1. Check for Target or Stop Loss hit first
+    // 1. Check for Target or Stop Loss hit first (runs real-time on every tick LTP)
     let targetHit = false;
     let slHit = false;
 
@@ -263,7 +279,15 @@ async function MSB(prevData, currentData, symbol, strategy_details) {
         }
     }
 
-    // 2. Trend breakout logic
+    if (!closedCandle) {
+        // Intra-bar tick update: Target/SL handled; skip structure breakout evaluation until candle closes
+        return { isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl, candleState: currentCandleState };
+    }
+
+    const high = closedCandle.high;
+    const low = closedCandle.low;
+
+    // 2. Trend breakout logic (runs ONLY on closed timeframe candle)
     if (isUp === null) {
         // Trend is not established yet
         if (prevLow.high < high) {

@@ -132,6 +132,26 @@ export function buildTimeframeCandle(msg, timeframe, existingCandleState = null)
     || existingCandleState.bucketStartMs !== bucketStartMs
     || timeframeChanged;
 
+  let closedCandle = null;
+  if (
+    bucketChanged &&
+    existingCandleState &&
+    !timeframeChanged &&
+    Number.isFinite(existingCandleState.bucketStartMs) &&
+    existingCandleState.bucketStartMs !== bucketStartMs
+  ) {
+    closedCandle = {
+      open: existingCandleState.open,
+      high: existingCandleState.high,
+      low: existingCandleState.low,
+      close: existingCandleState.close,
+      ltp: existingCandleState.close,
+      timestamp: existingCandleState.timestamp,
+      interval: timeframe,
+      isClosed: true,
+    };
+  }
+
   let newCandleState;
   if (bucketChanged) {
     newCandleState = {
@@ -162,7 +182,8 @@ export function buildTimeframeCandle(msg, timeframe, existingCandleState = null)
     ltp: ltp,
     timestamp: newCandleState.timestamp,
     interval: timeframe,
+    isClosed: false,
   };
 
-  return { candle, newCandleState };
+  return { candle, closedCandle, newCandleState };
 }
