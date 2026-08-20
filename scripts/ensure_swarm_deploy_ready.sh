@@ -30,7 +30,17 @@ wait_for_stack_removed() {
 
 ensure_moneymaker_network() {
   if network_exists; then
-    return 0
+    SCOPE="$(docker network inspect "$NETWORK_NAME" --format '{{.Scope}}' 2>/dev/null || echo "")"
+    if [ "$SCOPE" = "swarm" ]; then
+      return 0
+    fi
+    echo "Existing network $NETWORK_NAME has scope '$SCOPE' (expected 'swarm'). Recreating network..."
+    if stack_exists; then
+      echo "Removing stack $STACK_NAME before network recreation..."
+      docker stack rm "$STACK_NAME"
+      wait_for_stack_removed
+    fi
+    docker network rm "$NETWORK_NAME" 2>/dev/null || true
   fi
 
   echo "Creating overlay network $NETWORK_NAME..."
