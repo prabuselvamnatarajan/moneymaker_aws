@@ -18,6 +18,7 @@ jobs:
       STACK_HEALTH_MAX_RETRIES: "120"
       STACK_HEALTH_DELAY_SEC: "5"
       SKIP_CI_SEED: "1"
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,17 +32,15 @@ jobs:
 
       - name: Make scripts executable
         run: |
-          chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh
-          chmod +x scripts/build-images.sh scripts/deploy-stack.sh
+          chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh kill-moneymaker.sh
+          chmod +x scripts/build-images.sh scripts/deploy-k8s.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
 
       - name: Build E2E images
         run: ./scripts/build-images.sh --profile e2e --parallel 4
 
-      - name: Deploy CI stack
-        env:
-          NGINX_CONF: ./certs/nginx.ci.conf
-        run: ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+      - name: Deploy CI Kubernetes stack
+        run: ./scripts/deploy-k8s.sh --detach --overlay ci
 
       - name: Wait for BackTestApp health
         env:
@@ -50,40 +49,66 @@ jobs:
           UI_BASE_URL: http://127.0.0.1/backtest-ui/
         run: |
           export ROOT="${GITHUB_WORKSPACE}"
+          # Root-owned k3s kubeconfig — allow the runner user to read it
+          if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+            sudo chmod 644 /etc/rancher/k3s/k3s.yaml || true
+            mkdir -p "$HOME/.kube"
+            sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+            sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+            export KUBECONFIG="$HOME/.kube/config"
+          fi
           . "$ROOT/scripts/test/lib/common.sh"
           . "$ROOT/scripts/test/lib/stack.sh"
           ensure_stack_ready all
 
       - name: Seed BacktestApp database
-        run: ./clear-and-seed.sh --yes
+        run: |
+          if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+            mkdir -p "$HOME/.kube"
+            sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+            sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+            export KUBECONFIG="$HOME/.kube/config"
+          fi
+          ./clear-and-seed.sh --yes
 
       - name: Run automated test suites
         env:
           API_BASE_URL: http://127.0.0.1/backtestapp/
           UI_BASE_URL: http://127.0.0.1/backtest-ui/
-        run: ./run_all_test_cases.sh --coverage --no-wait
+        run: |
+          if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+            mkdir -p "$HOME/.kube"
+            sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+            sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+            export KUBECONFIG="$HOME/.kube/config"
+          fi
+          ./run_all_test_cases.sh --coverage --no-wait
 
-      - name: Dump Swarm diagnostics on failure
+      - name: Dump Kubernetes diagnostics on failure
         if: failure()
         run: |
-          docker stack ls || true
-          docker stack services moneymaker || true
-          docker service ps moneymaker_backtest-app --no-trunc || true
-          docker service ps moneymaker_reverse-proxy --no-trunc || true
-          docker service ps moneymaker_mongo1 --no-trunc || true
+          if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+            mkdir -p "$HOME/.kube"
+            sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+            sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+            export KUBECONFIG="$HOME/.kube/config"
+          fi
+          kubectl get ns || true
+          kubectl -n moneymaker get all,ingress,pvc 2>&1 || true
+          kubectl -n moneymaker describe deployment/backtest-app 2>&1 | tail -80 || true
+          kubectl -n moneymaker describe deployment/reverse-proxy 2>&1 | tail -80 || true
+          kubectl -n moneymaker describe statefulset/mongo1 2>&1 | tail -40 || true
           echo "===== reverse-proxy logs ====="
-          docker service logs moneymaker_reverse-proxy --tail 80 2>&1 || true
+          kubectl -n moneymaker logs -l app=reverse-proxy --tail=80 2>&1 || true
           echo "===== backtest-app logs ====="
-          docker service logs moneymaker_backtest-app --tail 80 2>&1 || true
-          echo "===== curl via reverse-proxy (127.0.0.1) ====="
+          kubectl -n moneymaker logs -l app=backtest-app --tail=80 2>&1 || true
+          echo "===== curl via Ingress (127.0.0.1) ====="
           curl -sv http://127.0.0.1/backtestapp/health || true
-          echo "===== curl via reverse-proxy (localhost / -4 / -6) ====="
-          curl -sv http://localhost/backtestapp/health || true
-          curl -4 -sv http://localhost/backtestapp/health || true
-          curl -6 -sv http://localhost/backtestapp/health || true
-          echo "===== curl on overlay network ====="
-          docker run --rm --network moneymaker_net curlimages/curl:8.5.0 -sv http://backtest-app/health || true
-          docker run --rm --network moneymaker_net curlimages/curl:8.5.0 -sv http://reverse-proxy/backtestapp/health || true
+          echo "===== curl on cluster network ====="
+          kubectl -n moneymaker run mm-diag-curl --rm -i --restart=Never --image=curlimages/curl:8.5.0 -- \
+            -sv http://backtest-app/health || true
+          kubectl -n moneymaker run mm-diag-proxy --rm -i --restart=Never --image=curlimages/curl:8.5.0 -- \
+            -sv http://reverse-proxy/backtestapp/health || true
 
       - name: Upload Playwright report
         if: always()
@@ -114,5 +139,7 @@ jobs:
           script: |
             cd /home/ubuntu/moneymaker_aws
             git pull origin main
-            chmod +x build-all.sh scripts/build-images.sh scripts/deploy-stack.sh
+            chmod +x build-all.sh scripts/build-images.sh scripts/deploy-k8s.sh
+            # One-time host prep (idempotent): see k8s/README.md
+            # Requires k3s installed and ports 80/443 free of Swarm/nginx.
             ./build-all.sh

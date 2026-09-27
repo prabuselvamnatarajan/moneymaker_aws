@@ -78,3 +78,6 @@ Thumbs.db
 *.tar.xz
 *.tar.zst
 ```
+# Staged shared libs for microservice Docker builds
+**/redis_utils_bake/
+

@@ -1,10 +1,40 @@
 # Containerization, Orchestration, and Stack Configuration
 
-This document describes the container setup of the MoneyMaker system, details internal networks, external port exposures, volume maps, and service dependencies defined in `docker-compose.yml`.
+This document describes the container setup of the MoneyMaker system.
 
-## Network Isolation Map
+**Current runtime:** Kubernetes (k3s). Manifests live under [`k8s/`](../k8s/).
+[`docker-compose.yml`](../docker-compose.yml) remains the historical service
+catalog (names, env, replicas). See [`k8s/README.md`](../k8s/README.md) for
+deploy and AWS host migration steps.
 
-The stack is isolated into two distinct internal bridge networks to prevent network congestion and improve security boundary limits.
+## Kubernetes map
+
+```
+       +--------------------------------------------------------------+
+       |         Traefik Ingress (host :80 / :443)                     |
+       +------------------------------+-------------------------------+
+                                      |
+       +------------------------------v-------------------------------+
+       |              Service reverse-proxy (nginx)                    |
+       |         path routing from certs/nginx.conf                    |
+       +------------------------------+-------------------------------+
+                                      |
+       +------------------------------v-------------------------------+
+       |              Namespace: moneymaker                             |
+       |  Deployments + StatefulSets (mongo*, kafka-broker-*, redis,   |
+       |  zookeeper, consumers, strategies, microservices, backtest-*) |
+       +--------------------------------------------------------------+
+```
+
+All workloads share one namespace so Compose-compatible short DNS names
+(`mongo1`, `kafka-broker-1`, `placeorder`, `backtest-app`, …) resolve without
+code changes.
+
+## Network Isolation Map (historical / aspirational)
+
+The older design described two bridge networks. The running Swarm compose file
+used a single overlay (`moneymaker_net`). Kubernetes keeps a single namespace;
+NetworkPolicies can be added later without renaming Services.
 
 ```
        +--------------------------------------------------------------+

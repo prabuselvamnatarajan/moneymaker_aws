@@ -1,0 +1,133 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: exporttofile
+  namespace: moneymaker
+  labels:
+    app: exporttofile
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  type: ClusterIP
+  selector:
+    app: exporttofile
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exporttofile
+  namespace: moneymaker
+  labels:
+    app: exporttofile
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: exporttofile
+  template:
+    metadata:
+      labels:
+        app: exporttofile
+        app.kubernetes.io/part-of: moneymaker
+    spec:
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              for h in mongo1:27017 mongo2:27017 mongo3:27017 redis:6379; do
+                host="${h%%:*}"; port="${h##*:}"
+                echo "Waiting for $host:$port..."
+                until nc -z "$host" "$port"; do sleep 2; done
+                echo "Ready: $host:$port"
+              done
+      containers:
+        - name: exporttofile
+          image: exporttofile:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: MONGO_URI
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: DB_NAME
+            - name: SHARED_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: SHARED_DIR
+            - name: EXPORT_PREF_COLLECTION
+              value: 'exportPreferences'
+            - name: EXPORT_CRON_SCHEDULE
+              value: '15 16 * * *'
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: backtest-data
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: exporttofile
+  labels:
+    app: exporttofile
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: exporttofile
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 90
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 90
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

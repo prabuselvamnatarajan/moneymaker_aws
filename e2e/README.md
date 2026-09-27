@@ -70,23 +70,25 @@ API_BASE_URL=http://127.0.0.1/backtestapp/ \
 | Script | Purpose |
 |--------|---------|
 | `scripts/build-images.sh` | Build custom Docker images (`--profile full\|e2e`, `--parallel N`) |
-| `scripts/deploy-stack.sh` | Swarm init, pre-pull base images, `docker stack deploy` |
-| `docker-compose.ci.yml` | CI overlay (`replicas: 0` for non-E2E services) |
-| `certs/nginx.ci.conf` | CI nginx — only `/backtestapp/` and `/backtest-ui/` (set via `NGINX_CONF`) |
+| `scripts/deploy-k8s.sh` | Ensure k3s, import images, `kubectl apply -k` overlay |
+| `scripts/deploy-stack.sh` | Legacy Swarm deploy (not called by `build-all.sh`) |
+| `k8s/overlays/ci` | CI overlay (`replicas: 0` for non-E2E services) |
+| `certs/nginx.ci.k8s.conf` | CI nginx for Kubernetes DNS — only `/backtestapp/` and `/backtest-ui/` |
 | `clear-and-seed.sh` | Wipe/reseed BacktestApp DB inside the running stack |
 
-## Prerequisites (Docker Swarm)
+## Prerequisites (Kubernetes / k3s)
 
-This repo deploys via **Docker Swarm** (`./build-all.sh` → `docker stack deploy ... moneymaker`), not plain `docker compose up`.
+This repo deploys via **Kubernetes** (`./build-all.sh` → k3s + `kubectl apply -k k8s/overlays/...`).
+See [`k8s/README.md`](../k8s/README.md).
 
 Required services for BackTest E2E:
 
 - `mongo1`, `mongo2`, `mongo3`, `redis`
 - `backtest-app`, `backtest-ui`
-- `reverse-proxy` (nginx image; hosts `/backtestapp` and `/backtest-ui/`)
+- `reverse-proxy` (nginx; hosts `/backtestapp` and `/backtest-ui/` behind Traefik Ingress)
 
 ```bash
-./build-all.sh
+./build-all.sh --profile e2e --overlay ci
 curl -sf http://localhost/backtestapp/health
 ```
 

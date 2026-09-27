@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-config
+  namespace: moneymaker
+  labels:
+    app.kubernetes.io/part-of: moneymaker
+    app.kubernetes.io/component: mongo
+data:
+  mongod.conf: |
+    storage:
+      dbPath: /data/db
+    net:
+      bindIp: 0.0.0.0
+      port: 27017
+    replication:
+      replSetName: rs0
+    security:
+      authorization: enabled
+      keyFile: /data/keyfile
+  mongod-bootstrap.conf: |
+    storage:
+      dbPath: /data/db
+    net:
+      bindIp: 0.0.0.0
+      port: 27017
+    replication:
+      replSetName: rs0
+  # Bitnami-inspired bootstrap (see bitnami/charts mongodb setup.sh):
+  # - primary (mongo1) initiates with ONLY itself, then rs.add secondaries
+  # - treat "already initialized" as success and force-reconfig hostnames if needed
+  # - secondaries wait for /init-signal/done then start with auth+keyFile
+  init-mongo1.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Preparing keyfile..."
+    cp /etc/mongo-keyfile /data/keyfile
+    chmod 400 /data/keyfile
+    chown mongodb:mongodb /data/keyfile
+
+    if [ -f /init-signal/done ]; then
+      echo "Already bootstrapped, starting with auth..."
+      exec mongod --config /etc/mongod.conf
+    fi
+
+    echo "Starting MongoDB WITHOUT auth for bootstrap..."
+    mongod --config /etc/mongod-bootstrap.conf --fork --logpath /tmp/mongod.log
+
+    echo "Waiting for mongod to be ready..."
+    until mongosh --quiet --eval "db.adminCommand('ping')" &>/dev/null; do
+      sleep 1
+    done
+
+    echo "Waiting for mongo2/mongo3 to accept connections..."
+    until mongosh --host mongo2 --port 27017 --quiet --eval "db.adminCommand('ping')" &>/dev/null; do
+      echo "  ...mongo2 not ready, waiting..."
+      sleep 2
+    done
+    until mongosh --host mongo3 --port 27017 --quiet --eval "db.adminCommand('ping')" &>/dev/null; do
+      echo "  ...mongo3 not ready, waiting..."
+      sleep 2
+    done
+
+    echo "Bootstrapping replica set (Bitnami-style: primary-only initiate, then rs.add)..."
+    mongosh --quiet --eval '
+      function forceDesiredConfig() {
+        var cfg = {
+          _id: "rs0",
+          version: 1,
+          members: [
+            { _id: 0, host: "mongo1:27017", priority: 2 },
+            { _id: 1, host: "mongo2:27017", priority: 1 },
+            { _id: 2, host: "mongo3:27017", priority: 1 }
+          ]
+        };
+        try {
+          var cur = rs.conf();
+          cfg.version = (cur.version || 1) + 1;
+        } catch (e) {}
+        return rs.reconfig(cfg, { force: true });
+      }
+
+      var initiated = false;
+      try {
+        // Bitnami primary path: initiate with this node only
+        rs.initiate({
+          _id: "rs0",
+          members: [ { _id: 0, host: "mongo1:27017", priority: 2 } ]
+        });
+        initiated = true;
+        print("rs.initiate(primary-only) ok");
+      } catch (e) {
+        if (String(e).indexOf("already initialized") >= 0 || (e.code === 23)) {
+          print("Replica set already initialized — repairing config if needed");
+          forceDesiredConfig();
+          initiated = true;
+        } else {
+          throw e;
+        }
+      }
+
+      // Wait until SOME member is PRIMARY
+      var primary = false;
+      for (var i = 0; i < 90; i++) {
+        try {
+          var h = db.hello();
+          if (h.isWritablePrimary) { primary = true; break; }
+          if (h.primary) { primary = true; break; }
+        } catch (e) {}
+        sleep(2000);
+      }
+      if (!primary) {
+        print("No primary yet — force reconfig with all members");
+        forceDesiredConfig();
+        sleep(5000);
+      }
+
+      // Ensure mongo2/mongo3 are members (Bitnami secondary join path)
+      function ensureMember(host) {
+        var st = rs.status();
+        var found = false;
+        st.members.forEach(function(m) { if (m.name === host) found = true; });
+        if (!found) {
+          print("rs.add(" + host + ")");
+          rs.add(host);
+        } else {
+          print(host + " already a member");
+        }
+      }
+
+      // Prefer running membership ops on PRIMARY
+      for (var j = 0; j < 60; j++) {
+        try {
+          if (db.hello().isWritablePrimary) break;
+        } catch (e) {}
+        sleep(2000);
+      }
+
+      if (db.hello().isWritablePrimary) {
+        ensureMember("mongo2:27017");
+        ensureMember("mongo3:27017");
+      } else {
+        // Last resort: force full desired membership
+        forceDesiredConfig();
+      }
+
+      // Wait for this node or any writable primary
+      for (var k = 0; k < 60; k++) {
+        try {
+          if (db.hello().isWritablePrimary) break;
+          var st2 = rs.status();
+          var hasPrimary = st2.members.some(function(m) { return m.stateStr === "PRIMARY"; });
+          if (hasPrimary) break;
+        } catch (e) {}
+        sleep(2000);
+      }
+
+      printjson(rs.status().members.map(function(m) { return { n: m.name, s: m.stateStr }; }));
+    '
+
+    echo "Creating root user (idempotent)..."
+    mongosh admin --quiet --eval '
+      try {
+        db.createUser({
+          user: "root",
+          pwd: "example",
+          roles: [ { role: "root", db: "admin" } ]
+        });
+        print("root created");
+      } catch (e) {
+        print("createUser skipped:", e.codeName || e);
+      }
+    '
+
+    echo "Stopping bootstrap mongod..."
+    mongod --shutdown --dbpath /data/db || true
+    sleep 2
+
+    echo "Writing signal for mongo2/mongo3..."
+    touch /init-signal/done
+
+    echo "Bootstrap complete. Restarting with auth + keyfile..."
+    exec mongod --config /etc/mongod.conf
+  init-mongo.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Preparing keyfile..."
+    cp /etc/mongo-keyfile /data/keyfile
+    chmod 400 /data/keyfile
+    chown mongodb:mongodb /data/keyfile
+
+    if [ -f /init-signal/done ]; then
+      echo "Already bootstrapped, starting with auth..."
+      exec mongod --config /etc/mongod.conf
+    fi
+
+    echo "Starting MongoDB WITHOUT auth for bootstrap (secondary)..."
+    mongod --config /etc/mongod-bootstrap.conf --fork --logpath /tmp/mongod.log
+
+    echo "Waiting for bootstrap signal from mongo1..."
+    until [ -f /init-signal/done ]; do
+      echo "  ...waiting for signal..."
+      sleep 2
+    done
+
+    echo "Signal received, restarting with auth + keyfile..."
+    mongod --shutdown --dbpath /data/db || true
+    sleep 2
+
+    exec mongod --config /etc/mongod.conf

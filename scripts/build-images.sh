@@ -8,7 +8,7 @@
 #   ./scripts/build-images.sh --help
 #
 # Profiles:
-#   full — all custom images used by docker-compose.yml (default)
+#   full — all custom images used by the Kubernetes / compose stack (default)
 #   e2e  — BackTest E2E images only (backtestapp, backtestui, appinit)
 
 set -eu
@@ -38,7 +38,7 @@ Options:
   --help               Show this help
 
 Profiles:
-  full  All custom images for the full Swarm stack
+  full  All custom images for the full Kubernetes stack
   e2e   backtestapp, backtestui, appinit (BackTest E2E path)
 
 Examples:
@@ -63,12 +63,12 @@ while [ $# -gt 0 ]; do
       PARALLEL="$2"
       shift 2
       ;;
-    # Accepted so build-all.sh can forward deploy-stack flags harmlessly
-    --detach|--no-detach|--no-pull)
+    # Accepted so build-all.sh can forward deploy-k8s flags harmlessly
+    --detach|--no-detach|--no-pull|--no-import)
       shift
       ;;
-    --compose)
-      [ $# -ge 2 ] || { echo "ERROR: --compose requires a path" >&2; exit 1; }
+    --compose|--overlay)
+      [ $# -ge 2 ] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
       shift 2
       ;;
     *)
@@ -105,20 +105,22 @@ log() {
   printf '[build-images] %s\n' "$*"
 }
 
-# Job format: kind|context|tag
-# kind: plain | kafka | strategy
+# Job format: kind|context|tag|extra
+# kind: plain | kafka | strategy | microservice
+# extra (microservice only): redis | auth | placeorder
 JOBS=""
 
 add_job() {
   JOBS="${JOBS}${JOBS:+
-}$1|$2|$3"
+}$1|$2|$3|${4:-}"
 }
 
 run_one_job() {
   _kind="$1"
   _ctx="$2"
   _tag="$3"
-  log "Building $_tag ($_kind: $_ctx)"
+  _extra="${4:-}"
+  log "Building $_tag ($_kind: $_ctx${_extra:+ mode=$_extra})"
   case "$_kind" in
     plain)
       docker build -t "$_tag" "$_ctx"
@@ -128,6 +130,9 @@ run_one_job() {
       ;;
     strategy)
       build_strategy "$_ctx" "$_tag"
+      ;;
+    microservice)
+      build_microservice "$_ctx" "$_tag" "${_extra:-auth}"
       ;;
     *)
       echo "ERROR: unknown job kind: $_kind" >&2
@@ -144,17 +149,18 @@ register_e2e_jobs() {
 
 register_full_jobs() {
   add_job plain ./appInit appinit:latest
-  add_job plain ./MicroServices/UpstoxLogin upstock-login:latest
-  add_job plain ./MicroServices/ConnectWS-Upstox connect-upstox-web-socket:latest
+  # Microservices: bake compose bind-mounts into the image (required for k8s)
+  add_job microservice ./MicroServices/UpstoxLogin upstock-login:latest redis
+  add_job microservice ./MicroServices/ConnectWS-Upstox connect-upstox-web-socket:latest auth
 
-  add_job plain ./MicroServices/market-quote/getLTP get-ltp:latest
-  add_job plain ./MicroServices/market-quote/getOHLC get-ohlc:latest
-  add_job plain ./MicroServices/market-quote/fullMarketQuote get-fullmarketquote:latest
-  add_job plain ./MicroServices/Orders/placeOrders placeorder:latest
-  add_job plain ./MicroServices/Orders/getOrderBook get-orderbook:latest
-  add_job plain ./MicroServices/Option-Chain/put-call-option-chain get-put-call-option-chain:latest
-  add_job plain ./MicroServices/Option-Chain/option-contracts get-option-contracts:latest
-  add_job plain ./MicroServices/Users/FundsAndMargin get-funds-and-margin:latest
+  add_job microservice ./MicroServices/market-quote/getLTP get-ltp:latest auth
+  add_job microservice ./MicroServices/market-quote/getOHLC get-ohlc:latest auth
+  add_job microservice ./MicroServices/market-quote/fullMarketQuote get-fullmarketquote:latest auth
+  add_job microservice ./MicroServices/Orders/placeOrders placeorder:latest placeorder
+  add_job microservice ./MicroServices/Orders/getOrderBook get-orderbook:latest auth
+  add_job microservice ./MicroServices/Option-Chain/put-call-option-chain get-put-call-option-chain:latest auth
+  add_job microservice ./MicroServices/Option-Chain/option-contracts get-option-contracts:latest auth
+  add_job microservice ./MicroServices/Users/FundsAndMargin get-funds-and-margin:latest auth
 
   add_job kafka ./kafka/services/wsDataSplitterConsumer wsdatasplitterconsumer:latest
   add_job kafka ./kafka/services/storerConsumer storer-consumer:latest
@@ -214,9 +220,10 @@ for _line in $JOBS; do
   _kind=$(printf '%s' "$_line" | cut -d'|' -f1)
   _ctx=$(printf '%s' "$_line" | cut -d'|' -f2)
   _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
+  _extra=$(printf '%s' "$_line" | cut -d'|' -f4)
 
   if [ "$PARALLEL" -eq 1 ]; then
-    if ! run_one_job "$_kind" "$_ctx" "$_tag"; then
+    if ! run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"; then
       FAIL=1
       break
     fi
@@ -224,7 +231,7 @@ for _line in $JOBS; do
   fi
 
   (
-    run_one_job "$_kind" "$_ctx" "$_tag"
+    run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"
   ) &
   PIDS="$PIDS $!"
   ACTIVE=$((ACTIVE + 1))
