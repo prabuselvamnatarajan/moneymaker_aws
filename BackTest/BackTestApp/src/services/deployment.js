@@ -543,18 +543,22 @@ async function clearStrategyHoldingsKeys(deployment) {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl || !deployment?._id) return;
   const deploymentId = deployment._id.toString();
+  const altDeploymentId = deployment.deployment_id ? String(deployment.deployment_id) : null;
   const symbol = String(deployment.symbol || "").toUpperCase();
   let client;
   try {
     client = createClient({ url: redisUrl });
     client.on("error", (err) => console.error(`[ForceClose] redis error: ${err.message}`));
     await client.connect();
-    const keys = [
-      `bought_quantity:${deploymentId}:${symbol}`,
-      `bought_quantity:${deploymentId}:${deployment.symbol}`,
-      `short_quantity:${deploymentId}:${symbol}`,
-      `short_quantity:${deploymentId}:${deployment.symbol}`,
-    ];
+    const ids = [deploymentId];
+    if (altDeploymentId && altDeploymentId !== deploymentId) ids.push(altDeploymentId);
+    const keys = [];
+    for (const id of ids) {
+      keys.push(`bought_quantity:${id}:${symbol}`);
+      keys.push(`bought_quantity:${id}:${deployment.symbol}`);
+      keys.push(`short_quantity:${id}:${symbol}`);
+      keys.push(`short_quantity:${id}:${deployment.symbol}`);
+    }
     for (const key of keys) {
       await client.del(key).catch(() => {});
     }
@@ -781,24 +785,31 @@ const resetBacktestDeployment = async (deployment) => {
         await client.connect();
 
         const deploymentIdStr = deploymentId.toString();
+        const altDeploymentIdStr = deployment.deployment_id ? String(deployment.deployment_id) : null;
+        const idPatterns = [deploymentIdStr];
+        if (altDeploymentIdStr && altDeploymentIdStr !== deploymentIdStr) {
+          idPatterns.push(altDeploymentIdStr);
+        }
 
-        // Safe non-blocking SCAN loop to delete all keys containing the deployment ID.
+        // Safe non-blocking SCAN loop to delete all keys containing any matching deployment ID.
         // Preserve deployment_state_epoch so strategy consumers never see a missing epoch mid-reset.
-        let cursor = 0;
-        const pattern = `*${deploymentIdStr}*`;
-        const epochKey = getStateEpochKey(deploymentIdStr);
-        do {
-          const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
-          cursor = reply.cursor;
-          const keys = (reply.keys || []).filter((k) => k !== epochKey);
-          if (keys.length > 0) {
-            await client.del(keys);
-            console.log(`[Reset] Deleted scanned keys for deployment ${deploymentIdStr}:`, keys);
-          }
-        } while (cursor !== 0);
+        for (const targetId of idPatterns) {
+          let cursor = 0;
+          const pattern = `*${targetId}*`;
+          const epochKey = getStateEpochKey(targetId);
+          do {
+            const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+            cursor = reply.cursor;
+            const keys = (reply.keys || []).filter((k) => k !== epochKey);
+            if (keys.length > 0) {
+              await client.del(keys);
+              console.log(`[Reset] Deleted scanned keys for deployment pattern ${pattern}:`, keys);
+            }
+          } while (cursor !== 0);
 
-        // Ensure epoch exists before backtest ticks start flowing
-        await ensureDeploymentStateEpoch(client, deploymentIdStr);
+          // Ensure epoch exists before backtest ticks start flowing
+          await ensureDeploymentStateEpoch(client, targetId);
+        }
       } catch (err) {
         console.error(`[Reset] Error clearing Redis keys: ${err.message}`);
       } finally {

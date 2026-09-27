@@ -284,9 +284,29 @@ export const updateBroker = async (brokerId, userId, isAdmin, updateData) => {
 
 export const deleteBroker = async (brokerId, userId, isAdmin) => {
   const query = isAdmin ? { _id: brokerId } : { _id: brokerId, user_id: userId, is_internal: false };
-  const result = await Broker.deleteOne(query);
-  if (result.deletedCount === 0) {
+  const broker = await Broker.findOne(query);
+  if (!broker) {
     throw new Error("Broker not found or you are not authorized to delete it.");
   }
+  if (broker.is_internal) {
+    throw new Error("Internal broker Cobra Trades cannot be deleted.");
+  }
+
+  const Account = (await import("../models/account.js")).default;
+  const linkedAccounts = await Account.find({ broker_id: broker._id });
+  if (linkedAccounts.length > 0) {
+    const liveAccounts = linkedAccounts.filter(a => a.account_type === "LIVE");
+    if (liveAccounts.length > 0) {
+      throw new Error(`Cannot delete broker with active LIVE account associations (${liveAccounts.length} live account(s) linked).`);
+    }
+    // For non-live accounts linked to an external broker being deleted, fall back to Cobra Trades internal broker
+    let internalBroker = await Broker.findOne({ is_internal: true });
+    if (!internalBroker) {
+      internalBroker = await Broker.create({ name: "Cobra Trades", is_internal: true });
+    }
+    await Account.updateMany({ broker_id: broker._id }, { $set: { broker_id: internalBroker._id } });
+  }
+
+  await Broker.deleteOne({ _id: broker._id });
   return { message: "Broker deleted successfully" };
 };
