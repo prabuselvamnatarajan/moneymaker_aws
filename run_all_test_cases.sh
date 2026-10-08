@@ -6,9 +6,9 @@
 #   ./run_all_test_cases.sh --suite backtest-app     # one suite
 #   ./run_all_test_cases.sh --suite backtest-ui
 #   ./run_all_test_cases.sh --suite backtest-app,backtest-ui
-#   ./run_all_test_cases.sh --build                  # build-images + deploy-stack
+#   ./run_all_test_cases.sh --build                  # build-images + deploy-k8s
 #   ./run_all_test_cases.sh --build-images           # scripts/build-images.sh only
-#   ./run_all_test_cases.sh --deploy-stack           # scripts/deploy-stack.sh only
+#   ./run_all_test_cases.sh --deploy                 # scripts/deploy-k8s.sh only
 #   ./run_all_test_cases.sh --no-wait                # skip health polling
 #   ./run_all_test_cases.sh --coverage               # check-coverage after tests
 #   ./run_all_test_cases.sh --list                   # show registry
@@ -35,9 +35,10 @@ Usage: run_all_test_cases.sh [options] [-- suite-script-args...]
 
 Options:
   --suite ID[,ID...]   Run only these suite ids (from suites.registry)
-  --build              Build images + deploy stack (shorthand for both below)
+  --build              Build images + deploy Kubernetes (shorthand for both below)
   --build-images       Run ./scripts/build-images.sh (--profile e2e in CI, full locally)
-  --deploy-stack       Run ./scripts/deploy-stack.sh (CI: --detach + docker-compose.ci.yml)
+  --deploy             Run ./scripts/deploy-k8s.sh (CI: --detach --overlay ci)
+  --deploy-stack       Same as --deploy
   --no-install         Skip npm ci / playwright install in suite runners
   --no-wait            Skip stack health checks
   --coverage           Run e2e TC coverage check after suites
@@ -48,7 +49,7 @@ Examples:
   ./run_all_test_cases.sh
   ./run_all_test_cases.sh --suite backtest-ui
   ./run_all_test_cases.sh --build --coverage
-  ./run_all_test_cases.sh --build-images --deploy-stack --coverage
+  ./run_all_test_cases.sh --build-images --deploy --coverage
   ./run_all_test_cases.sh --suite backtest-ui -- --headed
   ./run_all_test_cases.sh --suite backtest-app -- --grep TC-ACC-001
 
@@ -113,7 +114,7 @@ while [ $# -gt 0 ]; do
       DO_BUILD_IMAGES=1
       shift
       ;;
-    --deploy-stack)
+    --deploy|--deploy-stack)
       DO_DEPLOY_STACK=1
       shift
       ;;
@@ -147,7 +148,7 @@ if [ "$LIST_ONLY" = "1" ]; then
   exit 0
 fi
 
-chmod +x "$ROOT/scripts/build-images.sh" "$ROOT/scripts/deploy-stack.sh" 2>/dev/null || true
+chmod +x "$ROOT/scripts/build-images.sh" "$ROOT/scripts/deploy-k8s.sh" 2>/dev/null || true
 
 if [ "$DO_BUILD_IMAGES" = "1" ]; then
   if [ "${CI:-}" = "true" ]; then
@@ -165,13 +166,13 @@ fi
 if [ "$DO_DEPLOY_STACK" = "1" ]; then
   _deploy_args=""
   if [ "${CI:-}" = "true" ]; then
-    _deploy_args="--detach --compose docker-compose.ci.yml"
+    _deploy_args="--detach --overlay ci"
   else
-    _deploy_args="--no-detach"
+    _deploy_args="--no-detach --overlay full"
   fi
-  log_info "Running ./scripts/deploy-stack.sh $_deploy_args"
+  log_info "Running ./scripts/deploy-k8s.sh $_deploy_args"
   # shellcheck disable=SC2086
-  "$ROOT/scripts/deploy-stack.sh" $_deploy_args || die "deploy-stack.sh failed"
+  "$ROOT/scripts/deploy-k8s.sh" $_deploy_args || die "deploy-k8s.sh failed"
 fi
 
 # Install npm deps once; suite scripts get --no-install to skip npm reinstall.

@@ -2,10 +2,11 @@
 
 This document describes the container setup of the MoneyMaker system.
 
-**Current runtime:** Kubernetes (k3s). Manifests live under [`k8s/`](../k8s/).
-[`docker-compose.yml`](../docker-compose.yml) remains the historical service
-catalog (names, env, replicas). See [`k8s/README.md`](../k8s/README.md) for
-deploy and AWS host migration steps.
+**Runtime:** Kubernetes (k3s). Manifests live under [`k8s/`](../k8s/).
+Deploy with `./scripts/deploy-k8s.sh` (or `./build-all.sh`).
+[`docker-compose.yml`](../docker-compose.yml) is a catalog of service names,
+env, and replica counts. It is not used to start the stack.
+See [`k8s/README.md`](../k8s/README.md).
 
 ## Kubernetes map
 

@@ -23,11 +23,11 @@ Modular scripts under `scripts/test/` wrap this Playwright package. Orchestrator
 ./run_all_test_cases.sh --suite backtest-ui -- --headed
 ./run_all_test_cases.sh --suite backtest-app -- --grep TC-ACC-001
 
-# Rebuild images + deploy Swarm stack, then test
+# Rebuild images + deploy Kubernetes, then test
 ./run_all_test_cases.sh --build --coverage
 
 # Granular build / deploy (same as CI phases)
-./run_all_test_cases.sh --build-images --deploy-stack --coverage
+./run_all_test_cases.sh --build-images --deploy --coverage
 ```
 
 Direct suite scripts:
@@ -48,20 +48,19 @@ Future docker-service suites are listed in `scripts/test/suites.registry` with `
 ```text
 build-all.sh
   ├── scripts/build-images.sh   # docker build only
-  └── scripts/deploy-stack.sh   # swarm init + stack deploy
+  └── scripts/deploy-k8s.sh     # k3s + kubectl apply
 ```
 
 ```bash
-# Full local / AWS path (all images, wait for Swarm converge)
+# Full local / AWS path (all images, wait until core workloads are Ready)
 ./build-all.sh
 # equivalent to:
 ./scripts/build-images.sh --profile full
-./scripts/deploy-stack.sh --no-detach
+./scripts/deploy-k8s.sh --overlay full --no-detach
 
 # E2E / CI-style (fewer images, detach + CI replica overlay)
 ./scripts/build-images.sh --profile e2e --parallel 4
-NGINX_CONF=./certs/nginx.ci.conf \
-  ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+./scripts/deploy-k8s.sh --detach --overlay ci
 ./clear-and-seed.sh --yes
 API_BASE_URL=http://127.0.0.1/backtestapp/ \
   ./run_all_test_cases.sh --coverage --no-wait
@@ -71,7 +70,6 @@ API_BASE_URL=http://127.0.0.1/backtestapp/ \
 |--------|---------|
 | `scripts/build-images.sh` | Build custom Docker images (`--profile full\|e2e`, `--parallel N`) |
 | `scripts/deploy-k8s.sh` | Ensure k3s, import images, `kubectl apply -k` overlay |
-| `scripts/deploy-stack.sh` | Legacy Swarm deploy (not called by `build-all.sh`) |
 | `k8s/overlays/ci` | CI overlay (`replicas: 0` for non-E2E services) |
 | `certs/nginx.ci.k8s.conf` | CI nginx for Kubernetes DNS — only `/backtestapp/` and `/backtest-ui/` |
 | `clear-and-seed.sh` | Wipe/reseed BacktestApp DB inside the running stack |
@@ -155,7 +153,7 @@ Workflow: [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)
 ```text
 test job (every push / PR)
   1. Build E2E images     → scripts/build-images.sh --profile e2e --parallel 4
-  2. Deploy CI stack      → scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
+  2. Deploy CI stack      → scripts/deploy-k8s.sh --detach --overlay ci
   3. Wait for /health
   4. Seed database        → clear-and-seed.sh --yes
   5. Run suites           → run_all_test_cases.sh --coverage --no-wait

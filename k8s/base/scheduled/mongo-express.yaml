@@ -53,6 +53,7 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
+              hostPort: 8081
               name: http
           env:
             - name: ME_CONFIG_MONGODB_ADMINUSERNAME
@@ -90,8 +91,9 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: mongo-express
+  # hostPort 8081 — keep a single pod so the host port stays bound.
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 1
   metrics:
     - type: Resource
       resource:

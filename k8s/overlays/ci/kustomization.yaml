@@ -23,7 +23,7 @@ patches:
       kind: HorizontalPodAutoscaler
       metadata:
         name: all
-  # Scale down everything not required by BackTest E2E (mirrors docker-compose.ci.yml)
+  # Scale down everything not required by BackTest E2E
   - target:
       kind: Deployment
       name: mongo-express

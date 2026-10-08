@@ -1,4 +1,19 @@
 apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redisinsight-data
+  namespace: moneymaker
+  labels:
+    app: redisinsight
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: redisinsight
@@ -53,16 +68,24 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8001
+              hostPort: 8001
               name: http
           env:
             - name: TZ
               value: 'UTC'
+          volumeMounts:
+            - name: data
+              mountPath: /db
           resources:
             requests:
               cpu: 100m
               memory: 256Mi
             limits:
               memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redisinsight-data
 
 ---
 apiVersion: autoscaling/v2
@@ -77,8 +100,9 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: redisinsight
+  # hostPort 8001 and a single RWO volume — keep one pod.
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 1
   metrics:
     - type: Resource
       resource:

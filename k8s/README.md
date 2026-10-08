@@ -1,16 +1,33 @@
 # MoneyMaker on Kubernetes
 
-This directory replaces Docker Swarm (`docker stack deploy`) with a single-node
-**k3s** cluster. Service DNS names, environment variables, replica counts, and
-nginx path routing match [`docker-compose.yml`](../docker-compose.yml) so
-application code keeps working unchanged.
+This directory is the MoneyMaker runtime: a single-node **k3s** cluster.
+Service DNS names, environment variables, baseline replica counts, published
+host ports, and nginx path routing match the previous stack so application
+code keeps working unchanged. [`docker-compose.yml`](../docker-compose.yml) is
+only a catalog of that layout. Deploy with `./scripts/deploy-k8s.sh`.
 
-Stateless Deployments start at **1** replica. Each service file includes a
-HorizontalPodAutoscaler that adds one pod when CPU or memory stays at or above
-**90%** of the container request (`maxReplicas: 5`). Mongo, Kafka, Redis, and
-Zookeeper stay fixed StatefulSets. The CI overlay removes the autoscalers so
-E2E replica counts stay pinned. HPA needs metrics-server (built into k3s;
-`deploy-k8s.sh` enables the minikube addon).
+Stateless Deployments start at **1** replica. Each has a HorizontalPodAutoscaler
+that adds one pod when CPU or memory stays at or above **90%** of the container
+request (`maxReplicas: 5`). Services that bind a host port (`upstock-login`,
+`mongo-express`, `redisinsight`) stay at one pod, because a second pod cannot
+bind the same host port. Mongo, Kafka, Redis, and Zookeeper stay fixed
+StatefulSets. The CI overlay removes the autoscalers so E2E replica counts stay
+pinned. HPA needs metrics-server (built into k3s; `deploy-k8s.sh` enables the
+minikube addon).
+
+Host ports (same as before; HTTP/HTTPS stay on Traefik, which forwards to
+`reverse-proxy`):
+
+| Service | Host port |
+| --- | --- |
+| zookeeper | 2181 |
+| kafka-broker-1 / 2 / 3 | 9092 / 9093 / 9094 |
+| mongo1 / mongo2 / mongo3 | 27017 / 27018 / 27019 |
+| redis | 6379 |
+| mongo-express | 8081 |
+| redisinsight | 8001 |
+| upstock-login | 8080 |
+| Ingress (Traefik → reverse-proxy) | 80, 443 |
 
 ## Layout
 
@@ -47,13 +64,12 @@ and `kubectl apply -k` the chosen overlay.
 
 ## One-time AWS host migration (required before the next main deploy)
 
-The GitHub Actions SSH job still runs `./build-all.sh` on the Ubuntu host. That
-script now deploys to **Kubernetes**, not Swarm. Prepare the host once:
+The GitHub Actions SSH job runs `./build-all.sh` on the Ubuntu host, which
+deploys Kubernetes. Prepare the host once:
 
-1. **Stop Swarm** (free ports 80/443 and stop competing stacks):
+1. **Free ports 80 and 443** if an older Docker stack is still bound to them:
    ```sh
    docker stack rm moneymaker || true
-   # wait until gone
    docker swarm leave --force || true
    ```
 2. **Install k3s** (or let the first `./scripts/deploy-k8s.sh` do it as root/sudo):
@@ -70,9 +86,6 @@ script now deploys to **Kubernetes**, not Swarm. Prepare the host once:
    git pull origin main
    ./build-all.sh
    ```
-
-Swarm helper [`scripts/deploy-stack.sh`](../scripts/deploy-stack.sh) remains in
-the repo for emergency rollback but is no longer called by `build-all.sh`.
 
 ## Tear down
 

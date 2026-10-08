@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build MoneyMaker Docker images (no Swarm deploy).
+# Build MoneyMaker Docker images. Deploy is ./scripts/deploy-k8s.sh.
 #
 # Usage:
 #   ./scripts/build-images.sh
@@ -8,7 +8,7 @@
 #   ./scripts/build-images.sh --help
 #
 # Profiles:
-#   full — all custom images used by the Kubernetes / compose stack (default)
+#   full — all custom images used by the Kubernetes stack (default)
 #   e2e  — BackTest E2E images only (backtestapp, backtestui, appinit)
 
 set -eu
@@ -67,9 +67,13 @@ while [ $# -gt 0 ]; do
     --detach|--no-detach|--no-pull|--no-import)
       shift
       ;;
-    --compose|--overlay)
-      [ $# -ge 2 ] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
+    --overlay)
+      [ $# -ge 2 ] || { echo "ERROR: --overlay requires a value" >&2; exit 1; }
       shift 2
+      ;;
+    --compose)
+      echo "ERROR: Docker Swarm compose deploy was removed. Use --overlay ci or --overlay full with ./scripts/deploy-k8s.sh." >&2
+      exit 1
       ;;
     *)
       echo "ERROR: Unknown option: $1 (use --help)" >&2

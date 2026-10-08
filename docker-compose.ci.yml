@@ -1,13 +1,7 @@
-# CI overlay for docker-compose.yml — single-node GitHub Actions runners.
-# Usage:
-#   NGINX_CONF=./certs/nginx.ci.conf \
-#     ./scripts/deploy-stack.sh --detach --compose docker-compose.ci.yml
-#
-# - replicas:0 for services not required by BackTest E2E (avoids missing-image
-#   crash loops and frees RAM for mongo/kafka/redis)
-# - Set NGINX_CONF=./certs/nginx.ci.conf so reverse-proxy uses the minimal
-#   config (only backtest-app / backtest-ui). Do NOT redeclare reverse-proxy
-#   volumes/ports here — compose merges append and would break mounts.
+# Catalog only. CI deploy is:
+#   ./scripts/deploy-k8s.sh --detach --overlay ci
+# The replica list below matches k8s/overlays/ci (replicas 0 for services
+# BackTest E2E does not need).
 
 version: '3.8'
 

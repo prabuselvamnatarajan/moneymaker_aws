@@ -10,8 +10,6 @@
 #
 # Also accepts (ignored) build-images flags so build-all.sh can forward a shared argv:
 #   --profile ...  --parallel ...
-# Legacy Swarm flag mapping:
-#   --compose docker-compose.ci.yml  →  --overlay ci
 
 set -eu
 
@@ -36,9 +34,6 @@ Options:
 
 Also accepts (ignored) build-images flags so build-all.sh can forward a shared argv:
   --profile ...  --parallel ...  --no-pull
-
-Legacy Swarm compatibility:
-  --compose docker-compose.ci.yml   Maps to --overlay ci
 
 Examples:
   ./scripts/deploy-k8s.sh
@@ -70,19 +65,10 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --compose)
-      [ $# -ge 2 ] || { echo "ERROR: --compose requires a file path" >&2; exit 1; }
-      case "$2" in
-        *docker-compose.ci.yml*|*/docker-compose.ci.yml)
-          OVERLAY=ci
-          ;;
-        *)
-          echo "WARNING: ignoring unknown compose file for k8s deploy: $2 (use --overlay)" >&2
-          ;;
-      esac
-      shift 2
+      echo "ERROR: Docker Swarm compose deploy was removed. Use --overlay ci or --overlay full." >&2
+      exit 1
       ;;
     --no-pull)
-      # Swarm-era flag; nothing to pull for local image import path
       shift
       ;;
     --profile|--parallel)

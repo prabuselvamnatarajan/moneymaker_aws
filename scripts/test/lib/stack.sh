@@ -50,7 +50,8 @@ log_k8s_workload_state() {
   kubectl -n "$_ns" logs -l "app=${_app}" --tail=20 2>/dev/null || true
 }
 
-# Backward-compatible alias used by older callers
+# Older name for log_k8s_workload_state. Accepts a Swarm-style service label
+# (moneymaker_backtest-app) and dumps the matching Deployment.
 log_swarm_service_state() {
   _svc="${1:-moneymaker_backtest-app}"
   # Map Swarm service name moneymaker_backtest-app → deployment/backtest-app

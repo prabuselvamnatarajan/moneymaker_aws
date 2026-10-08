@@ -6,8 +6,6 @@
 #
 # All flags are forwarded to both scripts (each ignores unknown-to-it options
 # that the other accepts — see those scripts' --help).
-#
-# Swarm rollback: ./scripts/deploy-stack.sh still exists but is no longer called here.
 
 set -eu
 

@@ -57,12 +57,4 @@ else
   fi
 fi
 
-# Best-effort Swarm cleanup during migration period
-if command -v docker >/dev/null 2>&1 && docker info 2>/dev/null | grep -q "Swarm: active"; then
-  if docker stack ls 2>/dev/null | grep -q moneymaker; then
-    echo "Removing legacy Swarm stack moneymaker..."
-    docker stack rm moneymaker 2>/dev/null || true
-  fi
-fi
-
 echo "Moneymaker stack removed successfully."

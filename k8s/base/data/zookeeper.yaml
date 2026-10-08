@@ -47,6 +47,7 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 2181
+              hostPort: 2181
               name: client
             - containerPort: 2888
               name: follower

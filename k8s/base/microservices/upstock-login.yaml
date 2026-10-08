@@ -67,6 +67,11 @@ spec:
                 secretKeyRef:
                   name: moneymaker-secrets
                   key: MONGODB_URI
+            - name: MONGO_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: MONGO_DB_BACKTEST
           resources:
             requests:
               cpu: 100m
