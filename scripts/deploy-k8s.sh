@@ -1,11 +1,13 @@
 #!/bin/sh
-# Install k3s if needed, import local Docker images into k3s containerd,
+# Install k3s if needed, import local Docker images into the cluster,
 # and apply MoneyMaker Kubernetes manifests.
 #
 # Usage:
 #   ./scripts/deploy-k8s.sh
 #   ./scripts/deploy-k8s.sh --overlay ci
 #   ./scripts/deploy-k8s.sh --overlay full --no-import
+#   ./scripts/deploy-k8s.sh --overlay dev
+#   ./scripts/deploy-k8s.sh --overlay prod --no-import
 #   ./scripts/deploy-k8s.sh --help
 #
 # Also accepts (ignored) build-images flags so build-all.sh can forward a shared argv:
@@ -26,8 +28,13 @@ usage() {
 Usage: deploy-k8s.sh [options]
 
 Options:
-  --overlay full|ci    Kustomize overlay to apply (default: full)
-  --no-import          Skip importing local Docker images into k3s
+  --overlay full|ci|dev|prod
+                       Kustomize overlay to apply (default: full)
+                         full  — local k3s (install if missing)
+                         ci    — E2E subset on k3s/minikube
+                         dev   — minikube only (nginx Ingress, algo.mrcobra.link)
+                         prod  — apply-only against the current kube context (EKS)
+  --no-import          Skip importing local Docker images into the cluster
   --detach             Do not wait for Deployments/StatefulSets (CI default when CI=true)
   --no-detach          Wait for core workloads to become Ready (default locally)
   --help               Show this help
@@ -38,6 +45,8 @@ Also accepts (ignored) build-images flags so build-all.sh can forward a shared a
 Examples:
   ./scripts/deploy-k8s.sh
   ./scripts/deploy-k8s.sh --overlay ci --detach
+  ./scripts/deploy-k8s.sh --overlay dev
+  ./scripts/deploy-k8s.sh --overlay prod --no-import
 EOF
 }
 
@@ -48,7 +57,7 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     --overlay)
-      [ $# -ge 2 ] || { echo "ERROR: --overlay requires full|ci" >&2; exit 1; }
+      [ $# -ge 2 ] || { echo "ERROR: --overlay requires full|ci|dev|prod" >&2; exit 1; }
       OVERLAY="$2"
       shift 2
       ;;
@@ -65,7 +74,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --compose)
-      echo "ERROR: Docker Swarm compose deploy was removed. Use --overlay ci or --overlay full." >&2
+      echo "ERROR: Docker Swarm compose deploy was removed. Use --overlay ci|full|dev|prod." >&2
       exit 1
       ;;
     --no-pull)
@@ -83,9 +92,9 @@ while [ $# -gt 0 ]; do
 done
 
 case "$OVERLAY" in
-  full|ci) ;;
+  full|ci|dev|prod) ;;
   *)
-    echo "ERROR: --overlay must be full or ci (got: $OVERLAY)" >&2
+    echo "ERROR: --overlay must be full, ci, dev, or prod (got: $OVERLAY)" >&2
     exit 1
     ;;
 esac
@@ -119,7 +128,37 @@ sync_k8s_files() {
   cp -f "$ROOT/certs/nginx.ci.k8s.conf" "$ROOT/k8s/overlays/ci/files/nginx.conf"
 }
 
-ensure_k3s() {
+ensure_minikube() {
+  require_cmd minikube
+  if ! minikube status >/dev/null 2>&1; then
+    log "ERROR: overlay=dev requires a running minikube cluster (minikube start)"
+    exit 1
+  fi
+  log "Using minikube cluster for overlay=dev"
+  if ! kubectl cluster-info >/dev/null 2>&1; then
+    log "ERROR: kubectl cannot reach the minikube API (check kube context: minikube)"
+    exit 1
+  fi
+}
+
+ensure_cluster() {
+  # prod: apply against the caller's current kube context (EKS). Never install k3s.
+  if [ "$OVERLAY" = "prod" ]; then
+    require_cmd kubectl
+    if ! kubectl cluster-info >/dev/null 2>&1; then
+      log "ERROR: overlay=prod requires a reachable cluster (configure kubeconfig for EKS first)"
+      exit 1
+    fi
+    log "Kubernetes cluster is reachable (prod apply-only)"
+    return 0
+  fi
+
+  # dev: minikube only — do not install k3s.
+  if [ "$OVERLAY" = "dev" ]; then
+    ensure_minikube
+    return 0
+  fi
+
   if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
     log "Kubernetes cluster is reachable"
     return 0
@@ -202,6 +241,12 @@ backtestui:latest
 "
 
 import_images() {
+  # Prod pulls from a registry; never load local Docker images into EKS.
+  if [ "$OVERLAY" = "prod" ]; then
+    log "Skipping image import (overlay=prod — images must already be in the cluster/registry)"
+    return 0
+  fi
+
   if [ "$NO_IMPORT" = "1" ]; then
     log "Skipping image import (--no-import)"
     return 0
@@ -217,7 +262,21 @@ import_images() {
 
   _fail=0
 
-  if command -v k3s >/dev/null 2>&1; then
+  # Prefer minikube when the overlay is dev, or when minikube is the reachable cluster.
+  if [ "$OVERLAY" = "dev" ] || { command -v minikube >/dev/null 2>&1 && minikube status >/dev/null 2>&1 && ! command -v k3s >/dev/null 2>&1; }; then
+    log "Loading local Docker images into minikube"
+    for _img in $_images; do
+      [ -n "$_img" ] || continue
+      if ! docker image inspect "$_img" >/dev/null 2>&1; then
+        log "WARNING: image not found locally, skip import: $_img"
+        continue
+      fi
+      log "minikube image load $_img"
+      if ! minikube image load "$_img"; then
+        _fail=1
+      fi
+    done
+  elif command -v k3s >/dev/null 2>&1; then
     log "Importing local Docker images into k3s containerd"
     for _img in $_images; do
       [ -n "$_img" ] || continue
@@ -262,6 +321,9 @@ import_images() {
 }
 
 ensure_metrics() {
+  if [ "$OVERLAY" = "prod" ]; then
+    return 0
+  fi
   # HPA reads CPU/memory from metrics-server. k3s ships it; minikube does not.
   if command -v minikube >/dev/null 2>&1 && minikube status >/dev/null 2>&1; then
     if ! minikube addons list 2>/dev/null | grep -q 'metrics-server.*enabled'; then
@@ -277,22 +339,34 @@ ensure_metrics() {
 }
 
 ensure_ingress() {
-  # minikube: enable the nginx Ingress controller when missing
-  if command -v minikube >/dev/null 2>&1 && minikube status >/dev/null 2>&1; then
-    if ! kubectl get ingressclass nginx >/dev/null 2>&1; then
-      log "Enabling minikube ingress addon..."
-      minikube addons enable ingress || true
-      _i=0
-      while [ "$_i" -lt 60 ]; do
-        if kubectl get ingressclass nginx >/dev/null 2>&1; then
-          break
-        fi
-        _i=$((_i + 1))
-        sleep 2
-      done
+  # prod Ingress class (alb) is set by the overlay — do not rewrite after apply.
+  if [ "$OVERLAY" = "prod" ]; then
+    export MM_INGRESS_CLASS=""
+    return 0
+  fi
+  # dev / minikube: enable the nginx Ingress controller when missing
+  if [ "$OVERLAY" = "dev" ] || { command -v minikube >/dev/null 2>&1 && minikube status >/dev/null 2>&1; }; then
+    if command -v minikube >/dev/null 2>&1 && minikube status >/dev/null 2>&1; then
+      if ! kubectl get ingressclass nginx >/dev/null 2>&1; then
+        log "Enabling minikube ingress addon..."
+        minikube addons enable ingress || true
+        _i=0
+        while [ "$_i" -lt 60 ]; do
+          if kubectl get ingressclass nginx >/dev/null 2>&1; then
+            break
+          fi
+          _i=$((_i + 1))
+          sleep 2
+        done
+      fi
     fi
-    # Manifests default to traefik (k3s); retarget to nginx on minikube after apply.
-    export MM_INGRESS_CLASS=nginx
+    # full/ci on minikube still retarget Traefik → nginx after apply.
+    # dev overlay already sets ingressClassName=nginx — skip the post-apply patch.
+    if [ "$OVERLAY" = "dev" ]; then
+      export MM_INGRESS_CLASS=""
+    else
+      export MM_INGRESS_CLASS=nginx
+    fi
   elif kubectl get ingressclass traefik >/dev/null 2>&1; then
     export MM_INGRESS_CLASS=traefik
   else
@@ -339,9 +413,12 @@ wait_for_core() {
 }
 
 # --- main ---
-require_cmd docker
+# prod does not need local Docker (images come from a registry).
+if [ "$OVERLAY" != "prod" ]; then
+  require_cmd docker
+fi
 sync_k8s_files
-ensure_k3s
+ensure_cluster
 require_cmd kubectl
 ensure_metrics
 ensure_ingress

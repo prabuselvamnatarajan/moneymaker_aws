@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# minikube: nginx Ingress addon, host for /etc/hosts → minikube IP.
+# TLS uses the shared reverse-proxy-tls secret from base (self-signed).
+patches:
+  - target:
+      kind: Ingress
+      name: moneymaker
+    patch: |-
+      - op: replace
+        path: /metadata/annotations
+        value:
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      - op: replace
+        path: /spec/ingressClassName
+        value: nginx
+      - op: add
+        path: /spec/rules/0/host
+        value: algo.mrcobra.link
+      - op: replace
+        path: /spec/tls
+        value:
+          - hosts:
+              - algo.mrcobra.link
+            secretName: reverse-proxy-tls

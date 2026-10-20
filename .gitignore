@@ -81,3 +81,20 @@ Thumbs.db
 # Staged shared libs for microservice Docker builds
 **/redis_utils_bake/
 
+# Terraform (scaffold under terraform/prod — never commit local state or secrets)
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform/prod/terraform.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Keep the prod ACM ARN placeholder tracked (matches *.env.* rule above)
+!k8s/overlays/prod/certificate-arn.env
+
