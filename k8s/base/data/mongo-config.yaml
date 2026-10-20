@@ -29,9 +29,10 @@ data:
   # Bitnami-inspired bootstrap (see bitnami/charts mongodb setup.sh):
   # - primary (mongo1) initiates with ONLY itself, then rs.add secondaries
   # - treat "already initialized" as success and force-reconfig hostnames if needed
-  # - secondaries wait for /init-signal/done then start with auth+keyFile
-  # - if /init-signal/done exists but RS is not configured (stale signal after PVC
-  #   wipe), clear the signal and re-bootstrap instead of ReplicaSetNoPrimary
+    # - secondaries wait for /init-signal/done then start with auth+keyFile
+    # - if /init-signal/done exists but RS is not configured (stale signal after PVC
+    #   wipe), mongo1 clears the signal and re-bootstraps. Secondaries must not
+    #   delete that shared file; they wait until mongo1 replaces it.
   init-mongo1.sh: |
     #!/bin/bash
     set -e
@@ -236,17 +237,26 @@ data:
         sleep 1
         exec mongod --config /etc/mongod.conf
       fi
-      echo "Stale init signal (no replica set config) — clearing and waiting for re-bootstrap..."
+      echo "Stale init signal (no replica set config) — waiting for mongo1 to replace it..."
       mongod --shutdown --dbpath /data/db || true
       sleep 1
-      rm -f /init-signal/done
+      # Do not delete /init-signal/done here. mongo1, mongo2, and mongo3 share that
+      # file; a secondary rm can wipe the signal mongo1 just wrote and leave the
+      # other members waiting forever.
+      stale_mtime="$(stat -c %Y /init-signal/done 2>/dev/null || true)"
     fi
 
     echo "Starting MongoDB WITHOUT auth for bootstrap (secondary)..."
     mongod --config /etc/mongod-bootstrap.conf --fork --logpath /tmp/mongod.log
 
     echo "Waiting for bootstrap signal from mongo1..."
-    until [ -f /init-signal/done ]; do
+    while true; do
+      if [ -f /init-signal/done ]; then
+        now_mtime="$(stat -c %Y /init-signal/done 2>/dev/null || true)"
+        if [ -z "${stale_mtime:-}" ] || [ "$now_mtime" != "$stale_mtime" ]; then
+          break
+        fi
+      fi
       echo "  ...waiting for signal..."
       sleep 2
     done
