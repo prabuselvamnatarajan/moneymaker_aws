@@ -30,6 +30,8 @@ data:
   # - primary (mongo1) initiates with ONLY itself, then rs.add secondaries
   # - treat "already initialized" as success and force-reconfig hostnames if needed
   # - secondaries wait for /init-signal/done then start with auth+keyFile
+  # - if /init-signal/done exists but RS is not configured (stale signal after PVC
+  #   wipe), clear the signal and re-bootstrap instead of ReplicaSetNoPrimary
   init-mongo1.sh: |
     #!/bin/bash
     set -e
@@ -39,9 +41,34 @@ data:
     chmod 400 /data/keyfile
     chown mongodb:mongodb /data/keyfile
 
+    mongo_rs_configured() {
+      mongosh --quiet --eval '
+        try {
+          var h = db.hello();
+          if (h && h.setName) quit(0);
+          quit(1);
+        } catch (e) {
+          quit(1);
+        }
+      ' >/dev/null 2>&1
+    }
+
     if [ -f /init-signal/done ]; then
-      echo "Already bootstrapped, starting with auth..."
-      exec mongod --config /etc/mongod.conf
+      echo "Init signal present — validating replica set before skipping bootstrap..."
+      mongod --config /etc/mongod.conf --fork --logpath /tmp/mongod-probe.log
+      until mongosh --quiet --eval "db.adminCommand('ping')" &>/dev/null; do
+        sleep 1
+      done
+      if mongo_rs_configured; then
+        echo "Replica set OK — starting with auth..."
+        mongod --shutdown --dbpath /data/db || true
+        sleep 1
+        exec mongod --config /etc/mongod.conf
+      fi
+      echo "Stale init signal (no replica set config) — clearing and re-bootstrapping..."
+      mongod --shutdown --dbpath /data/db || true
+      sleep 1
+      rm -f /init-signal/done
     fi
 
     echo "Starting MongoDB WITHOUT auth for bootstrap..."
@@ -83,7 +110,6 @@ data:
 
       var initiated = false;
       try {
-        // Bitnami primary path: initiate with this node only
         rs.initiate({
           _id: "rs0",
           members: [ { _id: 0, host: "mongo1:27017", priority: 2 } ]
@@ -100,7 +126,6 @@ data:
         }
       }
 
-      // Wait until SOME member is PRIMARY
       var primary = false;
       for (var i = 0; i < 90; i++) {
         try {
@@ -116,7 +141,6 @@ data:
         sleep(5000);
       }
 
-      // Ensure mongo2/mongo3 are members (Bitnami secondary join path)
       function ensureMember(host) {
         var st = rs.status();
         var found = false;
@@ -129,7 +153,6 @@ data:
         }
       }
 
-      // Prefer running membership ops on PRIMARY
       for (var j = 0; j < 60; j++) {
         try {
           if (db.hello().isWritablePrimary) break;
@@ -141,11 +164,9 @@ data:
         ensureMember("mongo2:27017");
         ensureMember("mongo3:27017");
       } else {
-        // Last resort: force full desired membership
         forceDesiredConfig();
       }
 
-      // Wait for this node or any writable primary
       for (var k = 0; k < 60; k++) {
         try {
           if (db.hello().isWritablePrimary) break;
@@ -191,9 +212,34 @@ data:
     chmod 400 /data/keyfile
     chown mongodb:mongodb /data/keyfile
 
+    mongo_rs_configured() {
+      mongosh --quiet --eval '
+        try {
+          var h = db.hello();
+          if (h && h.setName) quit(0);
+          quit(1);
+        } catch (e) {
+          quit(1);
+        }
+      ' >/dev/null 2>&1
+    }
+
     if [ -f /init-signal/done ]; then
-      echo "Already bootstrapped, starting with auth..."
-      exec mongod --config /etc/mongod.conf
+      echo "Init signal present — validating replica set before skipping bootstrap..."
+      mongod --config /etc/mongod.conf --fork --logpath /tmp/mongod-probe.log
+      until mongosh --quiet --eval "db.adminCommand('ping')" &>/dev/null; do
+        sleep 1
+      done
+      if mongo_rs_configured; then
+        echo "Replica set OK — starting with auth..."
+        mongod --shutdown --dbpath /data/db || true
+        sleep 1
+        exec mongod --config /etc/mongod.conf
+      fi
+      echo "Stale init signal (no replica set config) — clearing and waiting for re-bootstrap..."
+      mongod --shutdown --dbpath /data/db || true
+      sleep 1
+      rm -f /init-signal/done
     fi
 
     echo "Starting MongoDB WITHOUT auth for bootstrap (secondary)..."

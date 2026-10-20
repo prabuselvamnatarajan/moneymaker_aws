@@ -149,8 +149,14 @@ For the EKS path, use `terraform/prod` and `--overlay prod` instead.
 
 ```sh
 ./kill-moneymaker.sh            # keep PVCs (Mongo/Redis/shared data)
-./kill-moneymaker.sh --wipe-data  # delete the whole namespace including PVCs
+./kill-moneymaker.sh --wipe-data  # delete namespace + PVCs + Mongo init-signal hostPath
 ```
+
+`--wipe-data` also clears `/var/lib/moneymaker/mongo-init-signal` on the node
+(minikube/k3s hostPath). Leaving that signal after wiping PVCs used to skip
+`rs.initiate` and leave apps stuck on `ReplicaSetNoPrimary`. Bootstrap scripts
+also re-validate the signal: if `done` exists but the replica set is not
+configured, they clear it and re-bootstrap.
 
 ## Seed
 
