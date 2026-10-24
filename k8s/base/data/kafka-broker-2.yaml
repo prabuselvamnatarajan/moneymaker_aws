@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-broker-2
+  namespace: moneymaker
+  labels:
+    app: kafka-broker-2
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka-broker-2
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: 9092
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka-broker-2
+  namespace: moneymaker
+  labels:
+    app: kafka-broker-2
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  serviceName: kafka-broker-2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-broker-2
+  template:
+    metadata:
+      labels:
+        app: kafka-broker-2
+        app.kubernetes.io/part-of: moneymaker
+    spec:
+      containers:
+        - name: kafka
+          image: bitnamilegacy/kafka:3.4.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9092
+              hostPort: 9093
+              name: kafka
+          env:
+            - name: KAFKA_BROKER_ID
+              value: "2"
+            - name: KAFKA_HEAP_OPTS
+              value: "-Xmx512M -Xms256M"
+            - name: KAFKA_CFG_ZOOKEEPER_CONNECT
+              value: zookeeper:2181
+            - name: KAFKA_CFG_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka-broker-2:9092
+            - name: KAFKA_CFG_LISTENERS
+              value: PLAINTEXT://0.0.0.0:9092
+            - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+              value: PLAINTEXT:PLAINTEXT
+            - name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            - name: KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "3"
+            - name: KAFKA_CFG_NUM_PARTITIONS
+              value: "50"
+            - name: ALLOW_PLAINTEXT_LISTENER
+              value: "yes"
+            - name: KAFKA_CFG_LOG_RETENTION_MS
+              value: "600000"
+            - name: KAFKA_CFG_LOG_RETENTION_CHECK_INTERVAL_MS
+              value: "300000"
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              memory: 768Mi

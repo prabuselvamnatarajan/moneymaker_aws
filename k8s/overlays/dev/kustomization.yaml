@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# minikube: nginx Ingress addon.
+# With `minikube tunnel`, put 127.0.0.1 algo.mrcobra.link in /etc/hosts
+# (tunnel binds 80/443 on localhost; the minikube IP is not reachable for those ports).
+# Backend is reverse-proxy:443 so nginx does not HTTP→HTTPS redirect-loop behind Ingress.
+# TLS uses the shared reverse-proxy-tls secret from base (self-signed).
+patches:
+  - target:
+      kind: Ingress
+      name: moneymaker
+    patch: |-
+      - op: replace
+        path: /metadata/annotations
+        value:
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+          nginx.ingress.kubernetes.io/proxy-ssl-verify: "false"
+      - op: replace
+        path: /spec/ingressClassName
+        value: nginx
+      - op: add
+        path: /spec/rules/0/host
+        value: algo.mrcobra.link
+      - op: replace
+        path: /spec/rules/0/http/paths/0/backend/service/port/number
+        value: 443
+      - op: replace
+        path: /spec/tls
+        value:
+          - hosts:
+              - algo.mrcobra.link
+            secretName: reverse-proxy-tls

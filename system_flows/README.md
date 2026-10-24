@@ -61,4 +61,4 @@ Please refer to the specific files below for detailed deep dives:
 3. **[Backtest Flow](backtest_flow.md)**: Details the chronological flow of historical data starting from the `backtest-streamer`, through the `backtest-client`, strategy chooser, strategy consumer, up to the mock trade execution in `BackTestApp`.
 4. **[Kafka Topics & Services](kafka_and_services.md)**: Documenting all Kafka brokers, topics, consumers, partitioners, and the shape of JSON messages.
 5. **[Microservices & REST APIs](microservices_and_api.md)**: Describes all Express endpoints, controllers, and utility classes, including database collections and authentication.
-6. **[Docker & Infrastructure](docker_and_stack.md)**: Summarizes the container definitions in `docker-compose.yml`, overlay networks, configurations, and volumes.
+6. **[Kubernetes & Infrastructure](docker_and_stack.md)**: Summarizes the k3s workloads, DNS names, host ports, and volumes.

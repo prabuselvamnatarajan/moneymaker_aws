@@ -13,6 +13,10 @@ RUN npm install
 # Copy the rest of the application code to the working directory
 COPY . .
 
+# Shared libs previously bind-mounted by docker-compose (required for k8s)
+COPY ./redis_utils_bake/redis_operations /app/redis_utils/redis_operations
+COPY ./redis_utils_bake/AuthoriseUpstoxClient.js /app/redis_utils/AuthoriseUpstoxClient.js
+
 # Expose the port the app runs on
 EXPOSE 80
 

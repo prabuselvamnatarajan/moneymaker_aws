@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: get-fullmarketquote
+  namespace: moneymaker
+  labels:
+    app: get-fullmarketquote
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  type: ClusterIP
+  selector:
+    app: get-fullmarketquote
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: get-fullmarketquote
+  namespace: moneymaker
+  labels:
+    app: get-fullmarketquote
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: get-fullmarketquote
+  template:
+    metadata:
+      labels:
+        app: get-fullmarketquote
+        app.kubernetes.io/part-of: moneymaker
+    spec:
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              for h in mongo1:27017 mongo2:27017 mongo3:27017 redis:6379; do
+                host="${h%%:*}"; port="${h##*:}"
+                echo "Waiting for $host:$port..."
+                until nc -z "$host" "$port"; do sleep 2; done
+                echo "Ready: $host:$port"
+              done
+      containers:
+        - name: get-fullmarketquote
+          image: get-fullmarketquote:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: PORT
+              value: '80'
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: REDIS_URL
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: MONGODB_URI
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: get-fullmarketquote
+  labels:
+    app: get-fullmarketquote
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: get-fullmarketquote
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 90
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 90
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

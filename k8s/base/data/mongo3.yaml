@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo3
+  namespace: moneymaker
+  labels:
+    app: mongo3
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  # Headless so RS member DNS resolves to the pod IP (avoids ClusterIP hairpin
+  # which makes mongod isSelf fail: "No host ... maps to this node").
+  # Same pattern as Bitnami mongodb-headless Service.
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: mongo3
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: 27017
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo3
+  namespace: moneymaker
+  labels:
+    app: mongo3
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  serviceName: mongo3
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo3
+  template:
+    metadata:
+      labels:
+        app: mongo3
+        app.kubernetes.io/part-of: moneymaker
+        app.kubernetes.io/component: mongo
+    spec:
+      hostname: mongo3
+      subdomain: mongo3
+      containers:
+        - name: mongo
+          image: mongo:6.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/init.sh"]
+          ports:
+            - containerPort: 27017
+              hostPort: 27019
+              name: mongodb
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+            - name: mongo-config
+              mountPath: /etc/mongod.conf
+              subPath: mongod.conf
+              readOnly: true
+            - name: mongo-config
+              mountPath: /etc/mongod-bootstrap.conf
+              subPath: mongod-bootstrap.conf
+              readOnly: true
+            - name: mongo-config
+              mountPath: /init.sh
+              subPath: init-mongo.sh
+              readOnly: true
+            - name: mongo-keyfile
+              mountPath: /etc/mongo-keyfile
+              subPath: mongo-keyfile
+              readOnly: true
+            - name: init-signal
+              mountPath: /init-signal
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: mongo-config
+          configMap:
+            name: mongo-config
+            defaultMode: 0755
+        - name: mongo-keyfile
+          secret:
+            secretName: mongo-keyfile
+            defaultMode: 0400
+        - name: init-signal
+          hostPath:
+            path: /var/lib/moneymaker/mongo-init-signal
+            type: DirectoryOrCreate
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

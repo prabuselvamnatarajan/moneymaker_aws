@@ -1,3 +1,5 @@
+# Catalog only. Do not deploy this file.
+# Runtime is Kubernetes: ./scripts/deploy-k8s.sh  (or ./build-all.sh)
 version: '3.8'
 
 services:
@@ -894,6 +896,5 @@ networks:
 
 
 
-#  docker stack deploy --detach=false --compose-file docker-compose.yml moneymaker
-
-#  docker stack rm moneymaker
+#  ./scripts/deploy-k8s.sh --overlay full
+#  ./kill-moneymaker.sh

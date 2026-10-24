@@ -3,8 +3,8 @@
 ROOT="$(CDPATH= cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-STACK_NAME=moneymaker
-SERVICE_NAME="${STACK_NAME}_backtest-app"
+NAMESPACE=moneymaker
+DEPLOYMENT=backtest-app
 SEED_SCRIPT="src/db/clear_and_seed.js"
 SKIP_CONFIRM=false
 
@@ -12,10 +12,10 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [--yes]
 
-Wipe and reseed the BacktestApp MongoDB database in the running production stack.
+Wipe and reseed the BacktestApp MongoDB database in the running Kubernetes stack.
 
-This runs BackTest/BackTestApp/src/db/clear_and_seed.js inside the
-${SERVICE_NAME} container using the service's existing environment variables.
+This runs BackTest/BackTestApp/src/db/clear_and_seed.js inside a ${DEPLOYMENT}
+pod using the pod's existing environment variables.
 
 Options:
   --yes, -y   Skip confirmation prompt
@@ -41,18 +41,24 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-if ! docker info 2>/dev/null | grep -q "Swarm: active"; then
-  echo "ERROR: Docker Swarm is not active." >&2
+if ! command -v kubectl >/dev/null 2>&1; then
+  echo "ERROR: kubectl is not installed or not on PATH." >&2
   exit 1
 fi
 
-container_id="$(docker ps \
-  --filter "label=com.docker.swarm.service.name=${SERVICE_NAME}" \
-  --filter "status=running" \
-  -q | head -n 1)"
+if ! kubectl -n "$NAMESPACE" get deployment "$DEPLOYMENT" >/dev/null 2>&1; then
+  echo "ERROR: Deployment ${NAMESPACE}/${DEPLOYMENT} not found." >&2
+  echo "Deploy the stack first with: sh build-all.sh" >&2
+  exit 1
+fi
 
-if [ -z "$container_id" ]; then
-  echo "ERROR: No running container found for ${SERVICE_NAME}." >&2
+pod="$(kubectl -n "$NAMESPACE" get pods \
+  -l "app=${DEPLOYMENT}" \
+  --field-selector=status.phase=Running \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+
+if [ -z "$pod" ]; then
+  echo "ERROR: No running pod found for deployment ${DEPLOYMENT}." >&2
   echo "Deploy the stack first with: sh build-all.sh" >&2
   exit 1
 fi
@@ -68,5 +74,5 @@ if [ "$SKIP_CONFIRM" != true ]; then
   fi
 fi
 
-echo "Running clear_and_seed.js in ${SERVICE_NAME} (container ${container_id})..."
-docker exec "$container_id" node "$SEED_SCRIPT"
+echo "Running clear_and_seed.js in ${DEPLOYMENT} (pod ${pod})..."
+kubectl -n "$NAMESPACE" exec "$pod" -- node "$SEED_SCRIPT"

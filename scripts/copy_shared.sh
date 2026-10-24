@@ -3,6 +3,7 @@
 # Usage:
 #   . ./scripts/copy_shared.sh
 #   build_strategy ./kafka/services/Strategies/liquidity_sweep liquidity-sweep-strategy:latest
+#   build_microservice ./MicroServices/Orders/placeOrders placeorder:latest placeorder
 
 copy_shared() {
   target=$1
@@ -32,4 +33,41 @@ build_strategy() {
   docker build -t "$image_tag" "$target"
   clean_shared "$target"
   rm -f "$target/account_utils.js"
+}
+
+# Bake files that docker-compose bind-mounted into microservice containers.
+# mode:
+#   redis      — redis_operations only (upstock-login)
+#   auth       — redis_operations + AuthoriseUpstoxClient.js
+#   placeorder — redis_operations + AuthoriseUpstoxClient.js + account_utils.js
+build_microservice() {
+  target=$1
+  image_tag=$2
+  mode=${3:-auth}
+
+  mkdir -p "$target/redis_utils_bake"
+  cp -r ./appInit/redis_operations "$target/redis_utils_bake/redis_operations"
+
+  case "$mode" in
+    redis)
+      ;;
+    auth)
+      cp ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js \
+        "$target/redis_utils_bake/AuthoriseUpstoxClient.js"
+      ;;
+    placeorder)
+      cp ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js \
+        "$target/redis_utils_bake/AuthoriseUpstoxClient.js"
+      cp ./MicroServices/Shared/Accounts/account_utils.js \
+        "$target/redis_utils_bake/account_utils.js"
+      ;;
+    *)
+      echo "ERROR: unknown microservice bake mode: $mode" >&2
+      rm -rf "$target/redis_utils_bake"
+      return 1
+      ;;
+  esac
+
+  docker build -t "$image_tag" "$target"
+  rm -rf "$target/redis_utils_bake"
 }

@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-symbol-resolver-consumer
+  namespace: moneymaker
+  labels:
+    app: deployment-symbol-resolver-consumer
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  type: ClusterIP
+  selector:
+    app: deployment-symbol-resolver-consumer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-symbol-resolver-consumer
+  namespace: moneymaker
+  labels:
+    app: deployment-symbol-resolver-consumer
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deployment-symbol-resolver-consumer
+  template:
+    metadata:
+      labels:
+        app: deployment-symbol-resolver-consumer
+        app.kubernetes.io/part-of: moneymaker
+    spec:
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              for h in zookeeper:2181 kafka-broker-1:9092 kafka-broker-2:9092 kafka-broker-3:9092 redis:6379 backtest-app:80; do
+                host="${h%%:*}"; port="${h##*:}"
+                echo "Waiting for $host:$port..."
+                until nc -z "$host" "$port"; do sleep 2; done
+                echo "Ready: $host:$port"
+              done
+      containers:
+        - name: deployment-symbol-resolver-consumer
+          image: deployment-symbol-resolver-consumer:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: SERVICE_NAME
+              value: 'deployment-symbol-resolver-consumer'
+            - name: SERVICE_MODE
+              value: 'live'
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: REDIS_URL
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: KAFKA_BROKERS
+            - name: KAFKA_NUM_PARTITIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: KAFKA_NUM_PARTITIONS
+            - name: BACKTEST_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: BACKTEST_SERVICE_TOKEN
+            - name: TARGET_TOPIC
+              value: 'splited-live-data,backtest-stream-data'
+            - name: TARGET_GROUP_ID
+              value: 'deployment_symbol_resolver_group'
+            - name: BACKTEST_APP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: BACKTEST_APP_URL_DIRECT
+            - name: SYMBOL_CONTROL_INDEX_REFRESH_MS
+              value: '10000'
+            - name: SYMBOL_CONTROL_RESOLVE_THROTTLE_MS
+              value: '5000'
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: deployment-symbol-resolver-consumer
+  labels:
+    app: deployment-symbol-resolver-consumer
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: deployment-symbol-resolver-consumer
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 90
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 90
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

@@ -1,0 +1,224 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# efs-storageclass.yaml is a template — edit fileSystemId from terraform
+# output efs_file_system_id, then: kubectl apply -f efs-storageclass.yaml
+resources:
+  - ../../base
+  - mongo-init-signal-pvc.yaml
+
+# ACM certificate ARN from terraform/prod output (acm_certificate_arn).
+# Edit certificate-arn.env then re-apply.
+configMapGenerator:
+  - name: acm-certificate
+    envs:
+      - certificate-arn.env
+    options:
+      disableNameSuffixHash: true
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: acm-certificate
+      fieldPath: data.CERTIFICATE_ARN
+    targets:
+      - select:
+          kind: Ingress
+          name: moneymaker
+        fieldPaths:
+          - metadata.annotations.[alb.ingress.kubernetes.io/certificate-arn]
+
+patches:
+  # --- Ingress: ALB + ACM (TLS terminated at the load balancer) ---
+  - target:
+      kind: Ingress
+      name: moneymaker
+    patch: |-
+      - op: replace
+        path: /metadata/annotations
+        value:
+          alb.ingress.kubernetes.io/scheme: internet-facing
+          alb.ingress.kubernetes.io/target-type: ip
+          alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+          alb.ingress.kubernetes.io/ssl-redirect: "443"
+          alb.ingress.kubernetes.io/certificate-arn: PLACEHOLDER
+      - op: replace
+        path: /spec/ingressClassName
+        value: alb
+      - op: add
+        path: /spec/rules/0/host
+        value: algo.mrcobra.link
+      - op: remove
+        path: /spec/tls
+
+  # --- Swarm replica floor: Deployment replicas + HPA minReplicas = 3 ---
+  - target:
+      kind: Deployment
+      name: wsdatasplitter-consumer
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: wsdatasplitter-consumer
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: price-storer-consumer
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: price-storer-consumer
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: order-storer-consumer
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: order-storer-consumer
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: strategy-chooser-consumer
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: strategy-chooser-consumer
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: backtest-streamer
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: backtest-streamer
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: backtest-client
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: backtest-client
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+
+  # --- Shared backtest volume: RWX on EFS (multi-replica streamer) ---
+  - path: backtest-data-patch.yaml
+    target:
+      kind: PersistentVolumeClaim
+      name: backtest-data
+
+  # --- Drop hostPort (pins pods to one node; not used on EKS) ---
+  - target:
+      kind: StatefulSet
+      name: mongo1
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+      - op: remove
+        path: /spec/template/spec/volumes/2/hostPath
+      - op: add
+        path: /spec/template/spec/volumes/2/persistentVolumeClaim
+        value:
+          claimName: mongo-init-signal
+  - target:
+      kind: StatefulSet
+      name: mongo2
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+      - op: remove
+        path: /spec/template/spec/volumes/2/hostPath
+      - op: add
+        path: /spec/template/spec/volumes/2/persistentVolumeClaim
+        value:
+          claimName: mongo-init-signal
+  - target:
+      kind: StatefulSet
+      name: mongo3
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+      - op: remove
+        path: /spec/template/spec/volumes/2/hostPath
+      - op: add
+        path: /spec/template/spec/volumes/2/persistentVolumeClaim
+        value:
+          claimName: mongo-init-signal
+  - target:
+      kind: StatefulSet
+      name: kafka-broker-1
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+  - target:
+      kind: StatefulSet
+      name: kafka-broker-2
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+  - target:
+      kind: StatefulSet
+      name: kafka-broker-3
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+  - target:
+      kind: StatefulSet
+      name: zookeeper
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+  - target:
+      kind: Deployment
+      name: mongo-express
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+  - target:
+      kind: Deployment
+      name: redisinsight
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort

@@ -1,0 +1,213 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backtest-app
+  namespace: moneymaker
+  labels:
+    app.kubernetes.io/part-of: moneymaker
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backtest-app-pod-reader
+  namespace: moneymaker
+  labels:
+    app.kubernetes.io/part-of: moneymaker
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backtest-app-pod-reader
+  namespace: moneymaker
+  labels:
+    app.kubernetes.io/part-of: moneymaker
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backtest-app-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: backtest-app
+    namespace: moneymaker
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backtest-app
+  namespace: moneymaker
+  labels:
+    app: backtest-app
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  type: ClusterIP
+  selector:
+    app: backtest-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backtest-app
+  namespace: moneymaker
+  labels:
+    app: backtest-app
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backtest-app
+  template:
+    metadata:
+      labels:
+        app: backtest-app
+        app.kubernetes.io/part-of: moneymaker
+    spec:
+      serviceAccountName: backtest-app
+      automountServiceAccountToken: true
+      initContainers:
+        - name: wait-deps
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              for h in mongo1:27017 mongo2:27017 mongo3:27017 redis:6379 zookeeper:2181 kafka-broker-1:9092 kafka-broker-2:9092 kafka-broker-3:9092; do
+                host="${h%%:*}"; port="${h##*:}"
+                echo "Waiting for $host:$port..."
+                until nc -z "$host" "$port"; do sleep 2; done
+                echo "Ready: $host:$port"
+              done
+      containers:
+        - name: backtest-app
+          image: backtestapp:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PORT
+              value: '80'
+            - name: MONGO_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: MONGO_DB_BACKTEST
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: MONGO_URI
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: JWT_ACCESS_SECRET
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: JWT_REFRESH_SECRET
+            - name: BACKTEST_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: BACKTEST_SERVICE_TOKEN
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: REDIS_URL
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: KAFKA_BROKERS
+            - name: KAFKA_NUM_PARTITIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: KAFKA_NUM_PARTITIONS
+            - name: GET_LTP_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: GET_LTP_SERVICE_URL
+            - name: GET_OPTION_CHAIN_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: GET_OPTION_CHAIN_SERVICE_URL
+            - name: SHARED_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: common-env
+                  key: SHARED_DIR
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: backtest-data
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backtest-app
+  labels:
+    app: backtest-app
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backtest-app
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 90
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 90
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

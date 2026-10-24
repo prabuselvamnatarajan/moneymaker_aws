@@ -10,6 +10,9 @@ RUN npm install
 # Copy the application code
 COPY . .
 
+# Shared libs previously bind-mounted by docker-compose (required for k8s)
+COPY ./redis_utils_bake/redis_operations /app/redis_utils/redis_operations
+
 # Expose the port
 EXPOSE 80
 

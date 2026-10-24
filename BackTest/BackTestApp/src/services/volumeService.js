@@ -28,13 +28,38 @@ function getSharedDirRoot() {
 }
 
 // Standard known volume locations and environment overrides
-const SYSTEM_VOLUMES = [
-  { name: "backtest-data", path: getSharedDirRoot(), driver: "local" },
-  { name: "shared-space", path: path.join(getSharedDirRoot(), "space"), driver: "local" },
-  { name: "exported_stock_data", path: path.join(getSharedDirRoot(), "exported_stock_data"), driver: "local" },
-  { name: "mongo1-data", path: "/var/lib/docker/volumes/moneymaker_mongo1-data/_data", driver: "local" },
-  { name: "redis_data", path: "/var/lib/docker/volumes/moneymaker_redis_data/_data", driver: "local" },
-];
+function getSystemVolumes() {
+  const shared = getSharedDirRoot();
+  const volumes = [
+    { name: "backtest-data", path: shared, driver: "local" },
+    { name: "shared-space", path: path.join(shared, "space"), driver: "local" },
+    {
+      name: "exported_stock_data",
+      path: path.join(shared, "exported_stock_data"),
+      driver: "local",
+    },
+  ];
+
+  // Host Docker volume paths are only meaningful outside Kubernetes.
+  if (!process.env.KUBERNETES_SERVICE_HOST) {
+    volumes.push(
+      {
+        name: "mongo1-data",
+        path: "/var/lib/docker/volumes/moneymaker_mongo1-data/_data",
+        driver: "local",
+      },
+      {
+        name: "redis_data",
+        path: "/var/lib/docker/volumes/moneymaker_redis_data/_data",
+        driver: "local",
+      }
+    );
+  }
+
+  return volumes;
+}
+
+const SYSTEM_VOLUMES = getSystemVolumes();
 
 /**
  * Dynamically list Docker volumes or system volume locations.
@@ -43,7 +68,7 @@ export async function listVolumes() {
   const volumeMap = new Map();
 
   // Initialize with system default/configured volume locations
-  for (const vol of SYSTEM_VOLUMES) {
+  for (const vol of getSystemVolumes()) {
     if (fs.existsSync(vol.path)) {
       try {
         const stats = await fs.promises.stat(vol.path);
@@ -60,7 +85,9 @@ export async function listVolumes() {
     }
   }
 
-  // Attempt to query Docker CLI for Swarm / application volumes if docker command is available
+  // Attempt to query Docker CLI for Swarm / application volumes if docker command is available.
+  // Skip in Kubernetes — host docker volume paths are not mounted into the pod.
+  if (!process.env.KUBERNETES_SERVICE_HOST) {
   try {
     const { stdout } = await execAsync("docker volume ls --format '{\"name\":\"{{.Name}}\",\"driver\":\"{{.Driver}}\",\"scope\":\"{{.Scope}}\"}'");
     const lines = stdout.trim().split("\n");
@@ -97,6 +124,7 @@ export async function listVolumes() {
     }
   } catch (err) {
     // Docker CLI not available or insufficient permissions inside container — fallback to system volume map
+  }
   }
 
   // Ensure at least shared application volume is present if no volume exists

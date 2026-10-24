@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (gitignored locally) and adjust.
+# Do not commit real secrets. This scaffold has no secrets.
+
+aws_region         = "ap-south-1"
+cluster_name       = "moneymaker-prod"
+vpc_cidr           = "10.40.0.0/16"
+availability_zones = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
+
+node_instance_types = ["t3.xlarge"]
+node_desired_size   = 3
+node_min_size       = 2
+node_max_size       = 6
+
+domain_name       = "algo.mrcobra.link"
+route53_zone_name = "mrcobra.link"
+kubernetes_version = "1.29"

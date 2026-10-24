@@ -1,0 +1,79 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: moneymaker
+
+resources:
+  - namespace.yaml
+  - config/app-secrets.yaml
+  - config/common-env.yaml
+  - data/mongo-config.yaml
+  - data/zookeeper.yaml
+  - data/kafka-broker-1.yaml
+  - data/kafka-broker-2.yaml
+  - data/kafka-broker-3.yaml
+  - data/mongo1.yaml
+  - data/mongo2.yaml
+  - data/mongo3.yaml
+  - data/redis.yaml
+  - gateway/reverse-proxy.yaml
+  - gateway/ingress.yaml
+  - backtest/backtest-data.yaml
+  - backtest/backtest-app.yaml
+  - backtest/backtest-ui.yaml
+  - backtest/backtest-streamer.yaml
+  - backtest/backtest-client.yaml
+  - consumers/wsdatasplitter-consumer.yaml
+  - consumers/price-storer-consumer.yaml
+  - consumers/order-storer-consumer.yaml
+  - consumers/strategy-chooser-consumer.yaml
+  - consumers/position-tracker-consumer.yaml
+  - consumers/deployment-symbol-resolver-consumer.yaml
+  - consumers/stream-to-client.yaml
+  - microservices/upstock-login.yaml
+  - microservices/connect-upstox-web-socket.yaml
+  - microservices/get-ltp.yaml
+  - microservices/get-ohlc.yaml
+  - microservices/get-fullmarketquote.yaml
+  - microservices/get-orderbook.yaml
+  - microservices/get-funds-and-margin.yaml
+  - microservices/get-put-call-option-chain.yaml
+  - microservices/get-option-contracts.yaml
+  - microservices/placeorder.yaml
+  - strategies/msb-strategy.yaml
+  - strategies/msb-strategy-backtest.yaml
+  - strategies/msb-pts-strategy.yaml
+  - strategies/msb-pts-strategy-backtest.yaml
+  - strategies/liquidity-sweep-strategy.yaml
+  - strategies/liquidity-sweep-strategy-backtest.yaml
+  - scheduled/appinit.yaml
+  - scheduled/exporttofile.yaml
+  - scheduled/mongo-express.yaml
+  - scheduled/redisinsight.yaml
+
+# File-backed secrets (paths relative to this kustomization.yaml)
+# File copies live under files/ (kustomize load-restrictor). Sync from
+# mongo/mongo-keyfile and certs/ via scripts/deploy-k8s.sh before apply.
+secretGenerator:
+  - name: mongo-keyfile
+    files:
+      - mongo-keyfile=files/mongo-keyfile
+    options:
+      disableNameSuffixHash: true
+  - name: reverse-proxy-tls
+    files:
+      - tls.crt=files/tls.crt
+      - tls.key=files/tls.key
+    type: kubernetes.io/tls
+    options:
+      disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: nginx-conf
+    files:
+      - nginx.conf=files/nginx.conf
+    options:
+      disableNameSuffixHash: true
+
+generatorOptions:
+  disableNameSuffixHash: true

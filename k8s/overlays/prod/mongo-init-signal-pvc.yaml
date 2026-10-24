@@ -1,0 +1,17 @@
+# Shared Mongo bootstrap signal across mongo1/2/3 on multi-node EKS.
+# Requires the EFS CSI StorageClass from terraform/prod (see README).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-init-signal
+  namespace: moneymaker
+  labels:
+    app.kubernetes.io/part-of: moneymaker
+    app.kubernetes.io/component: mongo
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 1Gi
