@@ -358,6 +358,9 @@ ensure_ingress() {
           _i=$((_i + 1))
           sleep 2
         done
+      if kubectl get configmap ingress-nginx-controller -n ingress-nginx >/dev/null 2>&1; then
+        kubectl -n ingress-nginx patch configmap ingress-nginx-controller --type=merge \
+          -p '{"data":{"use-forwarded-headers":"true"}}' >/dev/null 2>&1 || true
       fi
     fi
     # full/ci on minikube still retarget Traefik → nginx after apply.

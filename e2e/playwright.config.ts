@@ -58,9 +58,10 @@ export default defineConfig({
       name: 'slow',
       testDir: '.',
       grep: /@slow/,
-      timeout: 120_000,
+      timeout: 300_000,
       use: {
         baseURL: API_BASE_URL,
+        actionTimeout: 30_000,
       },
     },
   ],

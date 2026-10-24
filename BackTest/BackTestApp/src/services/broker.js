@@ -288,7 +288,7 @@ export const deleteBroker = async (brokerId, userId, isAdmin) => {
   if (!broker) {
     throw new Error("Broker not found or you are not authorized to delete it.");
   }
-  if (broker.is_internal) {
+  if (broker.is_internal && !broker.user_id) {
     throw new Error("Internal broker Cobra Trades cannot be deleted.");
   }
 
@@ -300,7 +300,10 @@ export const deleteBroker = async (brokerId, userId, isAdmin) => {
       throw new Error(`Cannot delete broker with active LIVE account associations (${liveAccounts.length} live account(s) linked).`);
     }
     // For non-live accounts linked to an external broker being deleted, fall back to Cobra Trades internal broker
-    let internalBroker = await Broker.findOne({ is_internal: true });
+    let internalBroker = await Broker.findOne({ is_internal: true, user_id: { $in: [null, undefined] } });
+    if (!internalBroker) {
+      internalBroker = await Broker.findOne({ is_internal: true });
+    }
     if (!internalBroker) {
       internalBroker = await Broker.create({ name: "Cobra Trades", is_internal: true });
     }

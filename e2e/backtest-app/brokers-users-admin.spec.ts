@@ -465,7 +465,7 @@ test('TC-BRK-013: Update credentials merges rather than replaces', async ({ requ
   expect(updated.credentials).toEqual({ a: 1, b: 3, c: 4 });
 });
 
-test('TC-BRK-014: Deleting broker referenced by account leaves dangling broker_id', async ({
+test('TC-BRK-014: Deleting broker referenced by active LIVE account is rejected', async ({
   request,
 }) => {
   const { accessToken } = await loginAsUser(request);
@@ -485,28 +485,8 @@ test('TC-BRK-014: Deleting broker referenced by account leaves dangling broker_i
   expect(String(account.broker_id)).toBe(String(external._id));
 
   const delRes = await apiRequest(request, accessToken).delete(`/brokers/${external._id}`);
-  await expectStatus(delRes, 200);
-
-  const danglingId = await withMongo(async (db) => {
-    const { ObjectId } = await import('mongodb');
-    const query = ObjectId.isValid(account._id)
-      ? { _id: new ObjectId(account._id) }
-      : { account_id: account._id };
-    const doc = await db.collection('accounts').findOne(query);
-    return doc?.broker_id ? String(doc.broker_id) : undefined;
-  });
-  if (danglingId) {
-    expect(danglingId).toBe(String(external._id));
-  }
-
-  const getRes = await apiRequest(request, accessToken).get(`/accounts/${account._id}`);
-  await expectStatus(getRes, 200);
-  const fetched = unwrapData<{ broker_id?: string | BrokerDoc | null }>(await jsonBody(getRes));
-  const populatedId =
-    fetched.broker_id && typeof fetched.broker_id === 'object'
-      ? fetched.broker_id._id
-      : fetched.broker_id;
-  expect(populatedId == null || String(populatedId) === String(external._id)).toBe(true);
+  await expectStatus(delRes, 500);
+  await expectMessageContains(delRes, 'Cannot delete broker with active LIVE account associations');
 });
 
 async function resolveExternalBroker(request: APIRequestContext, token: string): Promise<BrokerDoc> {

@@ -8,26 +8,46 @@ function liveKey(positionId) {
   return `position:live:${positionId}`;
 }
 
-async function withRedis(fn) {
+let sharedClient = null;
+let sharedClientPromise = null;
+
+async function getSharedClient() {
   const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl) {
+  if (!redisUrl) return null;
+  if (sharedClient && sharedClient.isOpen) return sharedClient;
+  if (sharedClientPromise) return sharedClientPromise;
+
+  sharedClientPromise = (async () => {
+    try {
+      const client = createClient({ url: redisUrl });
+      client.on("error", (err) => {
+        console.error(`[PositionRedis] client error: ${err.message}`);
+        sharedClient = null;
+      });
+      await client.connect();
+      sharedClient = client;
+      return sharedClient;
+    } catch (err) {
+      console.error(`[PositionRedis] connect error: ${err.message}`);
+      sharedClient = null;
+      return null;
+    } finally {
+      sharedClientPromise = null;
+    }
+  })();
+  return sharedClientPromise;
+}
+
+async function withRedis(fn) {
+  const client = await getSharedClient();
+  if (!client || !client.isOpen) {
     return null;
   }
-  let client;
   try {
-    client = createClient({ url: redisUrl });
-    // node-redis surfaces post-connect socket failures as an 'error' event, which
-    // is an uncaught exception (process exit) unless a listener is attached.
-    client.on("error", (err) => console.error(`[PositionRedis] client error: ${err.message}`));
-    await client.connect();
     return await fn(client);
   } catch (err) {
     console.error(`[PositionRedis] ${err.message}`);
     return null;
-  } finally {
-    if (client) {
-      await client.disconnect().catch(() => {});
-    }
   }
 }
 

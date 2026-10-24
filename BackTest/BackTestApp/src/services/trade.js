@@ -20,6 +20,8 @@ import {
   deleteDeploymentCloseTime,
   removePositionFromOpenSymbolSet,
   addPositionToOpenSymbolSet,
+  withRedis,
+  setJson,
 } from "../utils/positionRedis.js";
 
 
@@ -691,11 +693,9 @@ const runCreateTrade = async (tradeData) => {
       const accIdStr = account?._id?.toString() || account?.account_id;
       const balanceKey = isBacktestMode && depIdStr ? `account_balance:${depIdStr}` : `account_balance:${accIdStr}`;
       if (balanceKey) {
-        if (typeof client.json?.set === 'function') {
-          await client.json.set(balanceKey, '.', { balance: closing_balance });
-        } else {
-          await client.set(balanceKey, JSON.stringify({ balance: closing_balance }));
-        }
+        await withRedis(async (client) => {
+          await setJson(client, balanceKey, { balance: closing_balance });
+        });
       }
     } catch (err) {
       console.error(`[createTrade] Redis account balance update failed: ${err.message}`);

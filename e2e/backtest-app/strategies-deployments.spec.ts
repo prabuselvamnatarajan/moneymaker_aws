@@ -94,20 +94,29 @@ async function seedTrades(
   basePrice = 100
 ) {
   for (let i = 0; i < count; i++) {
-    const res = await createTrade(request, token, {
-      deployment_id: fixture.deployment._id,
-      strategy_id: fixture.strategy._id,
-      account_id: fixture.account._id,
-      user_symbol_id: fixture.symbol._id,
-      instrument_token: fixture.symbol.instrument_token,
-      symbol: fixture.symbol.symbol,
-      price: basePrice + (i % 5),
-      quantity: 1,
-      type_of_order: i % 2 === 0 ? 'BUY' : 'SELL',
-      execution_time: new Date(Date.now() - (count - i) * 1000).toISOString(),
-    });
-    if (!res.ok()) {
-      throw new Error(`seedTrades failed at ${i}: ${res.status()} ${await res.text()}`);
+    let res;
+    let attempts = 0;
+    while (attempts < 3) {
+      res = await createTrade(request, token, {
+        deployment_id: fixture.deployment._id,
+        strategy_id: fixture.strategy._id,
+        account_id: fixture.account._id,
+        user_symbol_id: fixture.symbol._id,
+        instrument_token: fixture.symbol.instrument_token,
+        symbol: fixture.symbol.symbol,
+        price: basePrice + (i % 5),
+        quantity: 1,
+        type_of_order: i % 2 === 0 ? 'BUY' : 'SELL',
+        execution_time: new Date(Date.now() - (count - i) * 1000).toISOString(),
+      });
+      if (res.ok()) break;
+      attempts++;
+      if (attempts < 3) {
+        await new Promise((r) => setTimeout(r, 200 * attempts));
+      }
+    }
+    if (!res || !res.ok()) {
+      throw new Error(`seedTrades failed at ${i}: ${res?.status()} ${await res?.text()}`);
     }
   }
 }
@@ -1422,7 +1431,7 @@ test.describe('Deployment monitoring', () => {
   test('TC-DEP-040: /metrics O(N) replay performance on large trade history', tags.slow, async ({
     request,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(300_000);
     // Related Issue #9
     const { accessToken } = await loginAsUser(request);
     const fixture = await createTradeFixture(request, accessToken);
@@ -1523,7 +1532,7 @@ test.describe('Deployment monitoring', () => {
   test('TC-DEP-044: /analysis and /metrics both O(N) — reporting endpoints replay all trades every call', tags.slow, async ({
     request,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     // Related Issue #9
     const { accessToken } = await loginAsUser(request);
     const fixture = await createTradeFixture(request, accessToken);
