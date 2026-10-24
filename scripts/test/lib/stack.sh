@@ -59,7 +59,7 @@ log_swarm_service_state() {
   log_k8s_workload_state "deployment/${_name}"
 }
 
-# Wait until URL returns HTTP success (curl -sf).
+# Wait until URL returns HTTP success (curl -sfL -k).
 # Args: url [max_retries] [delay_seconds]
 wait_for_url() {
   _url="$1"
@@ -69,7 +69,7 @@ wait_for_url() {
 
   log_info "Waiting for $_url (max ${_max}x${_delay}s)"
   while [ "$_i" -lt "$_max" ]; do
-    if curl -sf --max-time 5 "$_url" >/dev/null 2>&1; then
+    if curl -sfL -k --max-time 10 "$_url" >/dev/null 2>&1; then
       log_info "Ready: $_url"
       return 0
     fi
@@ -84,7 +84,7 @@ wait_for_url() {
 _probe_backtest_health() {
   _url="$1"
   _tmp="$(mktemp 2>/dev/null || echo /tmp/mm-health.$$)"
-  _code=$(curl -sS -o "$_tmp" -w "%{http_code}" --max-time 5 "$_url" 2>/dev/null || echo "000")
+  _code=$(curl -sSL -k -o "$_tmp" -w "%{http_code}" --max-time 10 "$_url" 2>/dev/null || echo "000")
   _body=$(cat "$_tmp" 2>/dev/null || true)
   rm -f "$_tmp" 2>/dev/null || true
   case "$_body" in
