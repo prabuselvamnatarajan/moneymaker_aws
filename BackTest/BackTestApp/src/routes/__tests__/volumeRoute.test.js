@@ -64,4 +64,42 @@ test("volumeRoute HTTP & security authorization integration tests", async (t) =>
     assert.ok(caughtErr);
     assert.ok(caughtErr.message.includes("Directory name is required"));
   });
+
+  await t.test("Upload file middleware and ingress configuration enforces 500MB capacity", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const url = await import("url");
+
+    const currentFile = url.fileURLToPath(import.meta.url);
+    const rootDir = path.resolve(path.dirname(currentFile), "../../../../..");
+
+    // 1. Verify volumeRoute.js multer configuration limits fileSize to 500MB
+    const volumeRoutePath = path.resolve(path.dirname(currentFile), "../volumeRoute.js");
+    const volumeRouteContent = fs.readFileSync(volumeRoutePath, "utf-8");
+    assert.match(volumeRouteContent, /fileSize:\s*500\s*\*\s*1024\s*\*\s*1024/);
+
+    // 2. Verify k8s dev overlay ingress configures nginx.ingress.kubernetes.io/proxy-body-size to 500m
+    const devOverlayPath = path.resolve(rootDir, "k8s/overlays/dev/kustomization.yaml");
+    const devOverlayContent = fs.readFileSync(devOverlayPath, "utf-8");
+    assert.match(devOverlayContent, /nginx\.ingress\.kubernetes\.io\/proxy-body-size:\s*["']500m["']/);
+
+    // 3. Verify reverse-proxy and CI nginx configs configure client_max_body_size 500M
+    const nginxConfigs = [
+      path.resolve(rootDir, "certs/nginx.conf"),
+      path.resolve(rootDir, "certs/nginx.ci.conf"),
+      path.resolve(rootDir, "certs/nginx.ci.k8s.conf"),
+      path.resolve(rootDir, "k8s/base/files/nginx.conf"),
+      path.resolve(rootDir, "k8s/overlays/ci/files/nginx.conf"),
+    ];
+
+    for (const confPath of nginxConfigs) {
+      const confContent = fs.readFileSync(confPath, "utf-8");
+      assert.match(
+        confContent,
+        /client_max_body_size\s+500M;/,
+        `Missing client_max_body_size 500M in ${path.basename(confPath)}`
+      );
+    }
+  });
 });
+
