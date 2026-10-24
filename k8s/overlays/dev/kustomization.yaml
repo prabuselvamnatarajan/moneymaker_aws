@@ -20,6 +20,7 @@ patches:
           nginx.ingress.kubernetes.io/ssl-redirect: "true"
           nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
           nginx.ingress.kubernetes.io/proxy-ssl-verify: "false"
+          nginx.ingress.kubernetes.io/proxy-body-size: "500m"
       - op: replace
         path: /spec/ingressClassName
         value: nginx
