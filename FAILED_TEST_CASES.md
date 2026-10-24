@@ -1,6 +1,6 @@
-# Failed Test Cases Report
+# Failed & Skipped Test Cases Report
 
-**Date & Time:** 2026-10-24 16:15 IST  
+**Date & Time:** 2026-10-24 16:35 IST  
 **Environment:** Linux / Local Minikube (`https://algo.mrcobra.link/backtestapp`)  
 **Node.js Runtime:** v20.20.1
 
@@ -19,7 +19,7 @@
 | `kafka/services/Strategies/msb_pts` | MSB PTS Strategy & Risk Rules | 20 | 20 | 0 | 0 |
 | `kafka/services/positionTrackerConsumer` | Real-time Position Tracking | 19 | 19 | 0 | 0 |
 | `kafka/services/StrategyChooserConsumer` | Strategy Routing & Tick Isolation | 6 | 6 | 0 | 0 |
-| `e2e/backtest-app` (Playwright API) | E2E API & Integration | 253 | 230 | 15 | **8** |
+| `e2e/backtest-app` (Playwright API) | E2E API & Integration | 253 | 230 | **15** | **8** |
 
 ---
 
@@ -140,3 +140,69 @@
   ```
 - **Root Cause:**
   Deployment setup timed out on `POST /deployments` due to backpressure / queuing from preceding heavy tests.
+
+---
+
+## Detailed List of Skipped Test Cases
+
+The E2E suite skipped **15** test cases due to intentional environmental prerequisites (missing optional sub-stacks like option-chain/market-quote data, offline tick files, or dedicated no-secrets configurations):
+
+### 1. `TC-ADM-015: authorize() middleware wired to zero routes — duplicate of TC-RBAC-001 (#41)`
+- **File:** [brokers-users-admin.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/brokers-users-admin.spec.ts#L959)
+- **Reason:** Intentionally skipped: exact duplicate audit of `TC-RBAC-001` in `iam-auth.spec.ts`.
+
+### 2. `TC-AUTH-013: JWT secrets fall back to hardcoded defaults when env unset (#36)`
+- **File:** [iam-auth.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/iam-auth.spec.ts#L364)
+- **Reason:** Requires `API_NO_SECRETS_BASE_URL` (stack started intentionally without `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`).
+
+### 3. `TC-AUTH-015: forged access token using default secret accepted by authenticate() (#36)`
+- **File:** [iam-auth.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/iam-auth.spec.ts#L402)
+- **Reason:** Requires `API_NO_SECRETS_BASE_URL` (requires a container instance configured without JWT secret environment variables).
+
+### 4. `TC-RBAC-002: fine-grained Permissions on Role have no API effect`
+- **File:** [iam-auth.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/iam-auth.spec.ts#L1165)
+- **Reason:** Requires direct `MONGO_URI` connection to inject mock restrictive role directly into database.
+
+### 5. `TC-DEP-011: Deploy dialog defaults to LIVE mode + active status (regression guard)`
+- **File:** [strategies-deployments.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/strategies-deployments.spec.ts#L613)
+- **Reason:** UI test only; validated in UI suite (`e2e/backtest-ui/deploy-dialog.spec.ts: TC-UI-024`).
+
+### 6. `TC-DEP-017: Re-resolve deferred when an open position exists`
+- **File:** [strategies-deployments.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/strategies-deployments.spec.ts#L803)
+- **Reason:** Requires live option-chain microservices to dynamically resolve underlying strike tokens during deployment creation.
+
+### 7. `TC-DEP-018: Resolve conflicts with another active deployment already on the target token`
+- **File:** [strategies-deployments.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/strategies-deployments.spec.ts#L862)
+- **Reason:** Requires live option-chain microservices to create initial underlying symbol control deployment.
+
+### 8. `TC-DEP-019: Resolve is a no-op when target token and strike are unchanged`
+- **File:** [strategies-deployments.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/strategies-deployments.spec.ts#L919)
+- **Reason:** Requires live option-chain microservices.
+
+### 9. `TC-DEP-021: Redis key migration on symbol remap renames deployment-scoped keys`
+- **File:** [strategies-deployments.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/strategies-deployments.spec.ts#L968)
+- **Reason:** Requires live option-chain microservices to create symbol control deployment.
+
+### 10. `TC-DEP-031: start/restart/resume with symbol_control.enabled triggers a fresh resolve attempt`
+- **File:** [strategies-deployments.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/strategies-deployments.spec.ts#L1228)
+- **Reason:** Requires live option-chain microservices.
+
+### 11. `TC-TRD-021: legacy cache without OPEN Position synthesizes on scale-in`
+- **File:** [trades-positions.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/trades-positions.spec.ts#L800)
+- **Reason:** Requires direct `MONGO_URI` / `mongosh` access from the runner to drop Position documents while leaving Deployment cache intact.
+
+### 12. `TC-TRD-024: BACKTEST position tracks max_up/max_down from tick files`
+- **File:** [trades-positions.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/trades-positions.spec.ts#L892)
+- **Reason:** Requires local tick files present in `exportedData/<date>/<symbol>.json` volume for excursion replay.
+
+### 13. `TC-TRD-025: excursion tick lookup tries fallback paths`
+- **File:** [trades-positions.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/trades-positions.spec.ts#L942)
+- **Reason:** Requires local tick files in `exportedData/<date>/<symbol>.json`.
+
+### 14. `TC-TRD-027: multi-day BACKTEST aggregates ticks across date range`
+- **File:** [trades-positions.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/trades-positions.spec.ts#L1012)
+- **Reason:** Requires multi-day backtest tick data in `exportedData/`.
+
+### 15. `TC-TRD-036: flush pending symbol resolve after full flat close`
+- **File:** [trades-positions.spec.ts](file:///home/prabu/Desktop/Work%20Folder/MoneyMaker%20GitLab%20AWS/e2e/backtest-app/trades-positions.spec.ts#L1432)
+- **Reason:** Requires option-chain and LTP services to configure dynamic underlying symbol control.
