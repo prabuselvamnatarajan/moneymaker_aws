@@ -52,6 +52,17 @@ if ! kubectl -n "$NAMESPACE" get deployment "$DEPLOYMENT" >/dev/null 2>&1; then
   exit 1
 fi
 
+pod="$(kubectl -n "$NAMESPACE" get pods \
+  -l "app=${DEPLOYMENT}" \
+  --field-selector=status.phase=Running \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+
+if [ -z "$pod" ]; then
+  echo "ERROR: No running pod found for deployment ${DEPLOYMENT}." >&2
+  echo "Deploy the stack first with: sh build-all.sh" >&2
+  exit 1
+fi
+
 if [ "$SKIP_CONFIRM" != true ]; then
   echo "WARNING: This will wipe all BacktestApp data:"
   echo "  users, accounts, brokers, strategies, symbols, deployments, trades, ledgers"
@@ -63,5 +74,5 @@ if [ "$SKIP_CONFIRM" != true ]; then
   fi
 fi
 
-echo "Running clear_and_seed.js in deployment/${DEPLOYMENT}..."
-kubectl -n "$NAMESPACE" exec "deployment/${DEPLOYMENT}" -- node "$SEED_SCRIPT"
+echo "Running clear_and_seed.js in ${DEPLOYMENT} (pod ${pod})..."
+kubectl -n "$NAMESPACE" exec "$pod" -- node "$SEED_SCRIPT"
