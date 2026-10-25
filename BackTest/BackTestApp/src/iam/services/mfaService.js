@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { authenticator } from "otplib";
 import QRCode from "qrcode";
 import * as config from "../config.js";
@@ -21,7 +22,7 @@ function generateBackupCodes(count = 8, length = 8) {
   for (let i = 0; i < count; i += 1) {
     let code = "";
     for (let j = 0; j < length; j += 1) {
-      code += alphabet[Math.floor(Math.random() * alphabet.length)];
+      code += alphabet[crypto.randomInt(0, alphabet.length)];
     }
     codes.push(code);
   }
