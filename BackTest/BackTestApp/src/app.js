@@ -19,6 +19,7 @@ import volumeRoutes from "./routes/volumeRoute.js";
 import dockerRoutes from "./routes/dockerRoute.js";
 
 const app = express();
+app.set("trust proxy", true);
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");

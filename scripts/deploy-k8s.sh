@@ -383,6 +383,19 @@ ensure_ingress() {
     fi
   elif kubectl get ingressclass traefik >/dev/null 2>&1; then
     export MM_INGRESS_CLASS=traefik
+    log "Configuring Traefik forwarded headers..."
+    kubectl apply -f - <<'EOF' >/dev/null 2>&1 || true
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    additionalArguments:
+      - "--entryPoints.web.forwardedHeaders.insecure"
+      - "--entryPoints.websecure.forwardedHeaders.insecure"
+EOF
   else
     export MM_INGRESS_CLASS=""
   fi
