@@ -1,10 +1,10 @@
 import fs from "fs";
 import path from "path";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import * as archiverPkg from "archiver";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 function createArchiver(format, options) {
   const pkg = archiverPkg.default || archiverPkg;
@@ -89,7 +89,7 @@ export async function listVolumes() {
   // Skip in Kubernetes — host docker volume paths are not mounted into the pod.
   if (!process.env.KUBERNETES_SERVICE_HOST) {
   try {
-    const { stdout } = await execAsync("docker volume ls --format '{\"name\":\"{{.Name}}\",\"driver\":\"{{.Driver}}\",\"scope\":\"{{.Scope}}\"}'");
+    const { stdout } = await execFileAsync("docker", ["volume", "ls", "--format", '{"name":"{{.Name}}","driver":"{{.Driver}}","scope":"{{.Scope}}"}']);
     const lines = stdout.trim().split("\n");
     
     for (const line of lines) {
@@ -100,7 +100,7 @@ export async function listVolumes() {
           // If we can inspect it to get actual mountpoint
           let mountpoint = `/var/lib/docker/volumes/${parsed.name}/_data`;
           try {
-            const { stdout: inspectOut } = await execAsync(`docker volume inspect "${parsed.name}"`);
+            const { stdout: inspectOut } = await execFileAsync("docker", ["volume", "inspect", parsed.name]);
             const inspectData = JSON.parse(inspectOut);
             if (inspectData && inspectData[0] && inspectData[0].Mountpoint) {
               mountpoint = inspectData[0].Mountpoint;
