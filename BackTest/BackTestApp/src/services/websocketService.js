@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { parse } from 'url';
+import crypto from 'crypto';
 import * as jwtService from "../iam/utils/jwtService.js";
 import * as authService from "../iam/services/authService.js";
 import Session from "../iam/models/session.js";
@@ -269,7 +270,7 @@ function extractMarketMetrics(feed) {
 
 async function initKafkaConsumer() {
   const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092').split(',');
-  const consumerGroupId = `backtest-app-ws-${Math.random().toString(36).substring(2, 10)}`;
+  const consumerGroupId = `backtest-app-ws-${crypto.randomUUID()}`;
 
   const kafka = new Kafka({
     clientId: 'backtest-app',
