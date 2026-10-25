@@ -40,15 +40,20 @@ export const seedDB = async () => {
       { operation: "read", entity: "ledger", description: "Read ledger" }
     ];
 
-    const seededPermissions = [];
-    for (const p of permissionsData) {
-      let perm = await Permission.findOne({ operation: p.operation, entity: p.entity });
-      if (!perm) {
-        perm = new Permission(p);
-        await perm.save();
+    const bulkOps = permissionsData.map(p => ({
+      updateOne: {
+        filter: { operation: p.operation, entity: p.entity },
+        update: { $set: p },
+        upsert: true
       }
-      seededPermissions.push(perm);
-    }
+    }));
+
+    await Permission.bulkWrite(bulkOps);
+
+    const seededPermissions = await Permission.find({
+      $or: permissionsData.map(p => ({ operation: p.operation, entity: p.entity }))
+    });
+
     console.log(`Created/found ${seededPermissions.length} permissions.`);
 
     // 2. Create roles
