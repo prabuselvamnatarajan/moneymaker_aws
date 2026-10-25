@@ -970,6 +970,26 @@ const resetLiquiditySweepRuntimeState = async (deployment) => {
 export const createDeployment = async (userId, deploymentData) => {
   const prepared = await prepareSymbolControlOnCreate(userId, deploymentData);
 
+  if (prepared.strategy_id) {
+    const strategy = await Strategy.findOne({
+      _id: prepared.strategy_id,
+      user_id: userId,
+    });
+    if (!strategy) {
+      throw new Error("Associated strategy not found");
+    }
+  }
+
+  if (prepared.account_id) {
+    const account = await Account.findOne({
+      _id: prepared.account_id,
+      user_id: userId,
+    });
+    if (!account) {
+      throw new Error("Associated account not found");
+    }
+  }
+
   if (prepared.user_symbol_id) {
     const symbol = await UserSymbol.findOne({
       _id: prepared.user_symbol_id,
