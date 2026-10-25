@@ -178,8 +178,18 @@ ensure_cluster() {
     fi
   fi
 
-  # Wire kubectl to k3s kubeconfig for the current user
+  # Wait for k3s.yaml to be created by the service
+  _w=0
+  while [ ! -f /etc/rancher/k3s/k3s.yaml ] && [ "$_w" -lt 30 ]; do
+    _w=$((_w + 1))
+    sleep 2
+  done
+
+  # Wire kubectl to k3s kubeconfig for the current user and ensure readable permissions
   if [ -f /etc/rancher/k3s/k3s.yaml ]; then
+    if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+      sudo chmod 644 /etc/rancher/k3s/k3s.yaml || true
+    fi
     mkdir -p "$HOME/.kube"
     if [ "$(id -u)" -eq 0 ]; then
       cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
@@ -188,7 +198,7 @@ ensure_cluster() {
       sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
     fi
     chmod 600 "$HOME/.kube/config"
-    export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+    export KUBECONFIG="$HOME/.kube/config"
   fi
 
   # Wait briefly for the API
