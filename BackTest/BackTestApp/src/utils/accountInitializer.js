@@ -40,19 +40,38 @@ export const initializeUserAccounts = async (userId) => {
     }
   ];
 
-  const createdAccounts = [];
-  for (const acc of predefinedAccounts) {
-    let account = await Account.findOne({
-      user_id: userId,
-      account_type: acc.account_type
-    });
+  const accountTypesToFind = predefinedAccounts.map((acc) => acc.account_type);
+  const existingAccounts = await Account.find({
+    user_id: userId,
+    account_type: { $in: accountTypesToFind },
+  });
 
-    if (!account) {
-      account = new Account({ ...acc, user_id: userId });
-      await account.save();
+  const existingAccountsMap = new Map();
+  for (const acc of existingAccounts) {
+    if (!existingAccountsMap.has(acc.account_type)) {
+      existingAccountsMap.set(acc.account_type, acc);
+    }
+  }
+
+  const createdAccounts = [];
+  const accountsToInsert = [];
+
+  for (const acc of predefinedAccounts) {
+    const existing = existingAccountsMap.get(acc.account_type);
+    if (existing) {
+      createdAccounts.push(existing);
+    } else {
+      const newAccount = new Account({ ...acc, user_id: userId });
+      accountsToInsert.push(newAccount);
+      createdAccounts.push(newAccount);
+    }
+  }
+
+  if (accountsToInsert.length > 0) {
+    await Account.insertMany(accountsToInsert);
+    for (const acc of accountsToInsert) {
       console.log(`[AccountInitializer] Initialized predefined ${acc.account_type} account for user ${userId}`);
     }
-    createdAccounts.push(account);
   }
 
   // ── Manual Strategy + symbol + deployments ───────────────────────────────
