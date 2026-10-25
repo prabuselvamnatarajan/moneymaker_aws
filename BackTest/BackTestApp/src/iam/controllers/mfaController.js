@@ -73,7 +73,7 @@ export async function loginVerify(req, res, next) {
     }
 
     const ua = req.headers["user-agent"] || "";
-    const rawIp = req.headers["x-forwarded-for"] || req.ip || "127.0.0.1";
+    const rawIp = req.ip || req.headers["x-forwarded-for"] || "127.0.0.1";
     const ip = String(rawIp).split(",")[0].trim();
     const parsedUa = parseUserAgent(ua, ip);
 
