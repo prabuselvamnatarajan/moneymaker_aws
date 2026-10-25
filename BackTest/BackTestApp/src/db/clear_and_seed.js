@@ -142,8 +142,9 @@ export const clearAndSeedDB = async () => {
       user_id: adminUser._id.toString(),
       external_broker_id: "upstox",
       credentials: {
-        client_id: "50b489f2-22c5-4824-9da5-9b815aab9667",
-        client_secret: "d51apkeb3c",
+        // NOTE: These are sample contents and not actual credentials
+        client_id: "dummy_client_id_admin",
+        client_secret: "dummy_client_secret_admin",
         redirect_uri: defaultUpstoxRedirectUri
       },
       access_token: ""
@@ -156,8 +157,9 @@ export const clearAndSeedDB = async () => {
       user_id: standardUser._id.toString(),
       external_broker_id: "upstox",
       credentials: {
-        client_id: "50b489f2-22c5-4824-9da5-9b815aab9667",
-        client_secret: "d51apkeb3c",
+        // NOTE: These are sample contents and not actual credentials
+        client_id: "dummy_client_id_standard",
+        client_secret: "dummy_client_secret_standard",
         redirect_uri: defaultUpstoxRedirectUri
       },
       access_token: ""
