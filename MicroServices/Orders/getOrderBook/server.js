@@ -6,26 +6,12 @@ import {
     resetAuthorisedClient,
     invalidateUserAccessToken,
 } from './redis_utils/AuthoriseUpstoxClient.js';
+import { extractUpstoxErrorMessage } from './utils.js';
 
 const app = express();
 const port = process.env.PORT || 80;
 
 app.use(cors());
-
-
-function extractUpstoxErrorMessage(error) {
-    try {
-        const text = error?.response?.text || error?.text;
-        if (text) {
-            const parsed = JSON.parse(text);
-            const first = parsed?.errors?.[0];
-            if (first?.message) return first.message;
-        }
-    } catch {
-        // ignore parse errors
-    }
-    return error?.message || 'Upstox API request failed';
-}
 
 function sendAuthError(res, e) {
     const status = e.statusCode || 500;
