@@ -3,9 +3,7 @@ import { config as webSocketListeningConfig } from './Init/webSocketListening_Li
 import { main as baseInitMain } from './Init/base_init.js';
 
  
-// Wrap in an async IIFE (Immediately Invoked Function Expression) to run initializations sequentially.
-// This prevents race conditions where one initialization might disconnect a shared resource (like Redis)
-// while another is still using it.
+// Execute initializations sequentially to prevent race conditions with shared resources.
 (async () => {
     try {
         console.log('Initializing Strategy Chooser...');
