@@ -478,10 +478,9 @@ test.describe('Deployment create', () => {
     await expectMessageContains(res, 'Associated symbol not found');
   });
 
-  test('TC-DEP-005: IDOR — createDeployment does not verify strategy_id ownership', async ({
+  test('TC-DEP-005: IDOR — createDeployment verifies strategy_id ownership', async ({
     request,
   }) => {
-    // Related Issue #42 — current bug: foreign strategy_id is accepted
     const admin = await loginAsAdmin(request);
     const userB = await createUserB(request, admin.accessToken);
     const foreignStrategy = await createStrategy(request, admin.accessToken, {
@@ -497,15 +496,13 @@ test.describe('Deployment create', () => {
       symbol: symbol.symbol,
     });
     const res = await postDeployment(request, userB.tokens.accessToken, payload);
-    await expectStatus(res, 201);
-    const body = await jsonBody<{ data: { strategy_id: string } }>(res);
-    expect(String(body.data.strategy_id)).toBe(String(foreignStrategy._id));
+    await expectStatus(res, 500);
+    await expectMessageContains(res, 'Associated strategy not found');
   });
 
-  test('TC-DEP-006: IDOR — createDeployment does not verify account_id ownership', async ({
+  test('TC-DEP-006: IDOR — createDeployment verifies account_id ownership', async ({
     request,
   }) => {
-    // Related Issue #42 — current bug: foreign account_id is accepted
     const admin = await loginAsAdmin(request);
     const userB = await createUserB(request, admin.accessToken);
     const foreignAccount = await createAccount(request, admin.accessToken);
@@ -519,9 +516,8 @@ test.describe('Deployment create', () => {
       symbol: symbol.symbol,
     });
     const res = await postDeployment(request, userB.tokens.accessToken, payload);
-    await expectStatus(res, 201);
-    const body = await jsonBody<{ data: { account_id: string } }>(res);
-    expect(String(body.data.account_id)).toBe(String(foreignAccount._id));
+    await expectStatus(res, 500);
+    await expectMessageContains(res, 'Associated account not found');
   });
 
   test('TC-DEP-007: Duplicate active deployment for same (strategy, account, instrument_token) rejected by unique index', async ({
