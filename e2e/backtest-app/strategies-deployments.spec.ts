@@ -497,9 +497,8 @@ test.describe('Deployment create', () => {
       symbol: symbol.symbol,
     });
     const res = await postDeployment(request, userB.tokens.accessToken, payload);
-    await expectStatus(res, 201);
-    const body = await jsonBody<{ data: { strategy_id: string } }>(res);
-    expect(String(body.data.strategy_id)).toBe(String(foreignStrategy._id));
+    await expectStatus(res, 500);
+    await expectMessageContains(res, 'Strategy not found or unauthorized');
   });
 
   test('TC-DEP-006: IDOR — createDeployment does not verify account_id ownership', async ({
@@ -519,9 +518,8 @@ test.describe('Deployment create', () => {
       symbol: symbol.symbol,
     });
     const res = await postDeployment(request, userB.tokens.accessToken, payload);
-    await expectStatus(res, 201);
-    const body = await jsonBody<{ data: { account_id: string } }>(res);
-    expect(String(body.data.account_id)).toBe(String(foreignAccount._id));
+    await expectStatus(res, 500);
+    await expectMessageContains(res, 'Account not found or unauthorized');
   });
 
   test('TC-DEP-007: Duplicate active deployment for same (strategy, account, instrument_token) rejected by unique index', async ({
