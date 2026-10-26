@@ -4,6 +4,12 @@ import Strategy from "../models/strategy.js";
 import Broker from "../models/broker.js";
 import UserSymbol from "../models/userSymbol.js";
 import Deployment from "../models/deployment.js";
+import {
+  MANUAL_INSTRUMENT_TOKEN,
+  MANUAL_STRATEGY_NAME,
+  MANUAL_SYMBOL,
+  MANUAL_DEPLOYMENT_NAME,
+} from "./constants.js";
 
 /**
  * Initializes predefined accounts (paper and simulation), strategies, and
@@ -96,13 +102,13 @@ export async function ensureManualStrategyAndSymbol(userId, { session } = {}) {
 
   let manualStrategy = await findWithSession(
     Strategy,
-    { user_id: userId, strategy_name: "Manual" },
+    { user_id: userId, strategy_name: MANUAL_STRATEGY_NAME },
     session
   );
   if (!manualStrategy) {
     manualStrategy = new Strategy({
       user_id: userId,
-      strategy_name: "Manual",
+      strategy_name: MANUAL_STRATEGY_NAME,
       strategy_description: "Predefined manual trading strategy",
       is_active: true,
     });
@@ -115,14 +121,14 @@ export async function ensureManualStrategyAndSymbol(userId, { session } = {}) {
 
   let manualSymbol = await findWithSession(
     UserSymbol,
-    { user_id: userId, instrument_token: "MANUAL" },
+    { user_id: userId, instrument_token: MANUAL_INSTRUMENT_TOKEN },
     session
   );
   if (!manualSymbol) {
     manualSymbol = new UserSymbol({
       user_id: userId,
-      instrument_token: "MANUAL",
-      symbol: "MANUAL",
+      instrument_token: MANUAL_INSTRUMENT_TOKEN,
+      symbol: MANUAL_SYMBOL,
       symbol_name: "Manual Operations",
       exchange: "NSE",
       description: "Placeholder symbol for manual account operations",
@@ -169,7 +175,7 @@ export async function ensureManualDeploymentForAccount(
   if (!strategy) {
     strategy = await findWithSession(
       Strategy,
-      { user_id: userId, strategy_name: "Manual" },
+      { user_id: userId, strategy_name: MANUAL_STRATEGY_NAME },
       session
     );
   }
@@ -179,7 +185,7 @@ export async function ensureManualDeploymentForAccount(
   if (!symbol) {
     symbol = await findWithSession(
       UserSymbol,
-      { user_id: userId, instrument_token: "MANUAL" },
+      { user_id: userId, instrument_token: MANUAL_INSTRUMENT_TOKEN },
       session
     );
   }
@@ -190,7 +196,7 @@ export async function ensureManualDeploymentForAccount(
     {
       user_id: userId,
       account_id: accountDoc._id,
-      deployment_name: "Manual",
+      deployment_name: MANUAL_DEPLOYMENT_NAME,
     },
     session
   );
@@ -204,12 +210,12 @@ export async function ensureManualDeploymentForAccount(
     strategy_id: strategy._id,
     account_id: accountDoc._id,
     user_symbol_id: symbol._id,
-    instrument_token: "MANUAL",
-    symbol: "MANUAL",
+    instrument_token: MANUAL_INSTRUMENT_TOKEN,
+    symbol: MANUAL_SYMBOL,
     start_time: new Date(),
     current_status: "RUNNING",
     strategy_mode: accountDoc.account_type === "LIVE" ? "LIVE" : "PAPER",
-    deployment_name: "Manual",
+    deployment_name: MANUAL_DEPLOYMENT_NAME,
     notes:
       "Auto-created deployment for manual account operations (deposits, withdrawals, transfers, manual trades).",
   });
@@ -224,7 +230,7 @@ export async function ensureManualDeploymentForAccount(
           {
             user_id: userId,
             account_id: accountDoc._id,
-            deployment_name: "Manual",
+            deployment_name: MANUAL_DEPLOYMENT_NAME,
           },
           session
         );
@@ -241,7 +247,7 @@ export async function ensureManualDeploymentForAccount(
           {
             user_id: userId,
             account_id: accountDoc._id,
-            deployment_name: "Manual",
+            deployment_name: MANUAL_DEPLOYMENT_NAME,
           },
           session
         );
