@@ -6,6 +6,7 @@ import Session from "../iam/models/session.js";
 import UserSymbol from "../models/userSymbol.js";
 import { Kafka } from 'kafkajs';
 import { createClient } from 'redis';
+import crypto from 'crypto';
 
 let wss;
 const activeSockets = new Map(); // socketId -> { ws, userId, subscribedTokens: Set }
@@ -97,7 +98,7 @@ export function initWebSocketServer(server) {
   });
 
   wss.on('connection', async (ws, request, userId) => {
-    const socketId = Math.random().toString(36).substring(2, 15);
+    const socketId = crypto.randomUUID();
     console.log(`[WS] Client connected: ${socketId} (User: ${userId})`);
 
     const fetchUserSymbols = async () => {
@@ -269,7 +270,7 @@ function extractMarketMetrics(feed) {
 
 async function initKafkaConsumer() {
   const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092').split(',');
-  const consumerGroupId = `backtest-app-ws-${Math.random().toString(36).substring(2, 10)}`;
+  const consumerGroupId = `backtest-app-ws-${crypto.randomUUID().substring(0, 8)}`;
 
   const kafka = new Kafka({
     clientId: 'backtest-app',
