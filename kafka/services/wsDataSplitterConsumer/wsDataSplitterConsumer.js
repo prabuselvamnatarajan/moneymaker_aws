@@ -4,6 +4,7 @@ import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import { calculateLatency } from './utils/latencyUtil.js';
 import { initLogger, logger } from './utils/logUtils.js';
 import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from './utils/kafkaErrorHandler.js';
+import { connectWithRetry } from './connectUtils.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -23,25 +24,11 @@ const redisPubSub = new RedisPubSub({ url: REDIS_URL });
 
 registerFatalErrorHandlers();
 
-async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
-    for (let i = 0; i < retries; i++) {
-        try {
-            await target.connect();
-            logger.info(`Successfully connected to ${name}.`);
-            return;
-        } catch (err) {
-            logger.warn(`Connection attempt ${i + 1}/${retries} to ${name} failed: ${err.message}. Retrying in ${delay}ms...`);
-            await new Promise(res => setTimeout(res, delay));
-        }
-    }
-    throw new Error(`Failed to connect to ${name} after maximum retries.`);
-}
-
 async function processAndProduceMessages(data) {
     const producer = kafka.producer();
 
     try {
-        await connectWithRetry(producer, 'Kafka Producer');
+        await connectWithRetry(producer, 'Kafka Producer', 30, 5000, logger);
 
         for (const [key, value] of Object.entries(data)) {
             value.latency = {
@@ -82,7 +69,7 @@ async function createConsumer() {
     registerKafkaCrashHandler(consumer);
 
     try {
-        await connectWithRetry(consumer, 'Kafka Consumer');
+        await connectWithRetry(consumer, 'Kafka Consumer', 30, 5000, logger);
         await consumer.subscribe({ topic: 'incoming-ws-msg', fromBeginning: false });
 
         await consumer.run({
@@ -103,7 +90,7 @@ async function createConsumer() {
 async function startServer() {
     try {
         await initLogger();
-        await connectWithRetry(redisPubSub, 'Redis PubSub');
+        await connectWithRetry(redisPubSub, 'Redis PubSub', 30, 5000, logger);
         await createConsumer();
     } catch (error) {
         handleFatalError(error, 'server startup');
