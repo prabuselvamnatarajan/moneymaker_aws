@@ -52,7 +52,8 @@ export function parseQueryParams(query, options = {}) {
   }
 
   if (query.search && searchFields.length > 0) {
-    const searchRegex = new RegExp(query.search, "i");
+    const escapedSearch = query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchRegex = new RegExp(escapedSearch, "i");
     filter.$or = searchFields.map((field) => ({ [field]: searchRegex }));
   }
 
