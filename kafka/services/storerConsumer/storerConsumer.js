@@ -1,8 +1,8 @@
 import { MongoClient } from 'mongodb';
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
-import { initLogger, logger } from '/app/utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
+import { initLogger, logger } from '../utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '../utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -27,8 +27,12 @@ registerFatalErrorHandlers();
 async function storeInMongoDB(symbol, data) {
     logger.info(`Processing ${symbol} data:`, data);
     const db = client.db(TARGET_COLLECTION_NAME);
-    const collection = db.collection(symbol);
-    await collection.insertOne({ timestamp: new Date(), ...data });
+    let collectionName = symbol;
+    if (TARGET_GROUP_ID === 'order_storer_group') {
+        collectionName = 'all_orders';
+    }
+    const collection = db.collection(collectionName);
+    await collection.insertOne({ timestamp: new Date(), symbol_name: symbol, ...data });
 }
 
 async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
@@ -75,9 +79,13 @@ async function createConsumer() {
     });
 }
 
-(async () => {
+async function startServer() {
     await initLogger();
     await createConsumer();
-})().catch((err) => {
-    handleFatalError(err, 'consumer startup');
-});
+}
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+    startServer().catch((err) => {
+        handleFatalError(err, 'consumer startup');
+    });
+}
+export { startServer, storeInMongoDB };

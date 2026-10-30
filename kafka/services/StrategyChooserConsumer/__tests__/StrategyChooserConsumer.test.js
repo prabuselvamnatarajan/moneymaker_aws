@@ -105,3 +105,26 @@ describe('StrategyChooserConsumer Routing & Multi-Deployment Isolation', () => {
     assert.equal(matched.length, 2);
   });
 });
+
+import { mock } from 'node:test';
+mock.module('/app/utils/logUtils.js', {
+    namedExports: {
+        initLogger: async () => {},
+        logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
+    }
+});
+mock.module('/app/utils/kafkaErrorHandler.js', {
+    namedExports: {
+        handleFatalError: () => {},
+        registerFatalErrorHandlers: () => {},
+        registerKafkaCrashHandler: () => {}
+    }
+});
+
+const chooser = await import('../StrategyChooserConsumer.js');
+
+describe('StrategyChooserConsumer exports', () => {
+    it('TC-SCC-001: Exports are present', () => {
+        assert.ok(chooser.startServer);
+    });
+});

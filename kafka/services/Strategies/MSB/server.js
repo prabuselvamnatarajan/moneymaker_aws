@@ -3,8 +3,8 @@ import { MSB } from './MSB.js';
 import { buildTimeframeCandle } from './candleBuilder.js';
 import { calculateLatency } from './utils/latencyUtil.js';
 import { getMSBStrategyStateForSymbol, writeMSBStrategyStateForSymbol, setBacktestCompleted, assertFreshStateEpoch } from './redis_utils/getStrategyStateDetails.js';
-import { initLogger, logger } from '/app/utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
+import { initLogger, logger } from '../utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '../utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');

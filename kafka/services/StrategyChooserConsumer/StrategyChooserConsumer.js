@@ -1,7 +1,7 @@
 import { Kafka } from 'kafkajs';
 import getStrategiesForSymbol from './redis_utils/getStrategiesForSymbol.js';
-import { initLogger, logger } from '/app/utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
+import { initLogger, logger } from './utils/utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from './utils/utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -142,11 +142,19 @@ async function createConsumer() {
                     const partitionKey = isTestMode && strategy.deployment_id
                         ? `${symbol}:${strategy.deployment_id}`
                         : symbol;
-                    await producer.send({
-                        topic: topicName,
-                        messages: [
-                            { key: partitionKey, value: JSON.stringify(strategyData) },
-                        ],
+                    await retry(async () => {
+                        await producer.send({
+                            topic: topicName,
+                            messages: [
+                                { key: partitionKey, value: JSON.stringify(strategyData) },
+                            ],
+                        });
+                    }, {
+                        retries: 5,
+                        minTimeout: 1000,
+                        onRetry: (error, attempt) => {
+                            logger.warn(`Kafka produce retry ${attempt} for topic ${topicName} due to error: ${error.message}`);
+                        }
                     });
                     logger.debug(`Produced message to topic ${topicName} with key ${symbol}`);
                     logger.debug(`sending msg: ${JSON.stringify(strategyData)}`);
@@ -158,9 +166,13 @@ async function createConsumer() {
     });
 }
 
-(async () => {
+async function startServer() {
     await initLogger();
     await createConsumer();
-})().catch((err) => {
-    handleFatalError(err, 'consumer startup');
-});
+}
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+    startServer().catch((err) => {
+        handleFatalError(err, 'consumer startup');
+    });
+}
+export { startServer };

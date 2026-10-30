@@ -1,7 +1,7 @@
 # MicroService: UpstoxLogin (OAuth) & Token Management — Test Case Plan
 
 ## Scope
-Covers `MicroServices/UpstoxLogin` (`server.js` + `login.js`), the OAuth 2.0 authorization-code flow with Upstox, and the shared `AuthoriseUpstoxClient.js` token-retrieval/caching module (`MicroServices/Shared/AuthorisedUpstox`) used by every other microservice that talks to Upstox. Covers broker-credential persistence in MongoDB, Redis token caching (per-user and global-default keys), token expiry detection, and the exposed host port.
+Covers `MicroServices/UpstoxLogin` (`server.js` + `login.js`), the OAuth 2.0 authorization-code flow with Upstox, and the shared `AuthoriseUpstoxClient.js` token-retrieval/caching module (`shared/AuthorisedUpstox`) used by every other microservice that talks to Upstox. Covers broker-credential persistence in MongoDB, Redis token caching (per-user and global-default keys), token expiry detection, and the exposed host port.
 
 ## Prerequisites
 - A test Upstox developer app (or mocked Upstox OAuth/token endpoints) with known `client_id`/`client_secret`/`redirect_uri`

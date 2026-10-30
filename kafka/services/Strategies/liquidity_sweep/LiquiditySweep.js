@@ -9,7 +9,7 @@ import { tryExecuteEntry, manageOpenPosition } from './modules/tradeManagement.j
 import { logSweepOutcome } from './modules/signalLogger.js';
 import { fetchPriorDayOHLC } from './modules/sessionInit.js';
 import { decrementOpenPositions } from './redis_utils/concurrency.js';
-import { logger } from '/app/utils/logUtils.js';
+import { logger } from '../utils/logUtils.js';
 
 function createInitialState(tick, params, timeframe, stateEpoch) {
     const levelInit = createInitialLevelState(tick, params, timeframe);

@@ -116,4 +116,4 @@ Covers the three read-only market-quote microservices (`MicroServices/market-quo
 - **Category**: Regression
 - **Priority**: P2
 - **Steps**: Diff `redis_utils/AuthoriseUpstoxClient.js` as vendored/copied into `getLTP`, `getOHLC`, `fullMarketQuote`, `getOrderBook`, `FundsAndMargin`, and the option-chain services
-- **Expected Result**: Confirm all copies are byte-identical to `MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js` (the intended shared source) — flag any service whose local copy has silently diverged (e.g., due to a partial fix applied to only some services), which would mean issue #10/#16 fixes need to be replicated everywhere rather than fixed once centrally.
+- **Expected Result**: Confirm all copies are byte-identical to `shared/AuthorisedUpstox/AuthoriseUpstoxClient.js` (the intended shared source) — flag any service whose local copy has silently diverged (e.g., due to a partial fix applied to only some services), which would mean issue #10/#16 fixes need to be replicated everywhere rather than fixed once centrally.

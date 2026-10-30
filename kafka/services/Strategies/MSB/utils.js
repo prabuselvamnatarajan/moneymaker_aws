@@ -1,4 +1,4 @@
-import { logger } from '/app/utils/logUtils.js';
+import { logger } from '../utils/logUtils.js';
 
 function extractFeed(dataObject) {
     const marketFF = dataObject?.fullFeed?.marketFF || dataObject?.marketFF;
