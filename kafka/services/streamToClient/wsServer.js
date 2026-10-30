@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws';
 import { v4 as uuid } from "uuid";
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import dotenv from "dotenv";
-import { initLogger, logger } from '/app/utils/logUtils.js';
+import { initLogger, logger } from './utils/logUtils.js';
 
 dotenv.config();
 
@@ -128,4 +128,7 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-startServer();
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+  startServer();
+}
+export { startServer, handleRedisMessage };

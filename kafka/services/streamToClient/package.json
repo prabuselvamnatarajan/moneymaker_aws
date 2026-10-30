@@ -5,15 +5,15 @@
   "main": "wsServer.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "NODE_ENV=test node --experimental-test-module-mocks --test"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.0.0",
-    "uuid": "^13.0.0",
     "redis": "^5.10.0",
-    "winston": "^3.11.0",
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0",
     "ws": "^8.18.2"
   }
 }

@@ -17,5 +17,8 @@
     "kafkajs": "^2.2.4",
     "redis": "^5.10.0",
     "upstox-js-sdk": "^2.21.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.1"
   }
 }

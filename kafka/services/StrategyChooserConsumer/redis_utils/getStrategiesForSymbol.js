@@ -1,5 +1,5 @@
 import { RedisClient, RedisJson } from './redis_operations/index.js';
-import { logger } from '/app/utils/logUtils.js';
+import { logger } from '../utils/logUtils.js';
 
 const redisUrl = process.env.REDIS_URL;
 const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});

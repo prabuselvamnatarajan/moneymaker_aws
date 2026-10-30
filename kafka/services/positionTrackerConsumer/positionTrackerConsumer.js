@@ -1,8 +1,8 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import { createClient } from 'redis';
 import { Kafka } from 'kafkajs';
-import { initLogger, logger } from '/app/utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
+import { initLogger, logger } from '../../../MicroServices/Shared/utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '../../../MicroServices/Shared/utils/kafkaErrorHandler.js';
 import {
   calcUnrealizedPnl,
   calcProfitPct,
@@ -321,9 +321,13 @@ async function createConsumer() {
   });
 }
 
-(async () => {
+async function startServer() {
   await initLogger();
   await createConsumer();
-})().catch((err) => {
-  handleFatalError(err, 'consumer startup');
-});
+}
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+  startServer().catch((err) => {
+    handleFatalError(err, 'consumer startup');
+  });
+}
+export { startServer, extractLtp, handleTick };
