@@ -32,7 +32,6 @@ export const getAllStrategies = async (userId, queryParams, isAdmin = false) => 
     filter.user_id = userId;
   }
 
-  const items = await Strategy.find(filter).sort(sort).skip(skip).limit(limit);
   const items = await Strategy.find(filter).sort(sort).skip(skip).limit(limit).lean();
 
   const total = await Strategy.countDocuments(filter);
