@@ -32,7 +32,6 @@ const personalAccessTokenSchema = new mongoose.Schema({
   timestamps: true,
 });
 
-personalAccessTokenSchema.index({ token: 1 });
 personalAccessTokenSchema.index({ user: 1 });
 
 export default mongoose.model("PersonalAccessToken", personalAccessTokenSchema);
