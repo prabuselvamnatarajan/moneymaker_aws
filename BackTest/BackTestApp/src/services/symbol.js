@@ -78,7 +78,7 @@ export const getAllSymbols = async (userId, queryParams) => {
     filter.instrument_class = queryParams.instrument_class.toUpperCase();
   }
 
-  const items = await UserSymbol.find(filter)
+  const items = await UserSymbol.find(filter).lean()
     .sort(sort)
     .skip(skip)
     .limit(limit);

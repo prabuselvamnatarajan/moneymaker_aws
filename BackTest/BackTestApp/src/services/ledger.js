@@ -57,7 +57,7 @@ export const getAllLedger = async (userId, queryParams) => {
 
   const projection = queryParams.fields ? getProjectionFields(queryParams.fields) : undefined;
 
-  const items = await Ledger.find(filter, projection)
+  const items = await Ledger.find(filter, projection).lean()
     .sort(sort)
     .skip(skip)
     .limit(limit)

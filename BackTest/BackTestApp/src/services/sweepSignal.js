@@ -43,7 +43,7 @@ export const getSweepSignalLogs = async (userId, deploymentId, query = {}) => {
   const take = Math.min(Number(limit), 200);
 
   const [items, total] = await Promise.all([
-    SweepSignalLog.find(filter).sort({ created_at: -1 }).skip(skip).limit(take),
+    SweepSignalLog.find(filter).sort({ created_at: -1 }).skip(skip).limit(take).lean(),
     SweepSignalLog.countDocuments(filter),
   ]);
 

@@ -53,7 +53,7 @@ export const getAllPositions = async (userId, queryParams) => {
 
   const populateTrades = String(queryParams.populate_trades || "true") !== "false";
 
-  let query = Position.find(filter).sort(sort).skip(effectiveSkip).limit(effectiveLimit);
+  let query = Position.find(filter).sort(sort).skip(effectiveSkip).limit(effectiveLimit).lean();
   if (populateTrades) {
     query = query.populate({
       path: "trades",
