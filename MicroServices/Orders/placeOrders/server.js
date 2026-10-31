@@ -11,6 +11,7 @@ import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalan
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js';
+import { isMissingRequiredOrderFields } from './orderValidation.js';
 
 app.post('/', async (req, res) => {
     const body = req.body;

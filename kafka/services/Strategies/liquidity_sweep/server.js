@@ -7,7 +7,7 @@ import {
     setBacktestCompleted,
     assertFreshStateEpoch,
 } from './redis_utils/getStrategyStateDetails.js';
-import { initLogger, logger } from '../utils/logUtils.js';
+import { initLogger, logger } from '/app/utils/logUtils.js';
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPIC = process.env.TARGET_TOPIC;

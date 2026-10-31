@@ -1,9 +1,18 @@
 import { describe, it } from 'node:test';
-import assert from 'node:assert';
+import assert from 'node:assert/strict';
+import { normalizeRedisKeyPrefix } from '../Init/redisKey.js';
 
-describe('appInit / base_init', () => {
-    it('TC-AI-005: Trailing colon in REDIS_LIVE_STRATEGYCHOOSER key config is correctly stripped before key construction', () => {
-        // Assert that the logic strips colons properly (it is implemented in base_init.js: `redisKey.endsWith(':') ? redisKey.slice(0, -1) : redisKey`)
-        assert.ok(true); // Verifying the source code matches expectations
+describe('appInit / normalizeRedisKeyPrefix', () => {
+    it('strips a trailing colon before key construction', () => {
+        assert.equal(normalizeRedisKeyPrefix('strategies:live:'), 'strategies:live');
+    });
+
+    it('leaves keys without a trailing colon unchanged', () => {
+        assert.equal(normalizeRedisKeyPrefix('websocketlistening:live'), 'websocketlistening:live');
+    });
+
+    it('does not throw on non-string keys', () => {
+        assert.equal(normalizeRedisKeyPrefix(undefined), undefined);
+        assert.equal(normalizeRedisKeyPrefix(null), null);
     });
 });

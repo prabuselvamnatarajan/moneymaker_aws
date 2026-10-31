@@ -1,8 +1,8 @@
 import { MongoClient } from 'mongodb';
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
-import { initLogger, logger } from '../utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '../utils/kafkaErrorHandler.js';
+import { initLogger, logger } from '/app/utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -27,12 +27,8 @@ registerFatalErrorHandlers();
 async function storeInMongoDB(symbol, data) {
     logger.info(`Processing ${symbol} data:`, data);
     const db = client.db(TARGET_COLLECTION_NAME);
-    let collectionName = symbol;
-    if (TARGET_GROUP_ID === 'order_storer_group') {
-        collectionName = 'all_orders';
-    }
-    const collection = db.collection(collectionName);
-    await collection.insertOne({ timestamp: new Date(), symbol_name: symbol, ...data });
+    const collection = db.collection(symbol);
+    await collection.insertOne({ timestamp: new Date(), ...data });
 }
 
 async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {

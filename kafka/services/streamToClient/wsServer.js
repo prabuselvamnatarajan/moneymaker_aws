@@ -2,7 +2,8 @@ import { WebSocketServer } from 'ws';
 import { v4 as uuid } from "uuid";
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import dotenv from "dotenv";
-import { initLogger, logger } from './utils/logUtils.js';
+import { initLogger, logger } from '/app/utils/logUtils.js';
+import { fanoutRedisMessage } from './fanout.js';
 
 dotenv.config();
 
@@ -26,15 +27,7 @@ const channelSubscriptions = new Map();
 
 // Single unified message handler for all channels
 function handleRedisMessage(channel, message) {
-  const socketIds = channelSubscriptions.get(channel);
-  if (!socketIds) return;
-
-  for (const id of socketIds) {
-    const ws = sockets.get(id);
-    if (ws && ws.readyState === ws.OPEN) {
-      ws.send(message); // ZERO parsing overhead
-    }
-  }
+  fanoutRedisMessage(channelSubscriptions, sockets, channel, message);
 }
 
 async function ensureChannel(channel) {

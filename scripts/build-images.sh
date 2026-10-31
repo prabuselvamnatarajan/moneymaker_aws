@@ -110,7 +110,7 @@ log() {
 }
 
 # Job format: kind|context|tag|extra
-# kind: plain | kafka | strategy | microservice
+# kind: plain | appinit | kafka | strategy | microservice
 # extra (microservice only): redis | auth | placeorder
 JOBS=""
 
@@ -129,6 +129,9 @@ run_one_job() {
     plain)
       docker build -t "$_tag" "$_ctx"
       ;;
+    appinit)
+      build_appinit "$_ctx" "$_tag"
+      ;;
     kafka)
       build_kafka_service "$_ctx" "$_tag"
       ;;
@@ -146,13 +149,13 @@ run_one_job() {
 }
 
 register_e2e_jobs() {
-  add_job plain ./appInit appinit:latest
+  add_job appinit ./appInit appinit:latest
   add_job plain ./BackTest/BackTestApp backtestapp:latest
   add_job plain ./BackTest/BackTestUI backtestui:latest
 }
 
 register_full_jobs() {
-  add_job plain ./appInit appinit:latest
+  add_job appinit ./appInit appinit:latest
   # Microservices: bake compose bind-mounts into the image (required for k8s)
   add_job microservice ./MicroServices/UpstoxLogin upstock-login:latest redis
   add_job microservice ./MicroServices/ConnectWS-Upstox connect-upstox-web-socket:latest auth

@@ -11,7 +11,7 @@ import {
     getShortQuantityWithTagFromRedis,
     setShortQuantityWithTagToRedis,
 } from '../redis_utils/concurrency.js';
-import { logger } from '../utils/logUtils.js';
+import { logger } from '/app/utils/logUtils.js';
 import { buildTradeLevels, updateTrailingStop } from './tradeLevels.js';
 import { logTradeEvent } from './signalLogger.js';
 

@@ -1,8 +1,8 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import { createClient } from 'redis';
 import { Kafka } from 'kafkajs';
-import { initLogger, logger } from './utils/utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from './utils/utils/kafkaErrorHandler.js';
+import { initLogger, logger } from '/app/utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 import {
   calcUnrealizedPnl,
   calcProfitPct,

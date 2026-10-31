@@ -1,36 +1,18 @@
-import { describe, it, mock } from 'node:test';
-import assert from 'node:assert';
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { extractLtp } from '../extractLtp.js';
 
-mock.module('/app/utils/logUtils.js', {
-    namedExports: {
-        initLogger: async () => {},
-        logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
-    }
-});
-
-mock.module('/app/utils/kafkaErrorHandler.js', {
-    namedExports: {
-        handleFatalError: () => {},
-        registerFatalErrorHandlers: () => {},
-        registerKafkaCrashHandler: () => {}
-    }
-});
-
-const resolver = await import('../deploymentSymbolResolverConsumer.js');
-
-describe('deploymentSymbolResolverConsumer', () => {
-    it('TC-DSR-001: Exports are present', () => {
-        assert.ok(resolver.startServer);
-        assert.ok(resolver.extractLtp);
-        assert.ok(resolver.handleTick);
+describe('deploymentSymbolResolverConsumer extractLtp', () => {
+    it('returns null for non-objects', () => {
+        assert.equal(extractLtp(null), null);
+        assert.equal(extractLtp('string'), null);
     });
 
-    it('extractLtp returns null for non-objects', () => {
-        assert.strictEqual(resolver.extractLtp(null), null);
-        assert.strictEqual(resolver.extractLtp('string'), null);
+    it('returns a numeric ltp field directly', () => {
+        assert.equal(extractLtp({ ltp: 100 }), 100);
     });
 
-    it('extractLtp returns number directly if available', () => {
-        assert.strictEqual(resolver.extractLtp({ ltp: 100 }), 100);
+    it('reads ltp from fullFeed.marketFF.ltpc', () => {
+        assert.equal(extractLtp({ fullFeed: { marketFF: { ltpc: { ltp: 24123.5 } } } }), 24123.5);
     });
 });

@@ -1,5 +1,5 @@
 import { RedisClient, RedisJson } from './redis_operations/index.js';
-import { logger } from '../utils/logUtils.js';
+import { logger } from '/app/utils/logUtils.js';
 
 const STRATEGY_NAME = process.env.STRATEGY_NAME || 'msb_pts';
 const redisUrl = process.env.REDIS_URL;

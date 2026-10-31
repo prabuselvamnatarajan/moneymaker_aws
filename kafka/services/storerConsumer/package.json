@@ -5,7 +5,7 @@
   "main": "storerConsumer.js",
   "type": "module",
   "scripts": {
-    "test": "NODE_ENV=test node --experimental-test-module-mocks --test"
+    "test": "node --test"
   },
   "author": "",
   "license": "ISC",
