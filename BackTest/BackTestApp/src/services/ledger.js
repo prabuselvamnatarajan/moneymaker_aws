@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Ledger from "../models/ledger.js";
 import { parseQueryParams, getProjectionFields } from "../utils/queryHelper.js";
+import { MANUAL_DEPLOYMENT_NAME } from "../utils/constants.js";
 
 export const getAllLedger = async (userId, queryParams) => {
   const { filter, skip, limit, sort, page } = parseQueryParams(queryParams, {
@@ -106,7 +107,7 @@ export const depositBalance = async (userId, accountId, amount, description) => 
   const manualDeployment = await Deployment.findOne({
     user_id: userId,
     account_id: account._id,
-    deployment_name: "Manual"
+    deployment_name: MANUAL_DEPLOYMENT_NAME
   });
 
   const ledgerEntry = new Ledger({
@@ -148,7 +149,7 @@ export const withdrawBalance = async (userId, accountId, amount, description) =>
   const manualDeployment = await Deployment.findOne({
     user_id: userId,
     account_id: account._id,
-    deployment_name: "Manual"
+    deployment_name: MANUAL_DEPLOYMENT_NAME
   });
 
   const ledgerEntry = new Ledger({
@@ -203,7 +204,7 @@ export const transferBalance = async (userId, fromAccountId, toAccountId, amount
   const fromManualDeployment = await Deployment.findOne({
     user_id: userId,
     account_id: fromAccount._id,
-    deployment_name: "Manual"
+    deployment_name: MANUAL_DEPLOYMENT_NAME
   });
 
   const fromLedger = new Ledger({
@@ -231,7 +232,7 @@ export const transferBalance = async (userId, fromAccountId, toAccountId, amount
   const toManualDeployment = await Deployment.findOne({
     user_id: userId,
     account_id: toAccount._id,
-    deployment_name: "Manual"
+    deployment_name: MANUAL_DEPLOYMENT_NAME
   });
 
   const toLedger = new Ledger({

@@ -23,6 +23,7 @@ import {
   withRedis,
   setJson,
 } from "../utils/positionRedis.js";
+import { MANUAL_DEPLOYMENT_NAME } from "../utils/constants.js";
 
 
 function buildAccountQuery(accountId) {
@@ -231,7 +232,7 @@ const runCreateTrade = async (tradeData) => {
           let manualDeployment = await Deployment.findOne({
             user_id,
             account_id: accountObj._id,
-            deployment_name: "Manual",
+            deployment_name: MANUAL_DEPLOYMENT_NAME,
           }).session(session);
           if (!manualDeployment) {
             const { ensureManualStrategyAndSymbol, ensureManualDeploymentForAccount } = await import(
