@@ -77,10 +77,10 @@ while [ $# -gt 0 ]; do
       echo "ERROR: Docker Swarm compose deploy was removed. Use --overlay ci|full|dev|prod." >&2
       exit 1
       ;;
-    --no-pull)
+    --no-pull|--push)
       shift
       ;;
-    --profile|--parallel)
+    --profile|--parallel|--registry|--tag)
       [ $# -ge 2 ] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
       shift 2
       ;;

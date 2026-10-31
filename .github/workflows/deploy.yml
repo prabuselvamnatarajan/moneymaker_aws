@@ -1,16 +1,121 @@
-name: Test and Deploy to AWS
+name: CI/CD Pipeline
 
 on:
   push:
   pull_request:
 
 concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
+  group: cicd-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      image_tag: ${{ steps.set-tag.outputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine Docker Image Tag
+        id: set-tag
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TAG="latest"
+          else
+            RAW_BRANCH="${GITHUB_REF_NAME:-${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}}"
+            # Replace characters not allowed in docker tags with -
+            TAG=$(echo "$RAW_BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          fi
+          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Determined image tag: $TAG"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/build-images.sh scripts/pull-images.sh scripts/deploy-k8s.sh
+          find scripts -type f -name '*.sh' -exec chmod +x {} +
+
+      - name: Build and Push Docker Images
+        run: |
+          ./scripts/build-images.sh \
+            --profile full \
+            --registry prabuselvamnatarajan \
+            --tag "${{ steps.set-tag.outputs.image_tag }}" \
+            --push \
+            --parallel 4
+
+  unit-tests:
+    name: Unit Test (${{ matrix.image }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - backtestapp
+          - appinit
+          - placeorder
+          - get-orderbook
+          - deployment-symbol-resolver-consumer
+          - strategy-chooser-consumer
+          - storer-consumer
+          - position-tracker-consumer
+          - stream-to-client
+          - msb-strategy
+          - msb-pts-strategy
+          - liquidity-sweep-strategy
+          - backtestui
+          - upstock-login
+          - connect-upstox-web-socket
+          - get-ltp
+          - get-ohlc
+          - get-fullmarketquote
+          - get-put-call-option-chain
+          - get-option-contracts
+          - get-funds-and-margin
+          - wsdatasplitterconsumer
+          - backteststreamer
+          - backtestclient
+          - exporttofile
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull Docker Image
+        run: |
+          docker pull "prabuselvamnatarajan/${{ matrix.image }}:${{ needs.build.outputs.image_tag }}"
+
+      - name: Run Container & Execute Unit Tests
+        run: |
+          docker run --rm "prabuselvamnatarajan/${{ matrix.image }}:${{ needs.build.outputs.image_tag }}" sh -c '
+            echo "=== Verifying container ${{ matrix.image }} ==="
+            if [ -f package.json ]; then
+              if node -e "const p=require(\"./package.json\"); process.exit(p.scripts && p.scripts.test && !p.scripts.test.includes(\"no test specified\") ? 0 : 1)"; then
+                echo "Running unit tests for ${{ matrix.image }}..."
+                npm test
+              else
+                echo "No unit tests specified in package.json for ${{ matrix.image }}. Container boot check passed."
+              fi
+            else
+              echo "No package.json found for ${{ matrix.image }}. Container boot check passed."
+            fi
+          '
+
+  e2e-tests:
+    name: End-to-End Tests (Kubernetes)
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -30,26 +135,35 @@ jobs:
           cache: npm
           cache-dependency-path: e2e/package-lock.json
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Make scripts executable
         run: |
           chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh kill-moneymaker.sh
-          chmod +x scripts/build-images.sh scripts/deploy-k8s.sh
+          chmod +x scripts/build-images.sh scripts/pull-images.sh scripts/deploy-k8s.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
 
-      - name: Build E2E images
-        run: ./scripts/build-images.sh --profile e2e --parallel 4
+      - name: Pull E2E Images from Docker Hub
+        run: |
+          ./scripts/pull-images.sh \
+            --profile e2e \
+            --registry prabuselvamnatarajan \
+            --tag "${{ needs.build.outputs.image_tag }}" \
+            --parallel 4
 
-      - name: Deploy CI Kubernetes stack
+      - name: Step 1 - Make Kubernetes Up (Deploy CI Stack)
         run: ./scripts/deploy-k8s.sh --detach --overlay ci
 
-      - name: Wait for BackTestApp health
+      - name: Wait for BackTestApp Health
         env:
-          # Avoid localhost → ::1 when nginx/ingress is IPv4-only
           API_BASE_URL: http://127.0.0.1/backtestapp/
           UI_BASE_URL: http://127.0.0.1/backtest-ui/
         run: |
           export ROOT="${GITHUB_WORKSPACE}"
-          # Root-owned k3s kubeconfig — allow the runner user to read it
           if [ -f /etc/rancher/k3s/k3s.yaml ]; then
             sudo chmod 644 /etc/rancher/k3s/k3s.yaml || true
             mkdir -p "$HOME/.kube"
@@ -61,7 +175,7 @@ jobs:
           . "$ROOT/scripts/test/lib/stack.sh"
           ensure_stack_ready all
 
-      - name: Seed BacktestApp database
+      - name: Seed BacktestApp Database
         run: |
           if [ -f /etc/rancher/k3s/k3s.yaml ]; then
             mkdir -p "$HOME/.kube"
@@ -71,7 +185,7 @@ jobs:
           fi
           ./clear-and-seed.sh --yes
 
-      - name: Run automated test suites
+      - name: Step 2 - Run End-to-End Testing Suites
         env:
           API_BASE_URL: http://127.0.0.1/backtestapp/
           UI_BASE_URL: http://127.0.0.1/backtest-ui/
@@ -84,7 +198,7 @@ jobs:
           fi
           ./run_all_test_cases.sh --coverage --no-wait
 
-      - name: Dump Kubernetes diagnostics on failure
+      - name: Dump Kubernetes Diagnostics on Failure
         if: failure()
         run: |
           if [ -f /etc/rancher/k3s/k3s.yaml ]; then
@@ -110,7 +224,7 @@ jobs:
           kubectl -n moneymaker run mm-diag-proxy --rm -i --restart=Never --image=curlimages/curl:8.5.0 -- \
             -sv http://reverse-proxy/backtestapp/health || true
 
-      - name: Upload Playwright report
+      - name: Upload Playwright Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -122,8 +236,8 @@ jobs:
           retention-days: 7
 
   deploy:
-    name: Deploy
-    needs: test
+    name: Deploy to AWS
+    needs: [unit-tests, e2e-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:

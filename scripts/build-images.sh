@@ -26,6 +26,9 @@ cd "$ROOT"
 
 PROFILE="full"
 PARALLEL=""
+REGISTRY=""
+IMAGE_TAG="latest"
+DO_PUSH=0
 FAIL=0
 
 usage() {
@@ -35,6 +38,9 @@ Usage: build-images.sh [options]
 Options:
   --profile full|e2e   Image set to build (default: full)
   --parallel N         Build up to N images concurrently (default: 1 local, 4 in CI)
+  --registry NAME      Docker registry prefix (e.g. prabuselvamnatarajan)
+  --tag TAG            Docker image tag when using --registry (default: latest)
+  --push               Push tagged images to registry after building
   --help               Show this help
 
 Profiles:
@@ -44,6 +50,7 @@ Profiles:
 Examples:
   ./scripts/build-images.sh
   ./scripts/build-images.sh --profile e2e --parallel 4
+  ./scripts/build-images.sh --profile full --registry prabuselvamnatarajan --tag latest --push
 EOF
 }
 
@@ -62,6 +69,20 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "ERROR: --parallel requires a number" >&2; exit 1; }
       PARALLEL="$2"
       shift 2
+      ;;
+    --registry)
+      [ $# -ge 2 ] || { echo "ERROR: --registry requires a value" >&2; exit 1; }
+      REGISTRY="$2"
+      shift 2
+      ;;
+    --tag)
+      [ $# -ge 2 ] || { echo "ERROR: --tag requires a value" >&2; exit 1; }
+      IMAGE_TAG="$2"
+      shift 2
+      ;;
+    --push)
+      DO_PUSH=1
+      shift
       ;;
     # Accepted so build-all.sh can forward deploy-k8s flags harmlessly
     --detach|--no-detach|--no-pull|--no-import)
@@ -146,6 +167,17 @@ run_one_job() {
       return 1
       ;;
   esac
+
+  if [ -n "$REGISTRY" ]; then
+    _base_name=$(printf '%s' "$_tag" | cut -d: -f1)
+    _remote_tag="$REGISTRY/$_base_name:$IMAGE_TAG"
+    log "Tagging $_tag -> $_remote_tag"
+    docker tag "$_tag" "$_remote_tag"
+    if [ "$DO_PUSH" -eq 1 ]; then
+      log "Pushing $_remote_tag"
+      docker push "$_remote_tag"
+    fi
+  fi
 }
 
 register_e2e_jobs() {
