@@ -1,7 +1,7 @@
 import { createClient } from 'redis';
 import { Kafka } from 'kafkajs';
-import { initLogger, logger } from '../../../MicroServices/Shared/utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '../../../MicroServices/Shared/utils/kafkaErrorHandler.js';
+import { initLogger, logger } from './utils/utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from './utils/utils/kafkaErrorHandler.js';
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPICS = (process.env.TARGET_TOPIC || 'splited-live-data,backtest-stream-data')

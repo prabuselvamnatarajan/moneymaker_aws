@@ -219,8 +219,8 @@ services:
       KAFKA_NUM_PARTITIONS: "50"
       LIVE_PREFIX: live
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/utils:/app/utils:ro
     deploy:
       replicas: 3
       restart_policy:
@@ -250,8 +250,8 @@ services:
       TARGET_TOPIC: splited-live-data
       TARGET_GROUP_ID: storer-group
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/utils:/app/utils:ro
     deploy:
       replicas: 3
       restart_policy:
@@ -281,8 +281,8 @@ services:
       TARGET_TOPIC: order_details
       TARGET_GROUP_ID: order_storer_group
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/utils:/app/utils:ro
     deploy:
       replicas: 3
       restart_policy:
@@ -308,8 +308,8 @@ services:
       TARGET_GROUP_ID: strategy_chooser_group
       KAFKA_NUM_PARTITIONS: "50"
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/utils:/app/utils:ro
     deploy:
       replicas: 3
       restart_policy:
@@ -340,8 +340,8 @@ services:
       TARGET_GROUP_ID: position_tracker_group
       UNREALISED_WRITE_THROTTLE_MS: "2000"
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/utils:/app/utils:ro
     deploy:
       replicas: 1
       restart_policy:
@@ -371,8 +371,8 @@ services:
       SYMBOL_CONTROL_INDEX_REFRESH_MS: "10000"
       SYMBOL_CONTROL_RESOLVE_THROTTLE_MS: "5000"
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/utils:/app/utils:ro
     deploy:
       replicas: 1
       restart_policy:
@@ -390,8 +390,8 @@ services:
       LIVE_PREFIX: live
       BACKTEST_PREFIX: backtest
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/utils:/app/utils:ro
     deploy:
       replicas: 1
       restart_policy:
@@ -510,7 +510,7 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       PORT: 80
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
     networks:
       - app-net
 
@@ -532,8 +532,8 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
     networks:
       - app-net
 
@@ -549,8 +549,8 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
     networks:
       - app-net
 
@@ -566,8 +566,8 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
     networks:
       - app-net
 
@@ -583,8 +583,8 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
     networks:
       - app-net
 
@@ -613,9 +613,9 @@ services:
       BACKTEST_TRADE_URL: /api/trade
       BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
-      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
     networks:
       - app-net
 
@@ -631,8 +631,8 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
     networks:
       - app-net
 
@@ -648,8 +648,8 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
     networks:
       - app-net
 
@@ -665,8 +665,8 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
     networks:
       - app-net
 
@@ -682,8 +682,8 @@ services:
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       MONGODB_URI: mongodb://root:example@mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0&authSource=admin
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js:/app/redis_utils/AuthoriseUpstoxClient.js:ro
     networks:
       - app-net
 
@@ -731,9 +731,9 @@ services:
       SHARED_DIR: /shared
       PLACEORDER_API: http://placeorder
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./shared/utils:/app/utils:ro
     networks:
       - app-net
 
@@ -756,9 +756,9 @@ services:
       SHARED_DIR: /shared
       PLACEORDER_API: http://placeorder
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./shared/utils:/app/utils:ro
     networks:
       - app-net
 
@@ -781,9 +781,9 @@ services:
       SHARED_DIR: /shared
       PLACEORDER_API: http://placeorder
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./shared/utils:/app/utils:ro
     networks:
       - app-net
 
@@ -806,9 +806,9 @@ services:
       SHARED_DIR: /shared
       PLACEORDER_API: http://placeorder
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./shared/utils:/app/utils:ro
     networks:
       - app-net
 
@@ -837,9 +837,9 @@ services:
       SWEEP_LOG_API: http://backtest-app
       BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./shared/utils:/app/utils:ro
     networks:
       - app-net
 
@@ -869,9 +869,9 @@ services:
       SWEEP_LOG_API: http://backtest-app
       BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
-      - ./appInit/redis_operations:/app/redis_utils/redis_operations:ro
-      - ./MicroServices/Shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
-      - ./MicroServices/Shared/utils:/app/utils:ro
+      - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
+      - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
+      - ./shared/utils:/app/utils:ro
     networks:
       - app-net
 

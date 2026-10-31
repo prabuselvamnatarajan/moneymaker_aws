@@ -7,8 +7,8 @@
 
 copy_shared() {
   target=$1
-  cp -r ./appInit/redis_operations "$target/redis_operations"
-  cp -r ./MicroServices/Shared/utils "$target/utils"
+  cp -r ./shared/redis_operations "$target/redis_operations"
+  cp -r ./shared/utils "$target/utils"
 }
 
 clean_shared() {
@@ -29,7 +29,7 @@ build_strategy() {
   target=$1
   image_tag=$2
   copy_shared "$target"
-  cp ./MicroServices/Shared/Accounts/account_utils.js "$target/account_utils.js"
+  cp ./shared/Accounts/account_utils.js "$target/account_utils.js"
   docker build -t "$image_tag" "$target"
   clean_shared "$target"
   rm -f "$target/account_utils.js"
@@ -46,19 +46,19 @@ build_microservice() {
   mode=${3:-auth}
 
   mkdir -p "$target/redis_utils_bake"
-  cp -r ./appInit/redis_operations "$target/redis_utils_bake/redis_operations"
+  cp -r ./shared/redis_operations "$target/redis_utils_bake/redis_operations"
 
   case "$mode" in
     redis)
       ;;
     auth)
-      cp ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js \
+      cp ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js \
         "$target/redis_utils_bake/AuthoriseUpstoxClient.js"
       ;;
     placeorder)
-      cp ./MicroServices/Shared/AuthorisedUpstox/AuthoriseUpstoxClient.js \
+      cp ./shared/AuthorisedUpstox/AuthoriseUpstoxClient.js \
         "$target/redis_utils_bake/AuthoriseUpstoxClient.js"
-      cp ./MicroServices/Shared/Accounts/account_utils.js \
+      cp ./shared/Accounts/account_utils.js \
         "$target/redis_utils_bake/account_utils.js"
       ;;
     *)

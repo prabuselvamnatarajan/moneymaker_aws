@@ -8,7 +8,7 @@ import {
     acquireOrderLockInRedis,
     releaseOrderLockInRedis
 } from './redis_utils/account_utils.js';
-import { logger } from '/app/utils/logUtils.js';
+import { logger } from '../utils/logUtils.js';
 
 async function triggerOrder(requestBody, retries = 3) {
     if (!requestBody || requestBody.quantity <= 0) {

@@ -1,14 +1,14 @@
 import { describe, it, mock } from 'node:test';
 import assert from 'node:assert';
 
-mock.module('/app/MicroServices/Shared/utils/logUtils.js', {
+mock.module('/app/utils/logUtils.js', {
     namedExports: {
         initLogger: async () => {},
         logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
     }
 });
 
-mock.module('/app/MicroServices/Shared/utils/kafkaErrorHandler.js', {
+mock.module('/app/utils/kafkaErrorHandler.js', {
     namedExports: {
         handleFatalError: () => {},
         registerFatalErrorHandlers: () => {},
