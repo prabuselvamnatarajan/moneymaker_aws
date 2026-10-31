@@ -79,6 +79,7 @@ export const getAllSymbols = async (userId, queryParams) => {
   }
 
   const items = await UserSymbol.find(filter)
+  const items = await UserSymbol.find(filter).lean()
     .sort(sort)
     .skip(skip)
     .limit(limit);

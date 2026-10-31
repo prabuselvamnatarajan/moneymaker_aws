@@ -1075,6 +1075,7 @@ export const getAllDeployments = async (userId, queryParams) => {
   }
 
   const items = await Deployment.find(filter).sort(sort).skip(skip).limit(limit);
+  const items = await Deployment.find(filter).sort(sort).skip(skip).limit(limit).lean();
 
   const total = await Deployment.countDocuments(filter);
 
@@ -1430,6 +1431,7 @@ export const getDeploymentMetrics = async (userId, id) => {
 
   const Trade = (await import("../models/trade.js")).default;
   const trades = await Trade.find({ deployment_id: deployment._id }).sort({ created_at: 1 });
+  const trades = await Trade.find({ deployment_id: deployment._id }).sort({ created_at: 1 }).lean();
 
   const totalTrades = trades.length;
   let totalPnL = 0;
@@ -1549,6 +1551,7 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
   }
 
   const trades = await Trade.find(timeFilter).sort({ created_at: 1 });
+  const trades = await Trade.find(timeFilter).sort({ created_at: 1 }).lean();
 
   const totalTrades = trades.length;
   let totalPnL = 0;

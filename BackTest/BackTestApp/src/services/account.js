@@ -50,7 +50,10 @@ export const getAllAccounts = async (userId, queryParams, isAdmin = false) => {
     filter.user_id = userId;
   }
 
-  const items = await Account.find(filter).sort(sort).skip(skip).limit(limit).populate("broker_id");
+
+
+  const items = await Account.find(filter).sort(sort).skip(skip).limit(limit).populate("broker_id").lean();
+
 
   const total = await Account.countDocuments(filter);
 

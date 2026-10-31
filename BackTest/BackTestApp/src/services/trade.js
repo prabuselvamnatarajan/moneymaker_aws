@@ -803,6 +803,7 @@ export const getAllTrades = async (userId, queryParams) => {
 
   const projection = queryParams.fields ? getProjectionFields(queryParams.fields) : undefined;
   const items = await Trade.find(filter, projection).sort(sort).skip(skip).limit(limit);
+  const items = await Trade.find(filter, projection).sort(sort).skip(skip).limit(limit).lean();
 
   const total = await Trade.countDocuments(filter);
 

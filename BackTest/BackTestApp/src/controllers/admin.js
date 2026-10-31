@@ -16,8 +16,7 @@ export const getUsers = async (req, res, next) => {
       dateField: "created_at",
       searchFields: ["name", "username", "email"]
     });
-    // ⚡ Bolt: added .lean() to bypass expensive Mongoose document hydration for read-only query
-    const items = await User.find(filter).sort(sort).skip(skip).limit(limit).select("-password").populate("roles").lean();
+    const items = await User.find(filter).sort(sort).skip(skip).limit(limit).select("-password").populate("roles");
     const total = await User.countDocuments(filter);
     res.status(200).json({
       message: "Users retrieved successfully",
@@ -140,8 +139,7 @@ export const getUserAccounts = async (req, res, next) => {
       searchFields: ["account_name", "description"]
     });
     filter.user_id = req.params.userId;
-    // ⚡ Bolt: added .lean() to bypass expensive Mongoose document hydration for read-only query
-    const items = await Account.find(filter).sort(sort).skip(skip).limit(limit).lean();
+    const items = await Account.find(filter).sort(sort).skip(skip).limit(limit);
     const total = await Account.countDocuments(filter);
     res.status(200).json({
       message: "User accounts retrieved successfully",
@@ -171,8 +169,7 @@ export const getUserStrategies = async (req, res, next) => {
       searchFields: ["strategy_name", "strategy_description"]
     });
     filter.user_id = req.params.userId;
-    // ⚡ Bolt: added .lean() to bypass expensive Mongoose document hydration for read-only query
-    const items = await Strategy.find(filter).sort(sort).skip(skip).limit(limit).lean();
+    const items = await Strategy.find(filter).sort(sort).skip(skip).limit(limit);
     const total = await Strategy.countDocuments(filter);
     res.status(200).json({
       message: "User strategies retrieved successfully",
@@ -202,8 +199,7 @@ export const getUserDeployments = async (req, res, next) => {
       searchFields: ["symbol", "deployment_name"]
     });
     filter.user_id = req.params.userId;
-    // ⚡ Bolt: added .lean() to bypass expensive Mongoose document hydration for read-only query
-    const items = await Deployment.find(filter).sort(sort).skip(skip).limit(limit).lean();
+    const items = await Deployment.find(filter).sort(sort).skip(skip).limit(limit);
     const total = await Deployment.countDocuments(filter);
     res.status(200).json({
       message: "User deployments retrieved successfully",
@@ -223,8 +219,7 @@ export const getUserTrades = async (req, res, next) => {
       searchFields: ["symbol"]
     });
     filter.user_id = req.params.userId;
-    // ⚡ Bolt: added .lean() to bypass expensive Mongoose document hydration for read-only query
-    const items = await Trade.find(filter).sort(sort).skip(skip).limit(limit).lean();
+    const items = await Trade.find(filter).sort(sort).skip(skip).limit(limit);
     const total = await Trade.countDocuments(filter);
     res.status(200).json({
       message: "User trades retrieved successfully",
@@ -244,8 +239,7 @@ export const getUserLedger = async (req, res, next) => {
       searchFields: ["symbol"]
     });
     filter.user_id = req.params.userId;
-    // ⚡ Bolt: added .lean() to bypass expensive Mongoose document hydration for read-only query
-    const items = await Ledger.find(filter).sort(sort).skip(skip).limit(limit).lean();
+    const items = await Ledger.find(filter).sort(sort).skip(skip).limit(limit);
     const total = await Ledger.countDocuments(filter);
     res.status(200).json({
       message: "User ledger entries retrieved successfully",

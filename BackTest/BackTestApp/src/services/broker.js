@@ -293,7 +293,7 @@ export const deleteBroker = async (brokerId, userId, isAdmin) => {
   }
 
   const Account = (await import("../models/account.js")).default;
-  const linkedAccounts = await Account.find({ broker_id: broker._id });
+  const linkedAccounts = await Account.find({ broker_id: broker._id }).lean();
   if (linkedAccounts.length > 0) {
     const liveAccounts = linkedAccounts.filter(a => a.account_type === "LIVE");
     if (liveAccounts.length > 0) {
