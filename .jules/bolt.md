@@ -1,3 +1,7 @@
 ## 2024-05-24 - [Mongoose Query Performance]
 **Learning:** Found several places where Mongoose `find()` queries are executing without `.lean()`. In Mongoose, queries return fully instantiated Mongoose documents by default, which have a lot of overhead. If the documents are only being read (not modified/saved), using `.lean()` returns plain JavaScript objects, significantly improving performance (up to 5x faster) and reducing memory usage.
 **Action:** Identify read-only Mongoose queries in `services` (like `Strategy.find`, `Account.find`, `Ledger.find`, etc.) and append `.lean()` to them if the results are only being read or sent to the client. Ensure to check if the code later calls `.save()` or similar Mongoose methods on the retrieved documents before applying `.lean()`.
+
+## 2025-03-09 - Mongoose Read-Only Query Optimization
+**Learning:** In backend Express controllers utilizing Mongoose, `.find()` queries return expensive instantiated Mongoose Document objects by default. When the data is merely serialized to JSON and sent to the client (e.g., in admin controllers), these full instances cause significant memory overhead and CPU processing waste.
+**Action:** Always append `.lean()` to Mongoose read-only queries (like `.find()`, `.findOne()`, or `.findById()`) where we do not need to save the document or invoke instance methods, reducing memory usage and speeding up response times.
