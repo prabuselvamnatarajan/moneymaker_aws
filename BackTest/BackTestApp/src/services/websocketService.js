@@ -43,7 +43,8 @@ function tokenMatchesSubscription(subscribedTokens, instrumentToken) {
 
 async function refreshUserSubscriptions(userId) {
   try {
-    const symbolsList = await UserSymbol.find({ user_id: userId, is_active: true });
+    // ⚡ Bolt Optimization: Added .lean() to high-frequency polling query
+    const symbolsList = await UserSymbol.find({ user_id: userId, is_active: true }).lean();
     const tokens = new Set(symbolsList.map((s) => s.instrument_token));
     for (const [, client] of activeSockets.entries()) {
       if (client.userId === userId) {
@@ -103,7 +104,8 @@ export function initWebSocketServer(server) {
 
     const fetchUserSymbols = async () => {
       try {
-        const symbolsList = await UserSymbol.find({ user_id: userId, is_active: true });
+        // ⚡ Bolt Optimization: Added .lean() to high-frequency polling query
+        const symbolsList = await UserSymbol.find({ user_id: userId, is_active: true }).lean();
         const tokens = new Set(symbolsList.map(s => s.instrument_token));
         return tokens;
       } catch (err) {

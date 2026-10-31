@@ -295,7 +295,8 @@ export const syncAllActiveSymbolsToRedis = async () => {
     client = createClient({ url: redisUrl });
     await client.connect();
 
-    const activeSymbols = await UserSymbol.find({ is_active: true });
+    // ⚡ Bolt Optimization: Added .lean() to caching background task
+    const activeSymbols = await UserSymbol.find({ is_active: true }).lean();
     const activeTokens = activeSymbols.map(s => s.instrument_token).filter(Boolean);
 
     await client.del("symbols:active");

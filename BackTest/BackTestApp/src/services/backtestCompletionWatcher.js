@@ -43,10 +43,11 @@ async function pollOnce() {
   if (running) return;
   running = true;
   try {
+    // ⚡ Bolt Optimization: Added .lean() to high-frequency polling query
     const deployments = await Deployment.find({
       strategy_mode: "BACKTEST",
       current_status: "RUNNING",
-    }).select("_id user_id backtest_run_id");
+    }).select("_id user_id backtest_run_id").lean();
 
     if (deployments.length === 0) return;
 

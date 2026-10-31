@@ -1733,12 +1733,14 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
     await client.connect();
 
     // Fetch all RUNNING deployments
+    // ⚡ Bolt Optimization: Added .lean() to caching background task
     const runningDeployments = await Deployment.find({ current_status: "RUNNING" })
       .populate("strategy_id")
       .populate({
         path: "account_id",
         populate: { path: "broker_id" }
-      });
+      })
+      .lean();
 
     const newKeysData = {};
 
