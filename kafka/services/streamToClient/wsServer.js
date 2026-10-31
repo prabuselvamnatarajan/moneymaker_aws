@@ -3,6 +3,7 @@ import { v4 as uuid } from "uuid";
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import dotenv from "dotenv";
 import { initLogger, logger } from '/app/utils/logUtils.js';
+import { fanoutRedisMessage } from './fanout.js';
 
 dotenv.config();
 
@@ -11,8 +12,8 @@ const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const LIVE_PREFIX = process.env.LIVE_PREFIX || "live";
 const BACKTEST_PREFIX = process.env.BACKTEST_PREFIX || "backtest";
 
-const wss = new WebSocketServer({ port: WS_PORT });
-const redisPubSub = new RedisPubSub({ url: REDIS_URL });
+let wss;
+let redisPubSub;
 
 // Local memory (SAFE for scaling)
 // socketId -> ws
@@ -26,15 +27,7 @@ const channelSubscriptions = new Map();
 
 // Single unified message handler for all channels
 function handleRedisMessage(channel, message) {
-  const socketIds = channelSubscriptions.get(channel);
-  if (!socketIds) return;
-
-  for (const id of socketIds) {
-    const ws = sockets.get(id);
-    if (ws && ws.readyState === ws.OPEN) {
-      ws.send(message); // ZERO parsing overhead
-    }
-  }
+  fanoutRedisMessage(channelSubscriptions, sockets, channel, message);
 }
 
 async function ensureChannel(channel) {
@@ -60,58 +53,63 @@ async function removeChannelIfUnused(channel) {
   }
 }
 
-wss.on("connection", (ws) => {
-  const socketId = uuid();
-  sockets.set(socketId, ws);
-  socketSubscriptions.set(socketId, new Set());
+function attachConnectionHandlers(server) {
+  server.on("connection", (ws) => {
+    const socketId = uuid();
+    sockets.set(socketId, ws);
+    socketSubscriptions.set(socketId, new Set());
 
-  ws.on("message", async (raw) => {
-    try {
-      const msg = JSON.parse(raw.toString());
+    ws.on("message", async (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
 
-      if (!msg.action || !msg.mode || !msg.symbol) {
-          logger.warn("Invalid message format:", msg);
-          return;
+        if (!msg.action || !msg.mode || !msg.symbol) {
+            logger.warn("Invalid message format:", msg);
+            return;
+        }
+
+        let mode = BACKTEST_PREFIX;
+        if (msg.mode === 'live') {
+          mode = LIVE_PREFIX;
+        }
+
+        const channel = `${mode}:${msg.symbol}`;
+
+        if (msg.action === "subscribe") {
+          await ensureChannel(channel);
+          channelSubscriptions.get(channel).add(socketId);
+          socketSubscriptions.get(socketId).add(channel);
+        }
+
+        if (msg.action === "unsubscribe") {
+          channelSubscriptions.get(channel)?.delete(socketId);
+          socketSubscriptions.get(socketId)?.delete(channel);
+          await removeChannelIfUnused(channel);
+        }
+      } catch (err) {
+        logger.error("Error processing message:", err);
       }
+    });
 
-      let mode = BACKTEST_PREFIX;
-      if (msg.mode === 'live') {
-        mode = LIVE_PREFIX;
+    ws.on("close", async () => {
+      const channels = socketSubscriptions.get(socketId) || [];
+      for (const ch of channels) {
+        channelSubscriptions.get(ch)?.delete(socketId);
+        await removeChannelIfUnused(ch);
       }
-
-      const channel = `${mode}:${msg.symbol}`;
-
-      if (msg.action === "subscribe") {
-        await ensureChannel(channel);
-        channelSubscriptions.get(channel).add(socketId);
-        socketSubscriptions.get(socketId).add(channel);
-      }
-
-      if (msg.action === "unsubscribe") {
-        channelSubscriptions.get(channel)?.delete(socketId);
-        socketSubscriptions.get(socketId)?.delete(channel);
-        await removeChannelIfUnused(channel);
-      }
-    } catch (err) {
-      logger.error("Error processing message:", err);
-    }
+      socketSubscriptions.delete(socketId);
+      sockets.delete(socketId);
+    });
   });
+}
 
-  ws.on("close", async () => {
-    const channels = socketSubscriptions.get(socketId) || [];
-    for (const ch of channels) {
-      channelSubscriptions.get(ch)?.delete(socketId);
-      await removeChannelIfUnused(ch);
-    }
-    socketSubscriptions.delete(socketId);
-    sockets.delete(socketId);
-  });
-});
-
-// Initialize Redis connection
+// Initialize Redis connection and bind the WS port only when starting.
 async function startServer() {
   try {
     await initLogger();
+    redisPubSub = new RedisPubSub({ url: REDIS_URL });
+    wss = new WebSocketServer({ port: WS_PORT });
+    attachConnectionHandlers(wss);
     await redisPubSub.connect();
     logger.info(`Ultra-low latency WS server running on port ${WS_PORT}`);
     logger.info(`Connected to Redis: ${REDIS_URL}`);
@@ -124,8 +122,16 @@ async function startServer() {
 // Graceful shutdown
 process.on("SIGINT", async () => {
   logger.info("Shutting down gracefully...");
-  await redisPubSub.disconnect();
+  if (redisPubSub) {
+    await redisPubSub.disconnect();
+  }
+  if (wss) {
+    wss.close();
+  }
   process.exit(0);
 });
 
-startServer();
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+  startServer();
+}
+export { startServer, handleRedisMessage };

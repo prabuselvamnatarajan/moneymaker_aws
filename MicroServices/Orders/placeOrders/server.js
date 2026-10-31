@@ -11,12 +11,13 @@ import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalan
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js';
+import { isMissingRequiredOrderFields } from './orderValidation.js';
 
 app.post('/', async (req, res) => {
     const body = req.body;
     const strategy_details = body.strategy_details || {};
 
-    if (!body.instrument_token || body.price === undefined || body.quantity === undefined || !body.transaction_type || !body.strategy_details || !body.strategy_details.user_id) {
+    if (isMissingRequiredOrderFields(body)) {
         return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
     }
 
@@ -96,6 +97,10 @@ app.post('/', async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(port, () => {
+        console.log(`Server is running on port ${port}`);
+    });
+}
+
+export default app;

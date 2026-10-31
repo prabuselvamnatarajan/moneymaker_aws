@@ -2,6 +2,7 @@ import { createClient } from 'redis';
 import { Kafka } from 'kafkajs';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
+import { extractLtp } from './extractLtp.js';
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPICS = (process.env.TARGET_TOPIC || 'splited-live-data,backtest-stream-data')
@@ -31,19 +32,6 @@ let interestMap = new Map();
 const lastResolveAt = new Map();
 
 registerFatalErrorHandlers();
-
-function extractLtp(data) {
-  if (!data || typeof data !== 'object') return null;
-  if (typeof data.ltp === 'number') return data.ltp;
-  const feed =
-    data.fullFeed?.marketFF ||
-    data.fullFeed?.indexFF ||
-    data.marketFF ||
-    data.indexFF ||
-    null;
-  const ltp = feed?.ltpc?.ltp;
-  return typeof ltp === 'number' ? ltp : null;
-}
 
 function computeReferenceStrike(ltp, strikePriceDiff) {
   const diff = Number(strikePriceDiff);
@@ -235,9 +223,13 @@ async function createConsumer() {
   });
 }
 
-(async () => {
+async function startServer() {
   await initLogger();
   await createConsumer();
-})().catch((err) => {
-  handleFatalError(err, 'consumer startup');
-});
+}
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+  startServer().catch((err) => {
+    handleFatalError(err, 'consumer startup');
+  });
+}
+export { startServer, extractLtp, handleTick };

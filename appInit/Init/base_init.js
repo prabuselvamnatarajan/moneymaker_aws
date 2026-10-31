@@ -1,5 +1,6 @@
 import { connect } from '../db/connect.js';
-import { getRedisTargetByType, addDataToRedisTarget, clearRedisKeyIfNeeded } from '../redis_operations/helpers.js';
+import { getRedisTargetByType, addDataToRedisTarget, clearRedisKeyIfNeeded } from '../../shared/redis_operations/helpers.js';
+import { normalizeRedisKeyPrefix } from './redisKey.js';
 
 // main now takes config parameters
 async function main({
@@ -25,7 +26,7 @@ async function main({
             console.error(`Missing property '${targetProperty}' in document:`, item);
             continue;
         }
-        const cleanRedisKey = redisKey.endsWith(':') ? redisKey.slice(0, -1) : redisKey;
+        const cleanRedisKey = normalizeRedisKeyPrefix(redisKey);
         const redisItemKey = `${cleanRedisKey}:${propertyValue}`;
         await clearRedisKeyIfNeeded(redisTarget, redisDataType, redisItemKey);
         await addDataToRedisTarget(redisTarget, redisDataType, redisItemKey, item);

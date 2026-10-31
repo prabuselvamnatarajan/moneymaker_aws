@@ -321,9 +321,13 @@ async function createConsumer() {
   });
 }
 
-(async () => {
+async function startServer() {
   await initLogger();
   await createConsumer();
-})().catch((err) => {
-  handleFatalError(err, 'consumer startup');
-});
+}
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+  startServer().catch((err) => {
+    handleFatalError(err, 'consumer startup');
+  });
+}
+export { startServer, extractLtp, handleTick };
