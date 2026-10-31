@@ -25,14 +25,12 @@ build_kafka_service() {
   clean_shared "$target"
 }
 
-# appInit imports ../redis_operations from Init/*.js. Copy shared helpers
-# into the build context, then remove them so the source tree stays clean.
+# appInit imports ../../shared/redis_operations from Init/*.js.
+# Build from the repo root so that path exists in the image.
 build_appinit() {
   target=$1
   image_tag=$2
-  cp -r ./shared/redis_operations "$target/redis_operations"
-  docker build -t "$image_tag" "$target"
-  rm -rf "$target/redis_operations"
+  docker build -f "$target/Dockerfile" -t "$image_tag" .
 }
 
 build_strategy() {

@@ -1,5 +1,5 @@
 import { connect } from '../db/connect.js';
-import { getRedisTargetByType, addDataToRedisTarget, clearRedisKeyIfNeeded } from '../redis_operations/helpers.js';
+import { getRedisTargetByType, addDataToRedisTarget, clearRedisKeyIfNeeded } from '../../shared/redis_operations/helpers.js';
 import { normalizeRedisKeyPrefix } from './redisKey.js';
 
 // main now takes config parameters

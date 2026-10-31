@@ -3,6 +3,7 @@ import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
+import { mongoCollectionNameForSymbol, buildStoreDocument } from './storeDocument.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -27,8 +28,8 @@ registerFatalErrorHandlers();
 async function storeInMongoDB(symbol, data) {
     logger.info(`Processing ${symbol} data:`, data);
     const db = client.db(TARGET_COLLECTION_NAME);
-    const collection = db.collection(symbol);
-    await collection.insertOne({ timestamp: new Date(), ...data });
+    const collection = db.collection(mongoCollectionNameForSymbol(symbol));
+    await collection.insertOne(buildStoreDocument(data));
 }
 
 async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {

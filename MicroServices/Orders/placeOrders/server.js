@@ -17,7 +17,7 @@ app.post('/', async (req, res) => {
     const body = req.body;
     const strategy_details = body.strategy_details || {};
 
-    if (!body.instrument_token || body.price === undefined || body.quantity === undefined || !body.transaction_type || !body.strategy_details || !body.strategy_details.user_id) {
+    if (isMissingRequiredOrderFields(body)) {
         return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
     }
 

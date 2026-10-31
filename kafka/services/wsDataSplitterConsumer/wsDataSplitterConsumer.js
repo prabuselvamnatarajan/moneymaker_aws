@@ -2,8 +2,8 @@ import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import { calculateLatency } from './utils/latencyUtil.js';
-import { initLogger, logger } from './utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from './utils/kafkaErrorHandler.js';
+import { initLogger, logger } from '/app/utils/logUtils.js';
+import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');

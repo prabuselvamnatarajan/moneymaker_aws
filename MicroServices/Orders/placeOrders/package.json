@@ -5,7 +5,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "test": "NODE_ENV=test node --experimental-test-module-mocks --test",
+    "test": "node --test",
     "start": "node server.js"
   },
   "author": "",
@@ -17,8 +17,5 @@
     "kafkajs": "^2.2.4",
     "redis": "^5.10.0",
     "upstox-js-sdk": "^2.21.0"
-  },
-  "devDependencies": {
-    "supertest": "^7.3.1"
   }
 }

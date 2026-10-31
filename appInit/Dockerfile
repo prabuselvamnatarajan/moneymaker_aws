@@ -1,17 +1,15 @@
 # Use official Node.js LTS Alpine image
 FROM node:18-alpine
 
-# Set working directory
+# Built from the repo root so shared/redis_operations is in the image.
+#   docker build -f ./appInit/Dockerfile -t appinit:latest .
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json if present
-COPY package*.json ./
-
-# Install dependencies
+COPY appInit/package*.json ./
 RUN npm install
 
-# Copy the rest of the app source code
-COPY . .
+COPY appInit/ ./
+COPY shared /usr/src/shared
 
 # Set environment variables (example values, update as needed)
 ENV MONGO_URI=mongodb://mongo:27017
@@ -25,5 +23,4 @@ ENV DB_LIVE_WEBSOCKETLISTENING=webSocketListening
 ENV REDIS_LIVE_WEBSOCKETLISTENING='{"key":"webSocketListeningKey","data_type":"json"}'
 ENV PROPERTY_LIVE_WEBSOCKETLISTENING=propertyName
 
-# Set the default command to run start.js
 CMD ["node", "start.js"]
