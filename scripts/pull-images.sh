@@ -133,11 +133,15 @@ PIDS=""
 ACTIVE=0
 
 flush_batch() {
+  _save_ifs="$IFS"
+  IFS=' '
   for _pid in $PIDS; do
+    [ -n "$_pid" ] || continue
     if ! wait "$_pid"; then
       FAIL=1
     fi
   done
+  IFS="$_save_ifs"
   PIDS=""
   ACTIVE=0
 }
