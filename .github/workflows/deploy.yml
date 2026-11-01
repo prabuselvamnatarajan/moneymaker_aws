@@ -36,6 +36,12 @@ jobs:
           echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Immutable image tag: $tag"
 
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/build-images.sh scripts/pull-images.sh scripts/deploy-k8s.sh
+          chmod +x scripts/list-unit-test-images.sh scripts/run-image-unit-tests.sh
+          find scripts -type f -name '*.sh' -exec chmod +x {} +
+
       - name: List images that have unit tests
         id: unit-images
         run: |
@@ -48,12 +54,6 @@ jobs:
         with:
           username: ${{ env.IMAGE_REGISTRY }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Make scripts executable
-        run: |
-          chmod +x scripts/build-images.sh scripts/pull-images.sh scripts/deploy-k8s.sh
-          chmod +x scripts/list-unit-test-images.sh scripts/run-image-unit-tests.sh
-          find scripts -type f -name '*.sh' -exec chmod +x {} +
 
       - name: Build and push immutable image tags
         run: |
