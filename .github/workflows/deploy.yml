@@ -13,17 +13,22 @@ env:
   IMAGE_REGISTRY: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
 
 jobs:
-  build:
-    name: Build & Push Images
+  verify:
+    name: Build, test, and push immutable tags
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 240
     concurrency:
-      group: cicd-build-${{ github.workflow }}-${{ github.ref }}
+      group: cicd-verify-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
     outputs:
       image_tag: ${{ steps.set-tag.outputs.image_tag }}
-      unit_test_images: ${{ steps.unit-images.outputs.images }}
+    env:
+      PLAYWRIGHT_WITH_DEPS: "1"
+      STACK_HEALTH_MAX_RETRIES: "120"
+      STACK_HEALTH_DELAY_SEC: "5"
+      SKIP_CI_SEED: "1"
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,85 +45,29 @@ jobs:
         run: |
           chmod +x scripts/build-images.sh scripts/pull-images.sh scripts/deploy-k8s.sh
           chmod +x scripts/list-unit-test-images.sh scripts/run-image-unit-tests.sh
+          chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh kill-moneymaker.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
 
-      - name: List images that have unit tests
-        id: unit-images
-        run: |
-          images="$(./scripts/list-unit-test-images.sh)"
-          echo "images=$images" >> "$GITHUB_OUTPUT"
-          echo "Unit test images: $images"
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.IMAGE_REGISTRY }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push immutable image tags
+      - name: Build images locally
         run: |
           ./scripts/build-images.sh \
             --profile full \
             --registry "$IMAGE_REGISTRY" \
             --tag "$IMAGE_TAG" \
-            --push \
             --parallel 4
         env:
           IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
 
-  unit-tests:
-    name: Unit Test (${{ matrix.image }})
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    concurrency:
-      group: cicd-unit-${{ github.workflow }}-${{ github.ref }}-${{ matrix.image }}
-      cancel-in-progress: true
-    strategy:
-      fail-fast: false
-      matrix:
-        image: ${{ fromJson(needs.build.outputs.unit_test_images) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.IMAGE_REGISTRY }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Make scripts executable
-        run: chmod +x scripts/run-image-unit-tests.sh
-
-      - name: Pull image and run unit tests
+      - name: Run unit tests in the built images
         run: |
           ./scripts/run-image-unit-tests.sh \
+            --all \
+            --no-pull \
             --registry "$IMAGE_REGISTRY" \
             --tag "$IMAGE_TAG" \
-            --image "$IMAGE_NAME"
+            --parallel 4
         env:
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-          IMAGE_NAME: ${{ matrix.image }}
-
-  e2e-tests:
-    name: End-to-End Tests (Kubernetes)
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    concurrency:
-      group: cicd-e2e-${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
-    env:
-      PLAYWRIGHT_WITH_DEPS: "1"
-      STACK_HEALTH_MAX_RETRIES: "120"
-      STACK_HEALTH_DELAY_SEC: "5"
-      SKIP_CI_SEED: "1"
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+          IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -127,27 +76,7 @@ jobs:
           cache: npm
           cache-dependency-path: e2e/package-lock.json
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.IMAGE_REGISTRY }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Make scripts executable
-        run: |
-          chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh kill-moneymaker.sh
-          chmod +x scripts/build-images.sh scripts/pull-images.sh scripts/deploy-k8s.sh
-          find scripts -type f -name '*.sh' -exec chmod +x {} +
-
-      - name: Pull E2E Images from Docker Hub
-        run: |
-          ./scripts/pull-images.sh \
-            --profile e2e \
-            --registry "$IMAGE_REGISTRY" \
-            --tag "$IMAGE_TAG" \
-            --parallel 4
-
-      - name: Step 1 - Make Kubernetes Up (Deploy CI Stack)
+      - name: Deploy CI stack from local images
         run: ./scripts/deploy-k8s.sh --detach --overlay ci
 
       - name: Wait for BackTestApp Health
@@ -177,7 +106,7 @@ jobs:
           fi
           ./clear-and-seed.sh --yes
 
-      - name: Step 2 - Run End-to-End Testing Suites
+      - name: Run end-to-end tests
         env:
           API_BASE_URL: http://127.0.0.1/backtestapp/
           UI_BASE_URL: http://127.0.0.1/backtest-ui/
@@ -227,9 +156,42 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Check whether this commit is still the branch tip
+        id: tip
+        if: success()
+        run: |
+          set -eu
+          branch="${GITHUB_REF#refs/heads/}"
+          tip=$(git ls-remote --heads origin "refs/heads/${branch}" | awk 'NR==1 {print $1}')
+          if [ "$tip" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Not pushing; origin/${branch} is ${tip:-missing}, this run is $GITHUB_SHA"
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.tip.outputs.current == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.IMAGE_REGISTRY }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push immutable image tags
+        if: steps.tip.outputs.current == 'true'
+        run: |
+          ./scripts/build-images.sh \
+            --push-only \
+            --profile full \
+            --registry "$IMAGE_REGISTRY" \
+            --tag "$IMAGE_TAG" \
+            --parallel 4
+        env:
+          IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
+
   publish:
     name: Publish tested tags
-    needs: [build, unit-tests, e2e-tests]
+    needs: verify
     if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -251,24 +213,36 @@ jobs:
 
       - name: Pull tested images and push the public branch tag
         env:
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          IMAGE_TAG: ${{ needs.verify.outputs.image_tag }}
         run: |
           set -eu
+          branch="${GITHUB_REF#refs/heads/}"
+          tip=$(git ls-remote --heads origin "refs/heads/${branch}" | awk 'NR==1 {print $1}')
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "Skipping publish; origin/${branch} is ${tip:-missing}, this run is $GITHUB_SHA"
+            exit 0
+          fi
           . ./scripts/lib/image-tag.sh
-          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            dest="latest"
-          else
-            raw="${GITHUB_REF#refs/heads/}"
-            dest=$(printf '%s' "$raw" | sed 's/[^a-zA-Z0-9._-]/-/g')
-            if [ "$dest" = "latest" ]; then
-              echo "ERROR: branch name maps to latest; refusing to move the production tag" >&2
-              exit 1
-            fi
+          dest=$(branch_destination_tag "$branch")
+          if [ "$branch" != "main" ] && [ "$dest" = "latest" ]; then
+            echo "ERROR: branch name maps to latest; refusing to move the production tag" >&2
+            exit 1
           fi
           validate_image_tag "$dest" "destination tag"
           echo "Promoting $IMAGE_TAG -> $dest"
+          ./scripts/pull-images.sh \
+            --profile full \
+            --registry "$IMAGE_REGISTRY" \
+            --tag "$IMAGE_TAG" \
+            --parallel 4
+          tip=$(git ls-remote --heads origin "refs/heads/${branch}" | awk 'NR==1 {print $1}')
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "Skipping tag move; origin/${branch} moved to $tip while images were pulling"
+            exit 0
+          fi
           if [ "$dest" = "latest" ]; then
             ./scripts/pull-images.sh \
+              --promote-only \
               --profile full \
               --registry "$IMAGE_REGISTRY" \
               --tag "$IMAGE_TAG" \
@@ -277,6 +251,7 @@ jobs:
               --parallel 4
           else
             ./scripts/pull-images.sh \
+              --promote-only \
               --profile full \
               --registry "$IMAGE_REGISTRY" \
               --tag "$IMAGE_TAG" \
@@ -286,7 +261,7 @@ jobs:
 
   deploy:
     name: Deploy to AWS
-    needs: [build, unit-tests, e2e-tests]
+    needs: verify
     if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -296,20 +271,49 @@ jobs:
     steps:
       - name: Deploy tested images to AWS
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          IMAGE_TAG: ${{ needs.verify.outputs.image_tag }}
+          IMAGE_REGISTRY: ${{ env.IMAGE_REGISTRY }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.PRIVATE_KEY }}
           command_timeout: 60m
+          envs: DEPLOY_PATH,IMAGE_TAG,IMAGE_REGISTRY,GITHUB_SHA
           script: |
             set -eu
-            cd /home/ubuntu/moneymaker_aws
+            deploy_path="${DEPLOY_PATH:-$HOME/moneymaker_aws}"
+            case "$deploy_path" in
+              *..*)
+                echo "ERROR: DEPLOY_PATH must not contain .." >&2
+                exit 1
+                ;;
+              /[A-Za-z0-9._/-]*)
+                ;;
+              *)
+                echo "ERROR: DEPLOY_PATH must be an absolute path without spaces" >&2
+                exit 1
+                ;;
+            esac
+            cd "$deploy_path"
             git fetch --no-tags origin main
-            git checkout --force --detach "${{ github.sha }}"
+            tip=$(git rev-parse refs/remotes/origin/main)
+            if [ "$tip" != "$GITHUB_SHA" ]; then
+              echo "Skipping deploy; origin/main is $tip, this run is $GITHUB_SHA"
+              exit 0
+            fi
+            git checkout --force --detach "$GITHUB_SHA"
             chmod +x scripts/pull-images.sh scripts/deploy-k8s.sh
             ./scripts/pull-images.sh \
               --profile full \
-              --registry "${{ env.IMAGE_REGISTRY }}" \
-              --tag "${{ needs.build.outputs.image_tag }}" \
+              --registry "$IMAGE_REGISTRY" \
+              --tag "$IMAGE_TAG" \
               --parallel 4
+            git fetch --no-tags origin main
+            tip=$(git rev-parse refs/remotes/origin/main)
+            if [ "$tip" != "$GITHUB_SHA" ]; then
+              echo "Skipping deploy; origin/main moved to $tip while images were pulling"
+              exit 0
+            fi
             ./scripts/deploy-k8s.sh --overlay full

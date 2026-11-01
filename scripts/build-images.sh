@@ -30,6 +30,7 @@ PARALLEL=""
 REGISTRY=""
 IMAGE_TAG="latest"
 DO_PUSH=0
+PUSH_ONLY=0
 FAIL=0
 
 usage() {
@@ -42,6 +43,7 @@ Options:
   --registry NAME      Docker registry prefix (e.g. prabuselvamnatarajan)
   --tag TAG            Docker image tag when using --registry (default: latest)
   --push               Push tagged images after every build in this run succeeds
+  --push-only          Push registry tags already present locally; do not build
   --help               Show this help
 
 Profiles:
@@ -83,6 +85,10 @@ while [ $# -gt 0 ]; do
       ;;
     --push)
       DO_PUSH=1
+      shift
+      ;;
+    --push-only)
+      PUSH_ONLY=1
       shift
       ;;
     # Accepted so build-all.sh can forward deploy-k8s flags harmlessly
@@ -127,8 +133,18 @@ case "$PARALLEL" in
     ;;
 esac
 
+if [ "$DO_PUSH" -eq 1 ] && [ "$PUSH_ONLY" -eq 1 ]; then
+  echo "ERROR: use either --push or --push-only" >&2
+  exit 1
+fi
+
 if [ "$DO_PUSH" -eq 1 ] && [ -z "$REGISTRY" ]; then
   echo "ERROR: --push requires --registry" >&2
+  exit 1
+fi
+
+if [ "$PUSH_ONLY" -eq 1 ] && [ -z "$REGISTRY" ]; then
+  echo "ERROR: --push-only requires --registry" >&2
   exit 1
 fi
 
@@ -345,6 +361,58 @@ cleanup_push_dir() {
 }
 
 trap 'cleanup_push_dir' EXIT
+
+if [ "$PUSH_ONLY" -eq 1 ]; then
+  _pushed=0
+  PIDS=""
+  ACTIVE=0
+  _save_ifs="$IFS"
+  IFS='
+'
+  for _line in $JOBS; do
+    [ -n "$_line" ] || continue
+    _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
+    _base=$(printf '%s' "$_tag" | cut -d: -f1)
+    _remote="$REGISTRY/$_base:$IMAGE_TAG"
+    if ! docker image inspect "$_remote" >/dev/null 2>&1; then
+      if ! docker image inspect "$_tag" >/dev/null 2>&1; then
+        echo "ERROR: missing local image $_remote (build it before --push-only)" >&2
+        FAIL=1
+        break
+      fi
+      log "Tagging $_tag -> $_remote"
+      docker tag "$_tag" "$_remote"
+    fi
+    (
+      trap - EXIT
+      log "Pushing $_remote"
+      docker push "$_remote"
+    ) &
+    PIDS="$PIDS $!"
+    ACTIVE=$((ACTIVE + 1))
+    _pushed=$((_pushed + 1))
+    if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+      flush_batch
+      if [ "$FAIL" -ne 0 ]; then
+        break
+      fi
+    fi
+  done
+  IFS="$_save_ifs"
+  if [ -n "$PIDS" ]; then
+    flush_batch
+  fi
+  if [ "$_pushed" -eq 0 ]; then
+    FAIL=1
+    log "ERROR: --push-only found no images"
+  fi
+  if [ "$FAIL" -ne 0 ]; then
+    log "ERROR: one or more image pushes failed"
+    exit 1
+  fi
+  log "Pushed $_pushed image(s) to $REGISTRY:$IMAGE_TAG"
+  exit 0
+fi
 
 run_job_list "$OTHER_JOBS"
 if [ "$FAIL" -eq 0 ]; then

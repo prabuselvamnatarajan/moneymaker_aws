@@ -22,6 +22,7 @@ PROFILE="e2e"
 REGISTRY="prabuselvamnatarajan"
 IMAGE_TAG="latest"
 PUSH_TAG=""
+PROMOTE_ONLY=0
 ALLOW_LATEST=0
 PARALLEL=""
 FAIL=0
@@ -35,6 +36,7 @@ Options:
   --registry NAME      Docker registry prefix (default: prabuselvamnatarajan)
   --tag TAG            Image tag to pull (default: latest)
   --push-tag TAG       After a successful pull, push the same images as TAG
+  --promote-only       Do not pull; retag images already present locally and push --push-tag
   --allow-latest       Permit --push-tag latest (production promotion only)
   --parallel N         Pull up to N images concurrently (default: 1 local, 4 in CI)
   --help               Show this help
@@ -66,6 +68,10 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "ERROR: --push-tag requires a value" >&2; exit 1; }
       PUSH_TAG="$2"
       shift 2
+      ;;
+    --promote-only)
+      PROMOTE_ONLY=1
+      shift
       ;;
     --allow-latest)
       ALLOW_LATEST=1
@@ -107,6 +113,11 @@ case "$PROFILE" in
 esac
 
 validate_image_tag "$IMAGE_TAG" "image tag"
+
+if [ "$PROMOTE_ONLY" -eq 1 ] && [ -z "$PUSH_TAG" ]; then
+  echo "ERROR: --promote-only requires --push-tag" >&2
+  exit 1
+fi
 
 if [ -n "$PUSH_TAG" ]; then
   validate_image_tag "$PUSH_TAG" "push tag"
@@ -187,6 +198,7 @@ flush_batch() {
   ACTIVE=0
 }
 
+if [ "$PROMOTE_ONLY" -eq 0 ]; then
 OLD_IFS="$IFS"
 IFS='
 '
@@ -224,6 +236,7 @@ if [ "$FAIL" -ne 0 ]; then
 fi
 
 log "All images pulled and tagged (profile=$PROFILE registry=$REGISTRY tag=$IMAGE_TAG)"
+fi
 
 if [ -z "$PUSH_TAG" ] || [ "$PUSH_TAG" = "$IMAGE_TAG" ]; then
   exit 0
