@@ -49,7 +49,7 @@ export const createUserController = async (req, res, next) => {
       console.error("Failed to initialize predefined accounts for user:", user._id, initErr);
     }
 
-    const created = await User.findById(user._id).select("-password").populate("roles");
+    const created = await User.findById(user._id).select("-password").populate("roles").lean();
     res.status(201).json({
       message: "User created successfully",
       data: created
@@ -64,13 +64,13 @@ export const getAllUsersController = async (req, res, next) => {
     const userId = req.auth.userId;
     const admin = await isUserAdmin(userId);
     if (!admin) {
-      const user = await User.findById(userId).select("-password").populate("roles");
+      const user = await User.findById(userId).select("-password").populate("roles").lean();
       return res.status(200).json({
         message: "Profile retrieved successfully",
         data: user
       });
     }
-    const users = await User.find().select("-password").populate("roles");
+    const users = await User.find().select("-password").populate("roles").lean();
     res.status(200).json({
       message: "Users retrieved successfully",
       data: users
@@ -90,7 +90,7 @@ export const getUserByIdController = async (req, res, next) => {
       return res.status(403).json({ message: "Forbidden: Access denied" });
     }
 
-    const user = await User.findById(targetId).select("-password").populate("roles");
+    const user = await User.findById(targetId).select("-password").populate("roles").lean();
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -138,7 +138,7 @@ export const updateUserController = async (req, res, next) => {
     if (is_active !== undefined && admin) user.is_active = is_active;
 
     await user.save();
-    const updated = await User.findById(user._id).select("-password").populate("roles");
+    const updated = await User.findById(user._id).select("-password").populate("roles").lean();
     res.status(200).json({
       message: "User updated successfully",
       data: updated
