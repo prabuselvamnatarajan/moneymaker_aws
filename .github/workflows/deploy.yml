@@ -1,20 +1,29 @@
 name: CI/CD Pipeline
 
+# Branch pushes only. Tag pushes are ignored so a tag named "latest" cannot
+# overwrite the production image tags. Pull requests are not a second trigger:
+# a same-repo branch push already runs this workflow.
 on:
   push:
-  pull_request:
+    branches:
+      - "*"
+      - "**"
 
-concurrency:
-  group: cicd-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  IMAGE_REGISTRY: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
 
 jobs:
   build:
     name: Build & Push Images
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    concurrency:
+      group: cicd-build-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     outputs:
       image_tag: ${{ steps.set-tag.outputs.image_tag }}
+      unit_test_images: ${{ steps.unit-images.outputs.images }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,108 +31,91 @@ jobs:
       - name: Determine Docker Image Tag
         id: set-tag
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            TAG="latest"
-          else
-            RAW_BRANCH="${GITHUB_REF_NAME:-${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}}"
-            # Replace characters not allowed in docker tags with -
-            TAG=$(echo "$RAW_BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g')
-          fi
-          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Determined image tag: $TAG"
+          tag="sha-$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+          printf '%s' "$tag" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
+          echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Immutable image tag: $tag"
+
+      - name: List images that have unit tests
+        id: unit-images
+        run: |
+          images="$(./scripts/list-unit-test-images.sh)"
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "Unit test images: $images"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
+          username: ${{ env.IMAGE_REGISTRY }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Make scripts executable
         run: |
           chmod +x scripts/build-images.sh scripts/pull-images.sh scripts/deploy-k8s.sh
+          chmod +x scripts/list-unit-test-images.sh scripts/run-image-unit-tests.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
 
-      - name: Build and Push Docker Images
+      - name: Build and push immutable image tags
         run: |
           ./scripts/build-images.sh \
             --profile full \
-            --registry prabuselvamnatarajan \
-            --tag "${{ steps.set-tag.outputs.image_tag }}" \
+            --registry "$IMAGE_REGISTRY" \
+            --tag "$IMAGE_TAG" \
             --push \
             --parallel 4
+        env:
+          IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
 
   unit-tests:
     name: Unit Test (${{ matrix.image }})
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: cicd-unit-${{ github.workflow }}-${{ github.ref }}-${{ matrix.image }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - backtestapp
-          - appinit
-          - placeorder
-          - get-orderbook
-          - deployment-symbol-resolver-consumer
-          - strategy-chooser-consumer
-          - storer-consumer
-          - position-tracker-consumer
-          - stream-to-client
-          - msb-strategy
-          - msb-pts-strategy
-          - liquidity-sweep-strategy
-          - backtestui
-          - upstock-login
-          - connect-upstox-web-socket
-          - get-ltp
-          - get-ohlc
-          - get-fullmarketquote
-          - get-put-call-option-chain
-          - get-option-contracts
-          - get-funds-and-margin
-          - wsdatasplitterconsumer
-          - backteststreamer
-          - backtestclient
-          - exporttofile
+        image: ${{ fromJson(needs.build.outputs.unit_test_images) }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
+          username: ${{ env.IMAGE_REGISTRY }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Pull Docker Image
-        run: |
-          docker pull "prabuselvamnatarajan/${{ matrix.image }}:${{ needs.build.outputs.image_tag }}"
+      - name: Make scripts executable
+        run: chmod +x scripts/run-image-unit-tests.sh
 
-      - name: Run Container & Execute Unit Tests
+      - name: Pull image and run unit tests
         run: |
-          docker run --rm "prabuselvamnatarajan/${{ matrix.image }}:${{ needs.build.outputs.image_tag }}" sh -c '
-            echo "=== Verifying container ${{ matrix.image }} ==="
-            if [ -f package.json ]; then
-              if node -e "const p=require(\"./package.json\"); process.exit(p.scripts && p.scripts.test && !p.scripts.test.includes(\"no test specified\") ? 0 : 1)"; then
-                echo "Running unit tests for ${{ matrix.image }}..."
-                npm test
-              else
-                echo "No unit tests specified in package.json for ${{ matrix.image }}. Container boot check passed."
-              fi
-            else
-              echo "No package.json found for ${{ matrix.image }}. Container boot check passed."
-            fi
-          '
+          ./scripts/run-image-unit-tests.sh \
+            --registry "$IMAGE_REGISTRY" \
+            --tag "$IMAGE_TAG" \
+            --image "$IMAGE_NAME"
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          IMAGE_NAME: ${{ matrix.image }}
 
   e2e-tests:
     name: End-to-End Tests (Kubernetes)
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    concurrency:
+      group: cicd-e2e-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     env:
       PLAYWRIGHT_WITH_DEPS: "1"
       STACK_HEALTH_MAX_RETRIES: "120"
       STACK_HEALTH_DELAY_SEC: "5"
       SKIP_CI_SEED: "1"
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -138,7 +130,7 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
+          username: ${{ env.IMAGE_REGISTRY }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Make scripts executable
@@ -151,8 +143,8 @@ jobs:
         run: |
           ./scripts/pull-images.sh \
             --profile e2e \
-            --registry prabuselvamnatarajan \
-            --tag "${{ needs.build.outputs.image_tag }}" \
+            --registry "$IMAGE_REGISTRY" \
+            --tag "$IMAGE_TAG" \
             --parallel 4
 
       - name: Step 1 - Make Kubernetes Up (Deploy CI Stack)
@@ -235,25 +227,89 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  publish:
+    name: Publish tested tags
+    needs: [build, unit-tests, e2e-tests]
+    if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: publish-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.IMAGE_REGISTRY }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Make scripts executable
+        run: chmod +x scripts/pull-images.sh
+
+      - name: Pull tested images and push the public branch tag
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+        run: |
+          set -eu
+          . ./scripts/lib/image-tag.sh
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            dest="latest"
+          else
+            raw="${GITHUB_REF#refs/heads/}"
+            dest=$(printf '%s' "$raw" | sed 's/[^a-zA-Z0-9._-]/-/g')
+            if [ "$dest" = "latest" ]; then
+              echo "ERROR: branch name maps to latest; refusing to move the production tag" >&2
+              exit 1
+            fi
+          fi
+          validate_image_tag "$dest" "destination tag"
+          echo "Promoting $IMAGE_TAG -> $dest"
+          if [ "$dest" = "latest" ]; then
+            ./scripts/pull-images.sh \
+              --profile full \
+              --registry "$IMAGE_REGISTRY" \
+              --tag "$IMAGE_TAG" \
+              --push-tag "$dest" \
+              --allow-latest \
+              --parallel 4
+          else
+            ./scripts/pull-images.sh \
+              --profile full \
+              --registry "$IMAGE_REGISTRY" \
+              --tag "$IMAGE_TAG" \
+              --push-tag "$dest" \
+              --parallel 4
+          fi
+
   deploy:
     name: Deploy to AWS
-    needs: [unit-tests, e2e-tests]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, unit-tests, e2e-tests]
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     concurrency:
       group: deploy-main
       cancel-in-progress: false
     steps:
-      - name: Deploy to AWS Instance
+      - name: Deploy tested images to AWS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.PRIVATE_KEY }}
+          command_timeout: 60m
           script: |
+            set -eu
             cd /home/ubuntu/moneymaker_aws
-            git pull origin main
-            chmod +x build-all.sh scripts/build-images.sh scripts/deploy-k8s.sh
-            # One-time host prep (idempotent): see k8s/README.md
-            # Requires k3s installed and ports 80/443 free of Swarm/nginx.
-            ./build-all.sh
+            git fetch --no-tags origin main
+            git checkout --force --detach "${{ github.sha }}"
+            chmod +x scripts/pull-images.sh scripts/deploy-k8s.sh
+            ./scripts/pull-images.sh \
+              --profile full \
+              --registry "${{ env.IMAGE_REGISTRY }}" \
+              --tag "${{ needs.build.outputs.image_tag }}" \
+              --parallel 4
+            ./scripts/deploy-k8s.sh --overlay full

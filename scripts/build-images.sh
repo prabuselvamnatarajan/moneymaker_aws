@@ -23,6 +23,7 @@ fi
 ROOT="$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 . "$ROOT/scripts/copy_shared.sh"
+. "$ROOT/scripts/lib/image-tag.sh"
 
 PROFILE="full"
 PARALLEL=""
@@ -40,7 +41,7 @@ Options:
   --parallel N         Build up to N images concurrently (default: 1 local, 4 in CI)
   --registry NAME      Docker registry prefix (e.g. prabuselvamnatarajan)
   --tag TAG            Docker image tag when using --registry (default: latest)
-  --push               Push tagged images to registry after building
+  --push               Push tagged images after every build in this run succeeds
   --help               Show this help
 
 Profiles:
@@ -126,6 +127,22 @@ case "$PARALLEL" in
     ;;
 esac
 
+if [ "$DO_PUSH" -eq 1 ] && [ -z "$REGISTRY" ]; then
+  echo "ERROR: --push requires --registry" >&2
+  exit 1
+fi
+
+if [ -n "$REGISTRY" ]; then
+  validate_image_tag "$IMAGE_TAG" "image tag"
+fi
+
+# Filled only when --push is set. Each successful build writes one file.
+# Pushes run after every build succeeds, so a failed image is not published.
+PUSH_DIR=""
+if [ "$DO_PUSH" -eq 1 ]; then
+  PUSH_DIR=$(mktemp -d "${TMPDIR:-/tmp}/mm-image-push.XXXXXX")
+fi
+
 log() {
   printf '[build-images] %s\n' "$*"
 }
@@ -174,8 +191,7 @@ run_one_job() {
     log "Tagging $_tag -> $_remote_tag"
     docker tag "$_tag" "$_remote_tag"
     if [ "$DO_PUSH" -eq 1 ]; then
-      log "Pushing $_remote_tag"
-      docker push "$_remote_tag"
+      printf '%s\n' "$_remote_tag" > "$PUSH_DIR/$_base_name"
     fi
   fi
 }
@@ -238,6 +254,26 @@ IFS="$OLD_IFS"
 
 log "Profile=$PROFILE parallel=$PARALLEL — queued $JOB_COUNT image build(s)"
 
+# appinit's Docker context is the repo root. Other jobs copy and delete bake
+# files inside that tree, so appinit runs only after those jobs finish.
+OTHER_JOBS=""
+APPINIT_JOBS=""
+OLD_IFS="$IFS"
+IFS='
+'
+for _line in $JOBS; do
+  [ -n "$_line" ] || continue
+  _kind=$(printf '%s' "$_line" | cut -d'|' -f1)
+  if [ "$_kind" = "appinit" ]; then
+    APPINIT_JOBS="${APPINIT_JOBS}${APPINIT_JOBS:+
+}${_line}"
+  else
+    OTHER_JOBS="${OTHER_JOBS}${OTHER_JOBS:+
+}${_line}"
+  fi
+done
+IFS="$OLD_IFS"
+
 PIDS=""
 ACTIVE=0
 
@@ -255,46 +291,110 @@ flush_batch() {
   ACTIVE=0
 }
 
-OLD_IFS="$IFS"
-IFS='
+run_job_list() {
+  _list="$1"
+  PIDS=""
+  ACTIVE=0
+  _save_ifs="$IFS"
+  IFS='
 '
-for _line in $JOBS; do
-  [ -n "$_line" ] || continue
-  _kind=$(printf '%s' "$_line" | cut -d'|' -f1)
-  _ctx=$(printf '%s' "$_line" | cut -d'|' -f2)
-  _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
-  _extra=$(printf '%s' "$_line" | cut -d'|' -f4)
+  for _line in $_list; do
+    [ -n "$_line" ] || continue
+    _kind=$(printf '%s' "$_line" | cut -d'|' -f1)
+    _ctx=$(printf '%s' "$_line" | cut -d'|' -f2)
+    _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
+    _extra=$(printf '%s' "$_line" | cut -d'|' -f4)
 
-  if [ "$PARALLEL" -eq 1 ]; then
-    if ! run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"; then
-      FAIL=1
-      break
+    if [ "$PARALLEL" -eq 1 ]; then
+      if ! run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"; then
+        FAIL=1
+        break
+      fi
+      continue
     fi
-    continue
-  fi
 
-  (
-    run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"
-  ) &
-  PIDS="$PIDS $!"
-  ACTIVE=$((ACTIVE + 1))
-  if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+    (
+      # Do not inherit an EXIT trap that would delete PUSH_DIR.
+      trap - EXIT
+      run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"
+    ) &
+    PIDS="$PIDS $!"
+    ACTIVE=$((ACTIVE + 1))
+    if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+      flush_batch
+      if [ "$FAIL" -ne 0 ]; then
+        break
+      fi
+    fi
+  done
+  IFS="$_save_ifs"
+
+  if [ -n "$PIDS" ]; then
     flush_batch
-    if [ "$FAIL" -ne 0 ]; then
-      break
-    fi
   fi
-done
-IFS="$OLD_IFS"
+}
 
-if [ -n "$PIDS" ]; then
-  flush_batch
+# Command substitutions inherit EXIT traps. Only the main shell may delete PUSH_DIR.
+MAIN_BASHPID="${BASHPID:-$$}"
+cleanup_push_dir() {
+  [ "${BASHPID:-$$}" = "$MAIN_BASHPID" ] || return 0
+  if [ -n "$PUSH_DIR" ]; then
+    rm -rf "$PUSH_DIR"
+    PUSH_DIR=""
+  fi
+}
+
+trap 'cleanup_push_dir' EXIT
+
+run_job_list "$OTHER_JOBS"
+if [ "$FAIL" -eq 0 ]; then
+  run_job_list "$APPINIT_JOBS"
 fi
 
 if [ "$FAIL" -ne 0 ]; then
+  cleanup_push_dir
   log "ERROR: one or more image builds failed"
   exit 1
 fi
 
+if [ "$DO_PUSH" -eq 1 ]; then
+  _pushed=0
+  PIDS=""
+  ACTIVE=0
+  for _f in "$PUSH_DIR"/*; do
+    [ -f "$_f" ] || continue
+    _remote=$(cat "$_f")
+    [ -n "$_remote" ] || continue
+    (
+      trap - EXIT
+      log "Pushing $_remote"
+      docker push "$_remote"
+    ) &
+    PIDS="$PIDS $!"
+    ACTIVE=$((ACTIVE + 1))
+    _pushed=$((_pushed + 1))
+    if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+      flush_batch
+      if [ "$FAIL" -ne 0 ]; then
+        break
+      fi
+    fi
+  done
+  if [ -n "$PIDS" ]; then
+    flush_batch
+  fi
+  if [ "$_pushed" -eq 0 ]; then
+    FAIL=1
+    log "ERROR: --push set but no images were tagged"
+  fi
+  if [ "$FAIL" -ne 0 ]; then
+    cleanup_push_dir
+    log "ERROR: one or more image pushes failed"
+    exit 1
+  fi
+  log "Pushed $_pushed image(s) to $REGISTRY:$IMAGE_TAG"
+fi
+
+cleanup_push_dir
 log "All image builds completed (profile=$PROFILE)"
 exit 0

@@ -15,9 +15,14 @@ if [ -z "${BASH_VERSION:-}" ] && [ "${_PULL_IMAGES_BASH:-0}" != "1" ]; then
   fi
 fi
 
+ROOT="$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/lib/image-tag.sh"
+
 PROFILE="e2e"
 REGISTRY="prabuselvamnatarajan"
 IMAGE_TAG="latest"
+PUSH_TAG=""
+ALLOW_LATEST=0
 PARALLEL=""
 FAIL=0
 
@@ -29,6 +34,8 @@ Options:
   --profile full|e2e   Image set to pull (default: e2e)
   --registry NAME      Docker registry prefix (default: prabuselvamnatarajan)
   --tag TAG            Image tag to pull (default: latest)
+  --push-tag TAG       After a successful pull, push the same images as TAG
+  --allow-latest       Permit --push-tag latest (production promotion only)
   --parallel N         Pull up to N images concurrently (default: 1 local, 4 in CI)
   --help               Show this help
 EOF
@@ -55,6 +62,15 @@ while [ $# -gt 0 ]; do
       IMAGE_TAG="$2"
       shift 2
       ;;
+    --push-tag)
+      [ $# -ge 2 ] || { echo "ERROR: --push-tag requires a value" >&2; exit 1; }
+      PUSH_TAG="$2"
+      shift 2
+      ;;
+    --allow-latest)
+      ALLOW_LATEST=1
+      shift
+      ;;
     --parallel)
       [ $# -ge 2 ] || { echo "ERROR: --parallel requires a number" >&2; exit 1; }
       PARALLEL="$2"
@@ -72,6 +88,31 @@ if [ -z "$PARALLEL" ]; then
     PARALLEL=4
   else
     PARALLEL=1
+  fi
+fi
+
+case "$PARALLEL" in
+  ''|*[!0-9]*|0)
+    echo "ERROR: --parallel must be a positive integer (got: $PARALLEL)" >&2
+    exit 1
+    ;;
+esac
+
+case "$PROFILE" in
+  full|e2e) ;;
+  *)
+    echo "ERROR: --profile must be full or e2e (got: $PROFILE)" >&2
+    exit 1
+    ;;
+esac
+
+validate_image_tag "$IMAGE_TAG" "image tag"
+
+if [ -n "$PUSH_TAG" ]; then
+  validate_image_tag "$PUSH_TAG" "push tag"
+  if [ "$PUSH_TAG" = "latest" ] && [ "$ALLOW_LATEST" -ne 1 ]; then
+    echo "ERROR: refusing to push :latest without --allow-latest" >&2
+    exit 1
   fi
 fi
 
@@ -183,4 +224,56 @@ if [ "$FAIL" -ne 0 ]; then
 fi
 
 log "All images pulled and tagged (profile=$PROFILE registry=$REGISTRY tag=$IMAGE_TAG)"
+
+if [ -z "$PUSH_TAG" ] || [ "$PUSH_TAG" = "$IMAGE_TAG" ]; then
+  exit 0
+fi
+
+log "Promoting $REGISTRY/*:$IMAGE_TAG -> $REGISTRY/*:$PUSH_TAG"
+PIDS=""
+ACTIVE=0
+OLD_IFS="$IFS"
+IFS='
+'
+for _img in $IMAGES; do
+  [ -n "$_img" ] || continue
+  _base_name=$(printf '%s' "$_img" | cut -d: -f1)
+  _src="$REGISTRY/$_base_name:$IMAGE_TAG"
+  _dest="$REGISTRY/$_base_name:$PUSH_TAG"
+  if [ "$PARALLEL" -eq 1 ]; then
+    log "Pushing $_dest"
+    docker tag "$_src" "$_dest"
+    if ! docker push "$_dest"; then
+      FAIL=1
+      break
+    fi
+    continue
+  fi
+
+  (
+    log "Pushing $_dest"
+    docker tag "$_src" "$_dest"
+    docker push "$_dest"
+  ) &
+  PIDS="$PIDS $!"
+  ACTIVE=$((ACTIVE + 1))
+  if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+    flush_batch
+    if [ "$FAIL" -ne 0 ]; then
+      break
+    fi
+  fi
+done
+IFS="$OLD_IFS"
+
+if [ -n "$PIDS" ]; then
+  flush_batch
+fi
+
+if [ "$FAIL" -ne 0 ]; then
+  log "ERROR: one or more image promotions failed"
+  exit 1
+fi
+
+log "Promoted images to $REGISTRY/*:$PUSH_TAG"
 exit 0

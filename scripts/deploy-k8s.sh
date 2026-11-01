@@ -215,7 +215,8 @@ ensure_cluster() {
   exit 1
 }
 
-# Images built by scripts/build-images.sh (must exist locally for import).
+# Custom images imported from the local Docker daemon.
+# CI and AWS load these by pulling them from Docker Hub first (scripts/pull-images.sh).
 CUSTOM_IMAGES_FULL="
 appinit:latest
 upstock-login:latest
@@ -278,7 +279,8 @@ import_images() {
     for _img in $_images; do
       [ -n "$_img" ] || continue
       if ! docker image inspect "$_img" >/dev/null 2>&1; then
-        log "WARNING: image not found locally, skip import: $_img"
+        log "ERROR: image not found locally (pull or build it first): $_img"
+        _fail=1
         continue
       fi
       log "minikube image load $_img"
@@ -291,7 +293,8 @@ import_images() {
     for _img in $_images; do
       [ -n "$_img" ] || continue
       if ! docker image inspect "$_img" >/dev/null 2>&1; then
-        log "WARNING: image not found locally, skip import: $_img"
+        log "ERROR: image not found locally (pull or build it first): $_img"
+        _fail=1
         continue
       fi
       log "Import $_img"
@@ -310,7 +313,8 @@ import_images() {
     for _img in $_images; do
       [ -n "$_img" ] || continue
       if ! docker image inspect "$_img" >/dev/null 2>&1; then
-        log "WARNING: image not found locally, skip import: $_img"
+        log "ERROR: image not found locally (pull or build it first): $_img"
+        _fail=1
         continue
       fi
       log "minikube image load $_img"

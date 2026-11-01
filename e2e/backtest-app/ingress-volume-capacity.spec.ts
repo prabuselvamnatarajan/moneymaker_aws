@@ -24,9 +24,8 @@ test.describe('Ingress & Reverse Proxy 500MB Upload Capacity', () => {
     for (const confPath of nginxConfigs) {
       expect(fs.existsSync(confPath)).toBe(true);
       const content = fs.readFileSync(confPath, 'utf8');
-      expect(content).toMatch(
-        /client_max_body_size\s+500M;/,
-        `Missing client_max_body_size 500M in ${path.basename(confPath)}`
+      expect(content, `Missing client_max_body_size 500M in ${path.basename(confPath)}`).toMatch(
+        /client_max_body_size\s+500M;/
       );
     }
   });
