@@ -71,7 +71,7 @@ export const createUser = async (req, res, next) => {
       console.error("Failed to initialize predefined accounts for user:", newUser._id, initErr);
     }
 
-    const created = await User.findById(newUser._id).select("-password").populate("roles");
+    const created = await User.findById(newUser._id).select("-password").populate("roles").lean();
     res.status(201).json({ message: "User created successfully", data: created });
   } catch (error) {
     next(error);
@@ -80,7 +80,7 @@ export const createUser = async (req, res, next) => {
 
 export const getUserById = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.userId).select("-password").populate("roles");
+    const user = await User.findById(req.params.userId).select("-password").populate("roles").lean();
     if (!user) return res.status(404).json({ message: "User not found" });
     res.status(200).json({ message: "User retrieved successfully", data: user });
   } catch (error) {
@@ -112,7 +112,7 @@ export const updateUser = async (req, res, next) => {
     if (is_active !== undefined) user.is_active = is_active;
 
     await user.save();
-    const updated = await User.findById(user._id).select("-password").populate("roles");
+    const updated = await User.findById(user._id).select("-password").populate("roles").lean();
     res.status(200).json({ message: "User updated successfully", data: updated });
   } catch (error) {
     next(error);

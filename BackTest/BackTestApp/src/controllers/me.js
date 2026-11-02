@@ -2,7 +2,7 @@ import User from "../models/user.js";
 
 export const getMeController = async (req, res, next) => {
   try {
-    const user = await User.findById(req.auth.userId).select("-password").populate("roles");
+    const user = await User.findById(req.auth.userId).select("-password").populate("roles").lean();
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -44,7 +44,7 @@ export const updateMeController = async (req, res, next) => {
     if (name) user.name = name;
 
     await user.save();
-    const updated = await User.findById(userId).select("-password").populate("roles");
+    const updated = await User.findById(userId).select("-password").populate("roles").lean();
 
     res.status(200).json({
       message: "Profile updated successfully",
