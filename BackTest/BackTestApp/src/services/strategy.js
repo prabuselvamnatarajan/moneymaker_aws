@@ -98,7 +98,7 @@ export const deleteStrategy = async (userId, id, isAdmin = false) => {
   // Step 1: Find all deployments linked to this strategy (scoped to user for non-admin)
   const deploymentQuery = { strategy_id: strategy._id };
   if (!isAdmin) deploymentQuery.user_id = userId;
-  const deployments = await Deployment.find(deploymentQuery, { _id: 1 });
+  const deployments = await Deployment.find(deploymentQuery, { _id: 1 }).lean();
   const deploymentIds = deployments.map(d => d._id);
 
   // Step 2: Cascade-delete all child records by deployment_id first

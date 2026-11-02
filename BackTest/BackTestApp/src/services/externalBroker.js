@@ -1,7 +1,7 @@
 import ExternalBrokerId from "../models/externalBrokerId.js";
 
 export const getAllExternalBrokers = async () => {
-  return await ExternalBrokerId.find({}).sort({ external_broker_id: 1 });
+  return await ExternalBrokerId.find({}).sort({ external_broker_id: 1 }).lean();
 };
 
 export const createExternalBroker = async (data) => {
