@@ -13,22 +13,16 @@ env:
   IMAGE_REGISTRY: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
 
 jobs:
-  verify:
-    name: Build, test, and push immutable tags
+  unit:
+    name: Build, unit test, and push immutable tags
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 90
     concurrency:
-      group: cicd-verify-${{ github.workflow }}-${{ github.ref }}
+      group: cicd-unit-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
     outputs:
       image_tag: ${{ steps.set-tag.outputs.image_tag }}
-    env:
-      PLAYWRIGHT_WITH_DEPS: "1"
-      STACK_HEALTH_MAX_RETRIES: "120"
-      STACK_HEALTH_DELAY_SEC: "5"
-      SKIP_CI_SEED: "1"
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,6 +63,45 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.IMAGE_REGISTRY }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push immutable image tags
+        run: |
+          ./scripts/build-images.sh \
+            --push-only \
+            --profile full \
+            --registry "$IMAGE_REGISTRY" \
+            --tag "$IMAGE_TAG" \
+            --parallel 4
+        env:
+          IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
+
+  e2e:
+    name: End-to-end tests
+    needs: unit
+    if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: cicd-e2e-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      PLAYWRIGHT_WITH_DEPS: "1"
+      STACK_HEALTH_MAX_RETRIES: "120"
+      STACK_HEALTH_DELAY_SEC: "5"
+      SKIP_CI_SEED: "1"
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      API_BASE_URL: http://127.0.0.1/backtestapp/
+      UI_BASE_URL: http://127.0.0.1/backtest-ui/
+      IMAGE_TAG: ${{ needs.unit.outputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -76,7 +109,35 @@ jobs:
           cache: npm
           cache-dependency-path: e2e/package-lock.json
 
-      - name: Deploy CI stack from local images
+      - name: Install Playwright before Kubernetes starts
+        run: |
+          export ROOT="${GITHUB_WORKSPACE}"
+          # shellcheck disable=SC1091
+          . "$ROOT/scripts/test/lib/common.sh"
+          ensure_e2e_deps
+          ensure_playwright_browsers
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/pull-images.sh scripts/deploy-k8s.sh
+          chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh kill-moneymaker.sh
+          find scripts -type f -name '*.sh' -exec chmod +x {} +
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.IMAGE_REGISTRY }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull E2E images
+        run: |
+          ./scripts/pull-images.sh \
+            --profile e2e \
+            --registry "$IMAGE_REGISTRY" \
+            --tag "$IMAGE_TAG" \
+            --parallel 4
+
+      - name: Deploy CI stack
         run: ./scripts/deploy-k8s.sh --detach --overlay ci
 
       - name: Wait for BackTestApp Health
@@ -117,7 +178,7 @@ jobs:
             sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
             export KUBECONFIG="$HOME/.kube/config"
           fi
-          ./run_all_test_cases.sh --coverage --no-wait
+          ./run_all_test_cases.sh --coverage
 
       - name: Dump Kubernetes Diagnostics on Failure
         if: failure()
@@ -156,42 +217,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Check whether this commit is still the branch tip
-        id: tip
-        if: success()
-        run: |
-          set -eu
-          branch="${GITHUB_REF#refs/heads/}"
-          tip=$(git ls-remote --heads origin "refs/heads/${branch}" | awk 'NR==1 {print $1}')
-          if [ "$tip" = "$GITHUB_SHA" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "current=false" >> "$GITHUB_OUTPUT"
-            echo "Not pushing; origin/${branch} is ${tip:-missing}, this run is $GITHUB_SHA"
-          fi
-
-      - name: Log in to Docker Hub
-        if: steps.tip.outputs.current == 'true'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.IMAGE_REGISTRY }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Push immutable image tags
-        if: steps.tip.outputs.current == 'true'
-        run: |
-          ./scripts/build-images.sh \
-            --push-only \
-            --profile full \
-            --registry "$IMAGE_REGISTRY" \
-            --tag "$IMAGE_TAG" \
-            --parallel 4
-        env:
-          IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
-
   publish:
     name: Publish tested tags
-    needs: verify
+    needs: [unit, e2e]
     if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -213,7 +241,7 @@ jobs:
 
       - name: Pull tested images and push the public branch tag
         env:
-          IMAGE_TAG: ${{ needs.verify.outputs.image_tag }}
+          IMAGE_TAG: ${{ needs.unit.outputs.image_tag }}
         run: |
           set -eu
           branch="${GITHUB_REF#refs/heads/}"
@@ -261,7 +289,7 @@ jobs:
 
   deploy:
     name: Deploy to AWS
-    needs: verify
+    needs: [unit, e2e]
     if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -273,7 +301,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          IMAGE_TAG: ${{ needs.verify.outputs.image_tag }}
+          IMAGE_TAG: ${{ needs.unit.outputs.image_tag }}
           IMAGE_REGISTRY: ${{ env.IMAGE_REGISTRY }}
         with:
           host: ${{ secrets.HOST }}

@@ -446,8 +446,10 @@ wait_for_core() {
 # Importing a new :latest image does not change the pod template, and
 # imagePullPolicy is IfNotPresent, so running pods keep the previous image
 # until their deployment is restarted.
+# CI imports images before any pod exists, so a restart only removes the
+# Ready pod Traefik is routing to and every login returns 503.
 restart_imported_deployments() {
-  if [ "$OVERLAY" = "prod" ] || [ "$NO_IMPORT" -eq 1 ]; then
+  if [ "$OVERLAY" = "prod" ] || [ "$OVERLAY" = "ci" ] || [ "$NO_IMPORT" -eq 1 ]; then
     return 0
   fi
   if [ "$OVERLAY" = "ci" ]; then
