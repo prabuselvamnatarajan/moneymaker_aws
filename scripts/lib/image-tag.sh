@@ -15,34 +15,18 @@ validate_image_tag() {
 }
 
 # Moving tag for a git branch.
-# main is the production tag. Every other branch gets a tag that cannot
-# collide with a different branch name or with "latest", including names
-# longer than Docker's 128-character limit.
+# main → latest. Every other branch uses the branch name with characters
+# outside [A-Za-z0-9_.-] replaced by -, truncated to 128 characters.
+# Callers must refuse a non-main branch that sanitizes to exactly "latest".
 branch_destination_tag() {
   _raw="$1"
   if [ "$_raw" = "main" ]; then
     printf '%s\n' "latest"
     return 0
   fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    _hash=$(printf '%s' "$_raw" | sha256sum | awk '{print $1}' | cut -c1-12)
-  else
-    _hash=$(printf '%s' "$_raw" | shasum -a 256 | awk '{print $1}' | cut -c1-12)
+  _san=$(printf '%s' "$_raw" | sed 's/[^A-Za-z0-9_.-]/-/g')
+  if [ "${#_san}" -gt 128 ]; then
+    _san=$(printf '%s' "$_san" | cut -c1-128)
   fi
-  _san=$(printf '%s' "$_raw" | sed 's/[^a-zA-Z0-9._-]/-/g; s/^[.-]*//; s/[.-]*$//')
-  if [ -z "$_san" ]; then
-    _san="branch"
-  fi
-  # 115 + hyphen + 12 hex = 128
-  if [ "${#_san}" -gt 115 ]; then
-    _san=$(printf '%s' "$_san" | cut -c1-115 | sed 's/[.-]*$//')
-    if [ -z "$_san" ]; then
-      _san="branch"
-    fi
-  fi
-  _dest="${_san}-${_hash}"
-  if [ "$_dest" = "latest" ]; then
-    _dest="branch-${_hash}"
-  fi
-  printf '%s\n' "$_dest"
+  printf '%s\n' "$_san"
 }
