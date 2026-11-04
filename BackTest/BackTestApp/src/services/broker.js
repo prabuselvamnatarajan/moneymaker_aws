@@ -168,11 +168,11 @@ export const createBroker = async (userId, brokerData) => {
 export const getAllBrokers = async (userId, isAdmin = false) => {
   let brokers;
   if (isAdmin) {
-    brokers = await Broker.find({}).sort({ name: 1 });
+    brokers = await Broker.find({}).sort({ name: 1 }).lean();
   } else {
     brokers = await Broker.find({
       $or: [{ is_internal: true }, { user_id: userId }],
-    }).sort({ name: 1 });
+    }).sort({ name: 1 }).lean();
   }
 
   return sanitizeExpiredUpstoxBrokers(brokers);
