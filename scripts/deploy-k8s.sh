@@ -172,9 +172,9 @@ ensure_cluster() {
   if ! command -v k3s >/dev/null 2>&1; then
     log "Installing k3s (single-node Kubernetes)..."
     if [ "$(id -u)" -eq 0 ]; then
-      curl -sfL https://get.k3s.io | sh -
+      curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.31.2+k3s1 sh -
     else
-      curl -sfL https://get.k3s.io | sudo sh -
+      curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION=v1.31.2+k3s1 sh -
     fi
   fi
 

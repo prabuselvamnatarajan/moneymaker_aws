@@ -592,7 +592,7 @@ export const forceCloseOpenPositions = async (deployment, finalTick = {}) => {
     deployment_id: deployment._id,
     status: "OPEN",
     open_size: { $gt: 0 },
-  });
+  }).lean();
 
   if (openPositions.length === 0) {
     await clearStrategyHoldingsKeys(deployment);
@@ -1496,7 +1496,7 @@ export const getDeploymentMetrics = async (userId, id) => {
   const openPositions = await Position.find({
     deployment_id: deployment._id,
     status: "OPEN",
-  }).select("status realised_pnl unrealised_pnl");
+  }).select("status realised_pnl unrealised_pnl").lean();
   const realisedPnl = round2(totalPnL);
   const unrealisedPnl = sumOpenUnrealised(openPositions);
 
@@ -1685,7 +1685,7 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
   const openPositions = windowIncludesNow
     ? await Position.find({ deployment_id: deployment._id, status: "OPEN" }).select(
         "status realised_pnl unrealised_pnl"
-      )
+      ).lean()
     : [];
   const unrealisedPnl = sumOpenUnrealised(openPositions);
 

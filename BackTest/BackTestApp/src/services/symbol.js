@@ -207,7 +207,7 @@ export const deleteSymbol = async (userId, id) => {
       { user_symbol_id: result._id },
       { "symbol_control.underlying_user_symbol_id": result._id }
     ]
-  }, { _id: 1 });
+  }, { _id: 1 }).lean();
   const deploymentIds = deployments.map(d => d._id);
 
   // Step 2: Cascade-delete all child records by deployment_id (most records only reference deployment)

@@ -345,7 +345,8 @@ const runCreateTrade = async (tradeData) => {
 
       const prevTrades = await Trade.find(prevTradesQuery)
         .sort({ created_at: 1 })
-        .session(session);
+        .session(session)
+        .lean();
 
       for (const t of prevTrades) {
         const qty = t.quantity || 0;
@@ -780,7 +781,7 @@ export const getAllTrades = async (userId, queryParams) => {
         { _id: { $in: validObjectIds } },
         { account_id: { $in: accountQueryIds } },
       ],
-    });
+    }).lean();
     if (accounts.length > 0) {
       filter.account_id = { $in: accounts.map(a => a._id) };
     } else {
