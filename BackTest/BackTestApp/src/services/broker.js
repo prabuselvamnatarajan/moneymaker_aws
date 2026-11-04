@@ -139,9 +139,9 @@ async function sanitizeExpiredUpstoxBrokers(brokers) {
       broker.access_token &&
       isUpstoxTokenExpired(broker.access_token)
     ) {
-      await clearBrokerAccessToken(broker);
+      const doc = await Broker.findById(broker._id); if (doc) { await clearBrokerAccessToken(doc); }
       sanitized.push({
-        ...broker.toObject(),
+        ...broker,
         access_token: "",
         token_status: "expired",
       });
@@ -168,11 +168,11 @@ export const createBroker = async (userId, brokerData) => {
 export const getAllBrokers = async (userId, isAdmin = false) => {
   let brokers;
   if (isAdmin) {
-    brokers = await Broker.find({}).sort({ name: 1 }).lean();
+    brokers = await Broker.find({}).sort({ name: 1 });
   } else {
     brokers = await Broker.find({
       $or: [{ is_internal: true }, { user_id: userId }],
-    }).sort({ name: 1 }).lean();
+    }).sort({ name: 1 });
   }
 
   return sanitizeExpiredUpstoxBrokers(brokers);
