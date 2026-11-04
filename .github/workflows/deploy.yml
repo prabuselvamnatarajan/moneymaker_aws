@@ -75,6 +75,8 @@ jobs:
             --parallel 4
         env:
           IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
+          # Used after/before push to force Hub repos public (account default may be private).
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   unit:
     name: Unit tests (${{ matrix.image }})

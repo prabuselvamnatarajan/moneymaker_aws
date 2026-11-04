@@ -24,6 +24,7 @@ ROOT="$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 . "$ROOT/scripts/copy_shared.sh"
 . "$ROOT/scripts/lib/image-tag.sh"
+. "$ROOT/scripts/lib/dockerhub.sh"
 
 PROFILE="full"
 PARALLEL=""
@@ -369,6 +370,7 @@ if [ "$PUSH_ONLY" -eq 1 ]; then
   _save_ifs="$IFS"
   IFS='
 '
+  _push_only_dir=$(mktemp -d "${TMPDIR:-/tmp}/mm-image-push-only.XXXXXX")
   for _line in $JOBS; do
     [ -n "$_line" ] || continue
     _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
@@ -383,26 +385,53 @@ if [ "$PUSH_ONLY" -eq 1 ]; then
       log "Tagging $_tag -> $_remote"
       docker tag "$_tag" "$_remote"
     fi
-    (
-      trap - EXIT
-      log "Pushing $_remote"
-      docker push "$_remote"
-    ) &
-    PIDS="$PIDS $!"
-    ACTIVE=$((ACTIVE + 1))
-    _pushed=$((_pushed + 1))
-    if [ "$ACTIVE" -ge "$PARALLEL" ]; then
-      flush_batch
-      if [ "$FAIL" -ne 0 ]; then
-        break
-      fi
-    fi
+    printf '%s\n' "$_remote" > "$_push_only_dir/$_base"
   done
   IFS="$_save_ifs"
-  if [ -n "$PIDS" ]; then
-    flush_batch
+  if [ "$FAIL" -eq 0 ]; then
+    if [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+      if [ "${CI:-}" = "true" ]; then
+        FAIL=1
+        log "ERROR: DOCKERHUB_TOKEN is required in CI so pushed Hub repos stay public"
+      else
+        log "WARNING: DOCKERHUB_TOKEN unset; cannot ensure Hub repos are public"
+      fi
+    elif ! dockerhub_ensure_push_dir_public "$REGISTRY" "$_push_only_dir"; then
+      FAIL=1
+      log "ERROR: failed to ensure Docker Hub repositories are public"
+    fi
   fi
-  if [ "$_pushed" -eq 0 ]; then
+  if [ "$FAIL" -eq 0 ]; then
+    _save_ifs="$IFS"
+    IFS='
+'
+    for _line in $JOBS; do
+      [ -n "$_line" ] || continue
+      _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
+      _base=$(printf '%s' "$_tag" | cut -d: -f1)
+      _remote="$REGISTRY/$_base:$IMAGE_TAG"
+      (
+        trap - EXIT
+        log "Pushing $_remote"
+        docker push "$_remote"
+      ) &
+      PIDS="$PIDS $!"
+      ACTIVE=$((ACTIVE + 1))
+      _pushed=$((_pushed + 1))
+      if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+        flush_batch
+        if [ "$FAIL" -ne 0 ]; then
+          break
+        fi
+      fi
+    done
+    IFS="$_save_ifs"
+    if [ -n "$PIDS" ]; then
+      flush_batch
+    fi
+  fi
+  rm -rf "$_push_only_dir"
+  if [ "$_pushed" -eq 0 ] && [ "$FAIL" -eq 0 ]; then
     FAIL=1
     log "ERROR: --push-only found no images"
   fi
@@ -426,6 +455,20 @@ if [ "$FAIL" -ne 0 ]; then
 fi
 
 if [ "$DO_PUSH" -eq 1 ]; then
+  # New Hub repos inherit the account default (often private). Make them
+  # public before push so unit/e2e/deploy runners can pull without login.
+  if [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+    if [ "${CI:-}" = "true" ]; then
+      cleanup_push_dir
+      log "ERROR: DOCKERHUB_TOKEN is required in CI so pushed Hub repos stay public"
+      exit 1
+    fi
+    log "WARNING: DOCKERHUB_TOKEN unset; cannot ensure Hub repos are public"
+  elif ! dockerhub_ensure_push_dir_public "$REGISTRY" "$PUSH_DIR"; then
+    cleanup_push_dir
+    log "ERROR: failed to ensure Docker Hub repositories are public"
+    exit 1
+  fi
   _pushed=0
   PIDS=""
   ACTIVE=0
