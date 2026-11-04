@@ -9,6 +9,7 @@ COPY . .
 COPY ./redis_operations /app/redis_utils/redis_operations
 COPY ./account_utils.js /app/redis_utils/account_utils.js
 COPY ./utils /app/utils
+COPY ./strategy /app/strategy
 
 EXPOSE 3000
 
@@ -20,4 +21,4 @@ ENV TARGET_GROUP_ID=liquidity_sweep_strategy_group
 ENV SHARED_DIR=/shared
 ENV PLACEORDER_API=http://localhost/placeorder
 
-CMD ["node", "server.js"]
+CMD ["node", "LiquiditySweep.js"]

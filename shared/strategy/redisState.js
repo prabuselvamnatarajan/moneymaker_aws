@@ -1,7 +1,6 @@
-import { RedisClient, RedisJson } from './redis_operations/index.js';
+import { RedisClient, RedisJson } from '/app/redis_utils/redis_operations/index.js';
 import { logger } from '/app/utils/logUtils.js';
 
-const STRATEGY_NAME = process.env.STRATEGY_NAME || 'msb';
 const redisUrl = process.env.REDIS_URL;
 const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
 let redisJson;
@@ -13,12 +12,11 @@ export class StaleStateEpochError extends Error {
     }
 }
 
-function getRedisKey(symbol, isTestMode, deploymentId) {
+export function constructRedisKey(strategyName, symbol, isTestMode, deploymentId) {
     const mode = isTestMode ? 'backtest' : 'live';
-    let key = deploymentId 
-        ? `strategies:${STRATEGY_NAME}:${mode}:${deploymentId}:${symbol}`
-        : `strategies:${STRATEGY_NAME}:${mode}:${symbol}`;
-    return key;
+    return deploymentId
+        ? `strategies:${strategyName}:${mode}:${deploymentId}:${symbol}`
+        : `strategies:${strategyName}:${mode}:${symbol}`;
 }
 
 function getEpochKey(deploymentId) {
@@ -42,7 +40,7 @@ async function ensureRedisJson() {
  * Always seeds "1" (never trusts Kafka message epoch) so a stale in-flight tick
  * cannot pin Redis below the true epoch after eviction.
  */
-async function ensureDeploymentStateEpoch(deploymentId) {
+export async function ensureDeploymentStateEpoch(deploymentId) {
     if (!deploymentId) {
         throw new Error('deployment_id is required to read state_epoch');
     }
@@ -72,7 +70,7 @@ async function ensureDeploymentStateEpoch(deploymentId) {
     return epoch;
 }
 
-async function getDeploymentStateEpoch(deploymentId) {
+export async function getDeploymentStateEpoch(deploymentId) {
     return ensureDeploymentStateEpoch(deploymentId);
 }
 
@@ -81,7 +79,7 @@ async function getDeploymentStateEpoch(deploymentId) {
  * Missing message epoch (legacy routing) is healed by adopting the Redis epoch.
  * Missing Redis epoch is recreated via SETNX to 1 (never from the message).
  */
-async function assertFreshStateEpoch(strategy_details = {}) {
+export async function assertFreshStateEpoch(strategy_details = {}) {
     const deploymentId = strategy_details.deployment_id;
     if (!deploymentId) {
         throw new Error('strategy_details.deployment_id is required');
@@ -108,26 +106,24 @@ async function assertFreshStateEpoch(strategy_details = {}) {
     return redisEpoch;
 }
 
-async function getMSBStrategyStateForSymbol(symbol, isTestMode = false, deploymentId) {
+export async function getStrategyStateForSymbol(strategyName, symbol, isTestMode = false, deploymentId) {
+    const redisKey = constructRedisKey(strategyName, symbol, isTestMode, deploymentId);
+    logger.debug(`Fetching ${strategyName} strategy state for key: ${redisKey}`);
+    await ensureRedisJson();
     try {
-        let redisKey = getRedisKey(symbol, isTestMode, deploymentId);
-        logger.debug(`Fetching MSB strategy state for key: ${redisKey}`);
-        await ensureRedisJson();
-        try {
-            const data = await redisJson.getJson(redisKey);
-            logger.debug(`Fetched MSB strategy state for key ${redisKey}:`, data);
-            return data;
-        } catch (error) {
-            logger.error(`Error fetching strategy details for symbol ${symbol} with redis key ${redisKey} from Redis:`, error.message);
-            throw error;
-        }
+        const data = await redisJson.getJson(redisKey);
+        logger.debug(`Fetched ${strategyName} strategy state for key ${redisKey}:`, data);
+        return data;
     } catch (error) {
-        logger.error(`Error reading MSB strategy details for symbol ${symbol}:`, error.message);
+        logger.error(
+            `Error fetching strategy details for symbol ${symbol} with redis key ${redisKey} from Redis:`,
+            error.message
+        );
         throw error;
     }
 }
 
-async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newState, deploymentId) {
+export async function writeStrategyStateForSymbol(strategyName, symbol, isTestMode = false, newState, deploymentId) {
     if (!deploymentId) {
         throw new Error('deployment_id is required to write strategy state');
     }
@@ -143,13 +139,14 @@ async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newSta
         );
     }
 
-    let redisKey = getRedisKey(symbol, isTestMode, deploymentId);
+    const redisKey = constructRedisKey(strategyName, symbol, isTestMode, deploymentId);
     await ensureRedisJson();
     const ok = await redisJson.setJson(redisKey, newState);
     if (ok == null) {
-        throw new Error(`Failed to write MSB strategy state for key ${redisKey}`);
+        throw new Error(`Failed to write ${strategyName} strategy state for key ${redisKey}`);
     }
-    logger.debug(`Wrote MSB strategy state for key ${redisKey}:`, newState);
+    logger.debug(`Wrote ${strategyName} strategy state for key ${redisKey}:`, newState);
+    return true;
 }
 
 /**
@@ -157,7 +154,7 @@ async function writeMSBStrategyStateForSymbol(symbol, isTestMode = false, newSta
  *   signal. Carried on the flag so the force-close at end of data marks out at
  *   the last replayed tick rather than whatever the position tracker last wrote.
  */
-async function setBacktestCompleted(deploymentId, runId = null, finalTick = {}) {
+export async function setBacktestCompleted(deploymentId, runId = null, finalTick = {}) {
     await ensureRedisJson();
     const client = redisClientInstance.getClient();
     const key = `backtest_completed:${deploymentId}`;
@@ -173,12 +170,3 @@ async function setBacktestCompleted(deploymentId, runId = null, finalTick = {}) 
     await client.expire(key, 120);
     logger.info(`Set backtest completion flag in Redis for key ${key} run_id=${runId} last_ltp=${lastLtp}`);
 }
-
-export {
-    getMSBStrategyStateForSymbol,
-    writeMSBStrategyStateForSymbol,
-    setBacktestCompleted,
-    getDeploymentStateEpoch,
-    ensureDeploymentStateEpoch,
-    assertFreshStateEpoch,
-};

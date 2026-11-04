@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { LiquiditySweepStrategy } from '../LiquiditySweep.js';
 import { parseTick, isDataGap } from '../modules/tickParser.js';
 import { classifyTickSide, enrichTick, computeRollingDelta, getDeltaWeight } from '../modules/tickDelta.js';
 import { detectSweep, passesBookImbalance } from '../modules/sweepDetection.js';
@@ -311,5 +312,41 @@ describe('sessionTime', () => {
         const openTs = getSessionOpenTs(ts);
         const minsSinceOpen = (ts - openTs) / (60 * 1000);
         assert.equal(Math.round(minsSinceOpen), 5);
+    });
+});
+
+describe('LiquiditySweepStrategy.executeStrategy', () => {
+    it('initializes IDLE state from a market tick fixture', async () => {
+        const strategy = new LiquiditySweepStrategy();
+        const ltt = Date.now();
+        const rawMsg = {
+            fullFeed: {
+                marketFF: {
+                    ltpc: { ltp: 1000, ltq: 100, ltt, cp: 1000 },
+                    marketLevel: {
+                        bidAskQuote: [{ bidP: 999.5, bidQ: 500, askP: 1000.5, askQ: 500 }],
+                    },
+                    marketOHLC: {
+                        ohlc: [
+                            { interval: 'I1', open: 1000, high: 1000, low: 1000, close: 1000, vol: 100, ts: ltt },
+                            { interval: '1d', open: 990, high: 1020, low: 980, close: 1000, vol: 10000, ts: ltt },
+                        ],
+                    },
+                    vtt: 100000,
+                },
+            },
+        };
+        const strategyDetails = {
+            deployment_id: 'dep1',
+            state_epoch: 1,
+            timeframe: '1m',
+            account_id: 'acc1',
+            instrument_token: 'INS',
+        };
+        const state = await strategy.executeStrategy(null, rawMsg, 'RELIANCE', strategyDetails);
+        assert.equal(state.machineState, 'IDLE');
+        assert.equal(state.timeframe, '1m');
+        assert.equal(state.state_epoch, 1);
+        assert.equal(state.position, null);
     });
 });

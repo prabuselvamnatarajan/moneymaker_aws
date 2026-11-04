@@ -38,9 +38,11 @@ build_strategy() {
   image_tag=$2
   copy_shared "$target"
   cp ./shared/Accounts/account_utils.js "$target/account_utils.js"
+  cp -r ./shared/strategy "$target/strategy"
   docker build -t "$image_tag" "$target"
   clean_shared "$target"
   rm -f "$target/account_utils.js"
+  rm -rf "$target/strategy"
 }
 
 # Bake files that docker-compose bind-mounted into microservice containers.

@@ -5,8 +5,8 @@
   "main": "LiquiditySweep.js",
   "type": "module",
   "scripts": {
-    "test": "node --test __tests__/liquiditySweep.test.js __tests__/levelDetection.timeframe.test.js",
-    "start": "node server.js"
+    "test": "NODE_ENV=test node --import ./__tests__/register-loader.mjs --test __tests__/liquiditySweep.test.js __tests__/levelDetection.timeframe.test.js",
+    "start": "node LiquiditySweep.js"
   },
   "author": "",
   "license": "ISC",

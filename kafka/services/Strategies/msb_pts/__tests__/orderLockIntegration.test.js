@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { MSB } from '../MSB.js';
+import { MsbPtsStrategy } from '../MSB.js';
 import { store, resetStore } from './mocks/account_utils.js';
 
 const DEPLOYMENT_ID = 'dep-lock-test-1';
@@ -24,16 +24,21 @@ function candle({ high, low, ltp, timestamp = '2026-07-29T10:00:00.000Z' }) {
 }
 
 describe('Order Lock & Concurrent Tick Integration Test', () => {
+    /** @type {MsbPtsStrategy} */
+    let strategy;
+
     beforeEach(() => {
         process.env.PLACEORDER_API = 'http://localhost/placeorder';
+        process.env.NODE_ENV = 'test';
         resetStore({ balance: 100000, bought: {} });
+        strategy = new MsbPtsStrategy();
     });
 
     it('successfully acquires Redis order lock, executes order, and updates holdings atomically', async () => {
-        let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
+        let state = await strategy.executeStrategy(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
 
         // First breakout tick triggers BUY
-        state = await MSB(
+        state = await strategy.executeStrategy(
             state,
             candle({ high: 101, low: 100, ltp: 101 }),
             SYMBOL,
@@ -48,7 +53,7 @@ describe('Order Lock & Concurrent Tick Integration Test', () => {
     });
 
     it('rejects duplicate concurrent tick order placement while lock is held', async () => {
-        let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
+        let state = await strategy.executeStrategy(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
 
         // Simulate an in-flight order by pre-populating the active lock set in account_utils mock
         const { acquireOrderLockInRedis, releaseOrderLockInRedis } = await import('./mocks/account_utils.js');
@@ -56,7 +61,7 @@ describe('Order Lock & Concurrent Tick Integration Test', () => {
         assert.equal(lockAcquired, true, 'Lock should initially be available');
 
         // Next breakout tick arrives while lock is held by in-flight order
-        state = await MSB(
+        state = await strategy.executeStrategy(
             state,
             candle({ high: 101, low: 100, ltp: 101 }),
             SYMBOL,
@@ -70,7 +75,7 @@ describe('Order Lock & Concurrent Tick Integration Test', () => {
         await releaseOrderLockInRedis(SYMBOL, DEPLOYMENT_ID);
 
         // Subsequent tick can now execute order successfully
-        state = await MSB(
+        state = await strategy.executeStrategy(
             state,
             candle({ high: 102, low: 101, ltp: 102 }),
             SYMBOL,
