@@ -22,6 +22,7 @@ OVERLAY="full"
 NO_IMPORT=0
 DETACH=""
 NAMESPACE=moneymaker
+RESTARTED_DEPLOYS=""
 
 usage() {
   cat <<'EOF'
@@ -77,10 +78,10 @@ while [ $# -gt 0 ]; do
       echo "ERROR: Docker Swarm compose deploy was removed. Use --overlay ci|full|dev|prod." >&2
       exit 1
       ;;
-    --no-pull)
+    --no-pull|--push|--push-only|--promote-only)
       shift
       ;;
-    --profile|--parallel)
+    --profile|--parallel|--registry|--tag)
       [ $# -ge 2 ] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
       shift 2
       ;;
@@ -215,7 +216,8 @@ ensure_cluster() {
   exit 1
 }
 
-# Images built by scripts/build-images.sh (must exist locally for import).
+# Custom images imported from the local Docker daemon.
+# CI and AWS load these by pulling them from Docker Hub first (scripts/pull-images.sh).
 CUSTOM_IMAGES_FULL="
 appinit:latest
 upstock-login:latest
@@ -278,7 +280,8 @@ import_images() {
     for _img in $_images; do
       [ -n "$_img" ] || continue
       if ! docker image inspect "$_img" >/dev/null 2>&1; then
-        log "WARNING: image not found locally, skip import: $_img"
+        log "ERROR: image not found locally (pull or build it first): $_img"
+        _fail=1
         continue
       fi
       log "minikube image load $_img"
@@ -291,7 +294,8 @@ import_images() {
     for _img in $_images; do
       [ -n "$_img" ] || continue
       if ! docker image inspect "$_img" >/dev/null 2>&1; then
-        log "WARNING: image not found locally, skip import: $_img"
+        log "ERROR: image not found locally (pull or build it first): $_img"
+        _fail=1
         continue
       fi
       log "Import $_img"
@@ -310,7 +314,8 @@ import_images() {
     for _img in $_images; do
       [ -n "$_img" ] || continue
       if ! docker image inspect "$_img" >/dev/null 2>&1; then
-        log "WARNING: image not found locally, skip import: $_img"
+        log "ERROR: image not found locally (pull or build it first): $_img"
+        _fail=1
         continue
       fi
       log "minikube image load $_img"
@@ -410,20 +415,89 @@ recreate_appinit_job() {
 
 wait_for_core() {
   log "Waiting for core workloads in namespace $NAMESPACE"
-  kubectl -n "$NAMESPACE" rollout status deployment/reverse-proxy --timeout=300s || true
-  kubectl -n "$NAMESPACE" rollout status deployment/backtest-app --timeout=600s || true
-  kubectl -n "$NAMESPACE" rollout status deployment/backtest-ui --timeout=300s || true
-  # StatefulSets: wait until mongo1 has a ready replica (best-effort)
+  kubectl -n "$NAMESPACE" rollout status deployment/reverse-proxy --timeout=300s
+  kubectl -n "$NAMESPACE" rollout status deployment/backtest-app --timeout=600s
+  kubectl -n "$NAMESPACE" rollout status deployment/backtest-ui --timeout=600s
+  for _dep in $RESTARTED_DEPLOYS; do
+    case "$_dep" in
+      reverse-proxy|backtest-app|backtest-ui) continue ;;
+    esac
+    log "Waiting for deployment/$_dep"
+    kubectl -n "$NAMESPACE" rollout status "deployment/$_dep" --timeout=600s
+  done
+  if ! kubectl -n "$NAMESPACE" get statefulset mongo1 >/dev/null 2>&1; then
+    log "mongo1 is not in this overlay"
+    return 0
+  fi
   _i=0
   while [ "$_i" -lt 90 ]; do
     _ready=$(kubectl -n "$NAMESPACE" get statefulset mongo1 -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
     if [ "${_ready:-0}" = "1" ]; then
       log "mongo1 is ready"
-      break
+      return 0
     fi
     _i=$((_i + 1))
     sleep 5
   done
+  log "ERROR: mongo1 did not become ready"
+  exit 1
+}
+
+# Importing a new :latest image does not change the pod template, and
+# imagePullPolicy is IfNotPresent, so running pods keep the previous image
+# until their deployment is restarted.
+# CI imports images before any pod exists, so a restart only removes the
+# Ready pod Traefik is routing to and every login returns 503.
+restart_imported_deployments() {
+  if [ "$OVERLAY" = "prod" ] || [ "$OVERLAY" = "ci" ] || [ "$NO_IMPORT" -eq 1 ]; then
+    return 0
+  fi
+  if [ "$OVERLAY" = "ci" ]; then
+    _images="$CUSTOM_IMAGES_E2E"
+  else
+    _images="$CUSTOM_IMAGES_FULL"
+  fi
+  _names=""
+  for _img in $_images; do
+    [ -n "$_img" ] || continue
+    _names="$_names ${_img%%:*}"
+  done
+
+  _rows=$(kubectl -n "$NAMESPACE" get deploy -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{range .spec.template.spec.containers[*]}{.image}{","}{end}{"\n"}{end}')
+  RESTARTED_DEPLOYS=""
+  _old_ifs="$IFS"
+  IFS='
+'
+  for _row in $_rows; do
+    [ -n "$_row" ] || continue
+    _dep=${_row%%|*}
+    _imgs=${_row#*|}
+    _match=0
+    _old_ifs2="$IFS"
+    IFS=','
+    for _img in $_imgs; do
+      [ -n "$_img" ] || continue
+      _base=$(printf '%s' "$_img" | sed 's|.*/||; s|:.*||')
+      case " $_names " in
+        *" $_base "*)
+          _match=1
+          break
+          ;;
+      esac
+    done
+    IFS="$_old_ifs2"
+    if [ "$_match" -eq 1 ]; then
+      log "Restarting deployment/$_dep so it loads the imported image"
+      kubectl -n "$NAMESPACE" rollout restart "deployment/$_dep"
+      RESTARTED_DEPLOYS="$RESTARTED_DEPLOYS $_dep"
+    fi
+  done
+  IFS="$_old_ifs"
+
+  if [ -z "$RESTARTED_DEPLOYS" ]; then
+    log "ERROR: no deployments use the imported images; refusing to finish without a rollout"
+    exit 1
+  fi
 }
 
 # --- main ---
@@ -448,6 +522,7 @@ fi
 log "Applying kustomize overlay: $OVERLAY"
 kubectl apply -k "$OVERLAY_PATH"
 patch_ingress_class
+restart_imported_deployments
 
 if [ "$DETACH" = "true" ]; then
   log "Deploy finished (detach=true — not waiting for readiness)"

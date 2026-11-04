@@ -23,9 +23,15 @@ fi
 ROOT="$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 . "$ROOT/scripts/copy_shared.sh"
+. "$ROOT/scripts/lib/image-tag.sh"
+. "$ROOT/scripts/lib/dockerhub.sh"
 
 PROFILE="full"
 PARALLEL=""
+REGISTRY=""
+IMAGE_TAG="latest"
+DO_PUSH=0
+PUSH_ONLY=0
 FAIL=0
 
 usage() {
@@ -35,6 +41,10 @@ Usage: build-images.sh [options]
 Options:
   --profile full|e2e   Image set to build (default: full)
   --parallel N         Build up to N images concurrently (default: 1 local, 4 in CI)
+  --registry NAME      Docker registry prefix (e.g. prabuselvamnatarajan)
+  --tag TAG            Docker image tag when using --registry (default: latest)
+  --push               Push tagged images after every build in this run succeeds
+  --push-only          Push registry tags already present locally; do not build
   --help               Show this help
 
 Profiles:
@@ -44,6 +54,7 @@ Profiles:
 Examples:
   ./scripts/build-images.sh
   ./scripts/build-images.sh --profile e2e --parallel 4
+  ./scripts/build-images.sh --profile full --registry prabuselvamnatarajan --tag latest --push
 EOF
 }
 
@@ -62,6 +73,24 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "ERROR: --parallel requires a number" >&2; exit 1; }
       PARALLEL="$2"
       shift 2
+      ;;
+    --registry)
+      [ $# -ge 2 ] || { echo "ERROR: --registry requires a value" >&2; exit 1; }
+      REGISTRY="$2"
+      shift 2
+      ;;
+    --tag)
+      [ $# -ge 2 ] || { echo "ERROR: --tag requires a value" >&2; exit 1; }
+      IMAGE_TAG="$2"
+      shift 2
+      ;;
+    --push)
+      DO_PUSH=1
+      shift
+      ;;
+    --push-only)
+      PUSH_ONLY=1
+      shift
       ;;
     # Accepted so build-all.sh can forward deploy-k8s flags harmlessly
     --detach|--no-detach|--no-pull|--no-import)
@@ -105,6 +134,32 @@ case "$PARALLEL" in
     ;;
 esac
 
+if [ "$DO_PUSH" -eq 1 ] && [ "$PUSH_ONLY" -eq 1 ]; then
+  echo "ERROR: use either --push or --push-only" >&2
+  exit 1
+fi
+
+if [ "$DO_PUSH" -eq 1 ] && [ -z "$REGISTRY" ]; then
+  echo "ERROR: --push requires --registry" >&2
+  exit 1
+fi
+
+if [ "$PUSH_ONLY" -eq 1 ] && [ -z "$REGISTRY" ]; then
+  echo "ERROR: --push-only requires --registry" >&2
+  exit 1
+fi
+
+if [ -n "$REGISTRY" ]; then
+  validate_image_tag "$IMAGE_TAG" "image tag"
+fi
+
+# Filled only when --push is set. Each successful build writes one file.
+# Pushes run after every build succeeds, so a failed image is not published.
+PUSH_DIR=""
+if [ "$DO_PUSH" -eq 1 ]; then
+  PUSH_DIR=$(mktemp -d "${TMPDIR:-/tmp}/mm-image-push.XXXXXX")
+fi
+
 log() {
   printf '[build-images] %s\n' "$*"
 }
@@ -146,6 +201,16 @@ run_one_job() {
       return 1
       ;;
   esac
+
+  if [ -n "$REGISTRY" ]; then
+    _base_name=$(printf '%s' "$_tag" | cut -d: -f1)
+    _remote_tag="$REGISTRY/$_base_name:$IMAGE_TAG"
+    log "Tagging $_tag -> $_remote_tag"
+    docker tag "$_tag" "$_remote_tag"
+    if [ "$DO_PUSH" -eq 1 ]; then
+      printf '%s\n' "$_remote_tag" > "$PUSH_DIR/$_base_name"
+    fi
+  fi
 }
 
 register_e2e_jobs() {
@@ -206,59 +271,241 @@ IFS="$OLD_IFS"
 
 log "Profile=$PROFILE parallel=$PARALLEL — queued $JOB_COUNT image build(s)"
 
-PIDS=""
-ACTIVE=0
-
-flush_batch() {
-  for _pid in $PIDS; do
-    if ! wait "$_pid"; then
-      FAIL=1
-    fi
-  done
-  PIDS=""
-  ACTIVE=0
-}
-
+# appinit's Docker context is the repo root. Other jobs copy and delete bake
+# files inside that tree, so appinit runs only after those jobs finish.
+OTHER_JOBS=""
+APPINIT_JOBS=""
 OLD_IFS="$IFS"
 IFS='
 '
 for _line in $JOBS; do
   [ -n "$_line" ] || continue
   _kind=$(printf '%s' "$_line" | cut -d'|' -f1)
-  _ctx=$(printf '%s' "$_line" | cut -d'|' -f2)
-  _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
-  _extra=$(printf '%s' "$_line" | cut -d'|' -f4)
-
-  if [ "$PARALLEL" -eq 1 ]; then
-    if ! run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"; then
-      FAIL=1
-      break
-    fi
-    continue
-  fi
-
-  (
-    run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"
-  ) &
-  PIDS="$PIDS $!"
-  ACTIVE=$((ACTIVE + 1))
-  if [ "$ACTIVE" -ge "$PARALLEL" ]; then
-    flush_batch
-    if [ "$FAIL" -ne 0 ]; then
-      break
-    fi
+  if [ "$_kind" = "appinit" ]; then
+    APPINIT_JOBS="${APPINIT_JOBS}${APPINIT_JOBS:+
+}${_line}"
+  else
+    OTHER_JOBS="${OTHER_JOBS}${OTHER_JOBS:+
+}${_line}"
   fi
 done
 IFS="$OLD_IFS"
 
-if [ -n "$PIDS" ]; then
-  flush_batch
+PIDS=""
+ACTIVE=0
+
+flush_batch() {
+  _save_ifs="$IFS"
+  IFS=' '
+  for _pid in $PIDS; do
+    [ -n "$_pid" ] || continue
+    if ! wait "$_pid"; then
+      FAIL=1
+    fi
+  done
+  IFS="$_save_ifs"
+  PIDS=""
+  ACTIVE=0
+}
+
+run_job_list() {
+  _list="$1"
+  PIDS=""
+  ACTIVE=0
+  _save_ifs="$IFS"
+  IFS='
+'
+  for _line in $_list; do
+    [ -n "$_line" ] || continue
+    _kind=$(printf '%s' "$_line" | cut -d'|' -f1)
+    _ctx=$(printf '%s' "$_line" | cut -d'|' -f2)
+    _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
+    _extra=$(printf '%s' "$_line" | cut -d'|' -f4)
+
+    if [ "$PARALLEL" -eq 1 ]; then
+      if ! run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"; then
+        FAIL=1
+        break
+      fi
+      continue
+    fi
+
+    (
+      # Do not inherit an EXIT trap that would delete PUSH_DIR.
+      trap - EXIT
+      run_one_job "$_kind" "$_ctx" "$_tag" "$_extra"
+    ) &
+    PIDS="$PIDS $!"
+    ACTIVE=$((ACTIVE + 1))
+    if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+      flush_batch
+      if [ "$FAIL" -ne 0 ]; then
+        break
+      fi
+    fi
+  done
+  IFS="$_save_ifs"
+
+  if [ -n "$PIDS" ]; then
+    flush_batch
+  fi
+}
+
+# Command substitutions inherit EXIT traps. Only the main shell may delete PUSH_DIR.
+MAIN_BASHPID="${BASHPID:-$$}"
+cleanup_push_dir() {
+  [ "${BASHPID:-$$}" = "$MAIN_BASHPID" ] || return 0
+  if [ -n "$PUSH_DIR" ]; then
+    rm -rf "$PUSH_DIR"
+    PUSH_DIR=""
+  fi
+}
+
+trap 'cleanup_push_dir' EXIT
+
+if [ "$PUSH_ONLY" -eq 1 ]; then
+  _pushed=0
+  PIDS=""
+  ACTIVE=0
+  _save_ifs="$IFS"
+  IFS='
+'
+  _push_only_dir=$(mktemp -d "${TMPDIR:-/tmp}/mm-image-push-only.XXXXXX")
+  for _line in $JOBS; do
+    [ -n "$_line" ] || continue
+    _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
+    _base=$(printf '%s' "$_tag" | cut -d: -f1)
+    _remote="$REGISTRY/$_base:$IMAGE_TAG"
+    if ! docker image inspect "$_remote" >/dev/null 2>&1; then
+      if ! docker image inspect "$_tag" >/dev/null 2>&1; then
+        echo "ERROR: missing local image $_remote (build it before --push-only)" >&2
+        FAIL=1
+        break
+      fi
+      log "Tagging $_tag -> $_remote"
+      docker tag "$_tag" "$_remote"
+    fi
+    printf '%s\n' "$_remote" > "$_push_only_dir/$_base"
+  done
+  IFS="$_save_ifs"
+  if [ "$FAIL" -eq 0 ]; then
+    if [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+      if [ "${CI:-}" = "true" ]; then
+        FAIL=1
+        log "ERROR: DOCKERHUB_TOKEN is required in CI so pushed Hub repos stay public"
+      else
+        log "WARNING: DOCKERHUB_TOKEN unset; cannot ensure Hub repos are public"
+      fi
+    elif ! dockerhub_ensure_push_dir_public "$REGISTRY" "$_push_only_dir"; then
+      FAIL=1
+      log "ERROR: failed to ensure Docker Hub repositories are public"
+    fi
+  fi
+  if [ "$FAIL" -eq 0 ]; then
+    _save_ifs="$IFS"
+    IFS='
+'
+    for _line in $JOBS; do
+      [ -n "$_line" ] || continue
+      _tag=$(printf '%s' "$_line" | cut -d'|' -f3)
+      _base=$(printf '%s' "$_tag" | cut -d: -f1)
+      _remote="$REGISTRY/$_base:$IMAGE_TAG"
+      (
+        trap - EXIT
+        log "Pushing $_remote"
+        docker push "$_remote"
+      ) &
+      PIDS="$PIDS $!"
+      ACTIVE=$((ACTIVE + 1))
+      _pushed=$((_pushed + 1))
+      if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+        flush_batch
+        if [ "$FAIL" -ne 0 ]; then
+          break
+        fi
+      fi
+    done
+    IFS="$_save_ifs"
+    if [ -n "$PIDS" ]; then
+      flush_batch
+    fi
+  fi
+  rm -rf "$_push_only_dir"
+  if [ "$_pushed" -eq 0 ] && [ "$FAIL" -eq 0 ]; then
+    FAIL=1
+    log "ERROR: --push-only found no images"
+  fi
+  if [ "$FAIL" -ne 0 ]; then
+    log "ERROR: one or more image pushes failed"
+    exit 1
+  fi
+  log "Pushed $_pushed image(s) to $REGISTRY:$IMAGE_TAG"
+  exit 0
+fi
+
+run_job_list "$OTHER_JOBS"
+if [ "$FAIL" -eq 0 ]; then
+  run_job_list "$APPINIT_JOBS"
 fi
 
 if [ "$FAIL" -ne 0 ]; then
+  cleanup_push_dir
   log "ERROR: one or more image builds failed"
   exit 1
 fi
 
+if [ "$DO_PUSH" -eq 1 ]; then
+  # New Hub repos inherit the account default (often private). Make them
+  # public before push so unit/e2e/deploy runners can pull without login.
+  if [ -z "${DOCKERHUB_TOKEN:-}" ]; then
+    if [ "${CI:-}" = "true" ]; then
+      cleanup_push_dir
+      log "ERROR: DOCKERHUB_TOKEN is required in CI so pushed Hub repos stay public"
+      exit 1
+    fi
+    log "WARNING: DOCKERHUB_TOKEN unset; cannot ensure Hub repos are public"
+  elif ! dockerhub_ensure_push_dir_public "$REGISTRY" "$PUSH_DIR"; then
+    cleanup_push_dir
+    log "ERROR: failed to ensure Docker Hub repositories are public"
+    exit 1
+  fi
+  _pushed=0
+  PIDS=""
+  ACTIVE=0
+  for _f in "$PUSH_DIR"/*; do
+    [ -f "$_f" ] || continue
+    _remote=$(cat "$_f")
+    [ -n "$_remote" ] || continue
+    (
+      trap - EXIT
+      log "Pushing $_remote"
+      docker push "$_remote"
+    ) &
+    PIDS="$PIDS $!"
+    ACTIVE=$((ACTIVE + 1))
+    _pushed=$((_pushed + 1))
+    if [ "$ACTIVE" -ge "$PARALLEL" ]; then
+      flush_batch
+      if [ "$FAIL" -ne 0 ]; then
+        break
+      fi
+    fi
+  done
+  if [ -n "$PIDS" ]; then
+    flush_batch
+  fi
+  if [ "$_pushed" -eq 0 ]; then
+    FAIL=1
+    log "ERROR: --push set but no images were tagged"
+  fi
+  if [ "$FAIL" -ne 0 ]; then
+    cleanup_push_dir
+    log "ERROR: one or more image pushes failed"
+    exit 1
+  fi
+  log "Pushed $_pushed image(s) to $REGISTRY:$IMAGE_TAG"
+fi
+
+cleanup_push_dir
 log "All image builds completed (profile=$PROFILE)"
 exit 0

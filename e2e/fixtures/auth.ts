@@ -49,26 +49,37 @@ export function apiUrl(path: string): string {
   return new URL(apiPath(path), API_BASE).href;
 }
 
+function isGatewayFailure(err: unknown): boolean {
+  return err instanceof Error && /: 5\d\d /.test(err.message);
+}
+
 export async function loginAs(
   request: APIRequestContext,
   email: string,
   password: string
 ): Promise<AuthTokens> {
-  const res = await request.post(apiUrl('/auth/login'), {
-    data: { email, password },
-  });
-  if (!res.ok()) {
-    const body = await res.text();
-    throw new Error(`Login failed for ${email}: ${res.status()} ${body}`);
+  let lastStatus = 0;
+  let lastBody = '';
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    const res = await request.post(apiUrl('/auth/login'), {
+      data: { email, password },
+    });
+    if (res.ok()) {
+      const data = await res.json();
+      if (data.mfaRequired) {
+        throw new Error(`MFA required for ${email} — use MFA login flow in test setup`);
+      }
+      return {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+      };
+    }
+    lastStatus = res.status();
+    lastBody = await res.text();
+    if (lastStatus < 500 || attempt === 8) break;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   }
-  const data = await res.json();
-  if (data.mfaRequired) {
-    throw new Error(`MFA required for ${email} — use MFA login flow in test setup`);
-  }
-  return {
-    accessToken: data.accessToken,
-    refreshToken: data.refreshToken,
-  };
+  throw new Error(`Login failed for ${email}: ${lastStatus} ${lastBody}`);
 }
 
 export async function loginWithFallback(
@@ -79,7 +90,8 @@ export async function loginWithFallback(
   try {
     const tokens = await loginAs(request, creds.email, creds.password);
     return { ...tokens, email: creds.email };
-  } catch {
+  } catch (err) {
+    if (isGatewayFailure(err)) throw err;
     const tokens = await loginAs(request, creds.fallbackEmail, creds.fallbackPassword);
     return { ...tokens, email: creds.fallbackEmail };
   }
