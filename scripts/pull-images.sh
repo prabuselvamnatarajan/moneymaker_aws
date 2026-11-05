@@ -256,7 +256,22 @@ for _img in $IMAGES; do
   if [ "$PARALLEL" -eq 1 ]; then
     log "Pushing $_dest"
     docker tag "$_src" "$_dest"
-    if ! docker push "$_dest"; then
+    _retry=0
+    _max_retries=3
+    _push_success=0
+    while [ "$_retry" -lt "$_max_retries" ]; do
+      if docker push "$_dest"; then
+        _push_success=1
+        break
+      fi
+      _retry=$((_retry + 1))
+      if [ "$_retry" -lt "$_max_retries" ]; then
+        log "WARN: Failed to push $_dest (attempt $_retry). Retrying in 5 seconds..."
+        sleep 5
+      fi
+    done
+    if [ "$_push_success" -eq 0 ]; then
+      log "ERROR: Failed to push $_dest after $_max_retries attempts."
       FAIL=1
       break
     fi
@@ -266,7 +281,21 @@ for _img in $IMAGES; do
   (
     log "Pushing $_dest"
     docker tag "$_src" "$_dest"
-    docker push "$_dest"
+    _retry=0
+    _max_retries=3
+    while [ "$_retry" -lt "$_max_retries" ]; do
+      if docker push "$_dest"; then
+        break
+      fi
+      _retry=$((_retry + 1))
+      if [ "$_retry" -lt "$_max_retries" ]; then
+        log "WARN: Failed to push $_dest (attempt $_retry). Retrying in 5 seconds..."
+        sleep 5
+      else
+        log "ERROR: Failed to push $_dest after $_max_retries attempts."
+        exit 1
+      fi
+    done
   ) &
   PIDS="$PIDS $!"
   ACTIVE=$((ACTIVE + 1))
