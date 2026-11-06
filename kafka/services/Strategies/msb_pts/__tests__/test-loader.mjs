@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -5,10 +6,22 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mocksDir = path.join(__dirname, 'mocks');
 const strategyPkgUrl = pathToFileURL(path.join(__dirname, '..', 'package.json')).href;
+// Local checkout: __tests__ → package → Strategies → services → kafka → repo root.
+// In the Docker image __dirname is /app/__tests__, so this lands on "/" and shared/ is absent —
+// fall back to the baked-in /app/... paths in that case.
 const repoRoot = path.resolve(__dirname, '../../../../../');
 const sharedStrategyDir = path.join(repoRoot, 'shared', 'strategy');
 const sharedRedisOps = path.join(repoRoot, 'shared', 'redis_operations', 'index.js');
 const sharedLatencyUtil = path.join(repoRoot, 'shared', 'utils', 'latencyUtil.js');
+
+function resolveExisting(...candidates) {
+    for (const candidate of candidates) {
+        if (candidate && existsSync(candidate)) {
+            return candidate;
+        }
+    }
+    return null;
+}
 
 export async function resolve(specifier, context, nextResolve) {
     // Shared strategy modules live outside this package; resolve their bare deps from here.
@@ -22,10 +35,10 @@ export async function resolve(specifier, context, nextResolve) {
         };
     }
     if (specifier === '/app/utils/latencyUtil.js') {
-        return {
-            shortCircuit: true,
-            url: pathToFileURL(sharedLatencyUtil).href,
-        };
+        const target = resolveExisting(sharedLatencyUtil, '/app/utils/latencyUtil.js');
+        if (target) {
+            return { shortCircuit: true, url: pathToFileURL(target).href };
+        }
     }
     if (specifier === '/app/utils/kafkaErrorHandler.js') {
         return {
@@ -50,17 +63,24 @@ export async function resolve(specifier, context, nextResolve) {
         };
     }
     if (specifier === '/app/redis_utils/redis_operations/index.js') {
-        return {
-            shortCircuit: true,
-            url: pathToFileURL(sharedRedisOps).href,
-        };
+        const target = resolveExisting(
+            sharedRedisOps,
+            '/app/redis_utils/redis_operations/index.js'
+        );
+        if (target) {
+            return { shortCircuit: true, url: pathToFileURL(target).href };
+        }
     }
     if (specifier.startsWith('/app/strategy/')) {
         const rel = specifier.slice('/app/strategy/'.length);
-        return {
-            shortCircuit: true,
-            url: pathToFileURL(path.join(sharedStrategyDir, rel)).href,
-        };
+        const target = resolveExisting(
+            path.join(sharedStrategyDir, rel),
+            path.join('/app/strategy', rel)
+        );
+        if (target) {
+            return { shortCircuit: true, url: pathToFileURL(target).href };
+        }
+        return nextResolve(specifier, context);
     }
     return nextResolve(specifier, context);
 }
