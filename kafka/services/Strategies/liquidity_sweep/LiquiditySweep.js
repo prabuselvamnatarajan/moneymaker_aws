@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Strategy } from '/app/strategy/Strategy.js';
 import { resolveParams } from './config/defaultParams.js';
 import { parseTick, isDataGap } from './modules/tickParser.js';
@@ -251,4 +253,6 @@ export class LiquiditySweepStrategy extends Strategy {
     }
 }
 
-new LiquiditySweepStrategy();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    new LiquiditySweepStrategy();
+}

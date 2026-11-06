@@ -154,17 +154,17 @@ async function tryExecuteEntry(strategy, signal, state, symbol, strategy_details
         quantity,
         tag: symbol,
         timestamp: openedAt,
+    }, async (placedOrder) => {
+        if (levels.isLong) {
+            await setBoughtQuantityWithTagToRedis(symbol, placedOrder.quantity, strategy_details.deployment_id);
+        } else {
+            await setShortQuantityWithTagToRedis(symbol, placedOrder.quantity, strategy_details.deployment_id);
+        }
     });
     if (!placed) {
         await releaseOpenSlot(strategy_details.account_id);
         logTradeEvent(symbol, 'skipped_order_failed', { transactionType }, strategy_details);
         return { position: null, reason: 'order_failed' };
-    }
-
-    if (levels.isLong) {
-        await setBoughtQuantityWithTagToRedis(symbol, order.quantity, strategy_details.deployment_id);
-    } else {
-        await setShortQuantityWithTagToRedis(symbol, order.quantity, strategy_details.deployment_id);
     }
 
     logTradeEvent(symbol, 'OPEN', {
@@ -222,19 +222,20 @@ async function closePosition(strategy, position, ltp, symbol, strategy_details, 
         quantity,
         tag: symbol,
         timestamp,
+    }, async () => {
+        if (isLong) {
+            const remaining = Math.max(0, (await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - quantity);
+            await setBoughtQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
+        } else {
+            const remaining = Math.max(0, (await getShortQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - quantity);
+            await setShortQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
+        }
     });
     if (!placed) {
         logTradeEvent(symbol, 'close_failed', { reason, ltp, qty: quantity }, strategy_details);
         return false;
     }
 
-    if (isLong) {
-        const remaining = Math.max(0, (await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - quantity);
-        await setBoughtQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
-    } else {
-        const remaining = Math.max(0, (await getShortQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - quantity);
-        await setShortQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
-    }
     logTradeEvent(symbol, 'CLOSE', { reason, ltp, qty: order.quantity }, strategy_details);
     return true;
 }

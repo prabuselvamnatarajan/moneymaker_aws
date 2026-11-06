@@ -4,6 +4,7 @@ export const store = {
     bought: {},
     orderFail: false,
     orders: [],
+    lockHeldDuringHoldingsUpdate: null,
 };
 
 export function resetStore(overrides = {}) {
@@ -11,6 +12,7 @@ export function resetStore(overrides = {}) {
     store.bought = overrides.bought ?? {};
     store.orderFail = overrides.orderFail ?? false;
     store.orders = [];
+    store.lockHeldDuringHoldingsUpdate = null;
 }
 
 export async function getAccountBalanceFromRedis() {
@@ -24,6 +26,7 @@ export async function getBoughtQuantityWithTagFromRedis(tag, deploymentId) {
 
 export async function setBoughtQuantityWithTagToRedis(tag, quantity, deploymentId) {
     const key = deploymentId ? `${deploymentId}:${tag}` : tag;
+    store.lockHeldDuringHoldingsUpdate = activeLocks.has(key);
     store.bought[key] = quantity;
 }
 

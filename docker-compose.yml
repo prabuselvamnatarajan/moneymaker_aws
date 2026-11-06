@@ -734,6 +734,7 @@ services:
       - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
       - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
       - ./shared/utils:/app/utils:ro
+      - ./shared/strategy:/app/strategy:ro
     networks:
       - app-net
 
@@ -759,6 +760,7 @@ services:
       - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
       - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
       - ./shared/utils:/app/utils:ro
+      - ./shared/strategy:/app/strategy:ro
     networks:
       - app-net
 
@@ -784,6 +786,7 @@ services:
       - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
       - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
       - ./shared/utils:/app/utils:ro
+      - ./shared/strategy:/app/strategy:ro
     networks:
       - app-net
 
@@ -809,6 +812,7 @@ services:
       - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
       - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
       - ./shared/utils:/app/utils:ro
+      - ./shared/strategy:/app/strategy:ro
     networks:
       - app-net
 
@@ -840,6 +844,7 @@ services:
       - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
       - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
       - ./shared/utils:/app/utils:ro
+      - ./shared/strategy:/app/strategy:ro
     networks:
       - app-net
 
@@ -872,6 +877,7 @@ services:
       - ./shared/redis_operations:/app/redis_utils/redis_operations:ro
       - ./shared/Accounts/account_utils.js:/app/redis_utils/account_utils.js:ro
       - ./shared/utils:/app/utils:ro
+      - ./shared/strategy:/app/strategy:ro
     networks:
       - app-net
 

@@ -48,6 +48,7 @@ describe('MSB Order Lock & Concurrent Tick Integration Test', () => {
         assert.ok(store.orders.length === 1, 'Exactly one order should be placed');
         assert.equal(store.orders[0].transaction_type, 'BUY');
         assert.ok(store.bought[`${DEPLOYMENT_ID}:${SYMBOL}`] > 0, 'Redis holdings must be populated after order success');
+        assert.equal(store.lockHeldDuringHoldingsUpdate, true, 'Redis order lock must be held when updating holdings');
     });
 
     it('rejects duplicate concurrent tick order placement while lock is held', async () => {

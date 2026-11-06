@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Strategy } from '/app/strategy/Strategy.js';
 import { buildTimeframeCandle } from './candleBuilder.js';
 import {
@@ -194,9 +196,10 @@ export class MsbPtsStrategy extends Strategy {
                     price: ltp,
                     timestamp: currentData.timestamp,
                     tag: symbol,
+                }, async () => {
+                    await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                 });
                 if (placed) {
-                    await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                     position = null;
                     lastBuyPrice = null;
                     lastSellPrice = null;
@@ -218,9 +221,10 @@ export class MsbPtsStrategy extends Strategy {
                     timestamp: currentData.timestamp,
                     tag: symbol,
                     quantity: shortQty > 0 ? shortQty : 0,
+                }, async () => {
+                    await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                 });
                 if (placed) {
-                    await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                     position = null;
                     lastBuyPrice = null;
                     lastSellPrice = null;
@@ -264,9 +268,10 @@ export class MsbPtsStrategy extends Strategy {
                         price: ltp,
                         timestamp: currentData.timestamp,
                         tag: symbol,
+                    }, async (placedOrder) => {
+                        await setBoughtQuantityWithTagToRedis(symbol, placedOrder.quantity, strategy_details.deployment_id);
                     });
                     if (placed) {
-                        await setBoughtQuantityWithTagToRedis(symbol, order.quantity, strategy_details.deployment_id);
                         position = { direction: "LONG", entryPrice: ltp };
                         lastBuyPrice = ltp;
                         closedByTargetOrSl = false;
@@ -311,9 +316,10 @@ export class MsbPtsStrategy extends Strategy {
                         price: ltp,
                         timestamp: currentData.timestamp,
                         tag: symbol,
+                    }, async () => {
+                        await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                     });
                     if (placed) {
-                        await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                         position = null;
                         lastBuyPrice = null;
                     } else if (order.quantity <= 0) {
@@ -354,9 +360,10 @@ export class MsbPtsStrategy extends Strategy {
                         timestamp: currentData.timestamp,
                         tag: symbol,
                         quantity: shortQty > 0 ? shortQty : 0,
+                    }, async () => {
+                        await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                     });
                     if (placed) {
-                        await setShortQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
                         position = null;
                         lastSellPrice = null;
                     } else if (order.quantity <= 0) {
@@ -383,9 +390,10 @@ export class MsbPtsStrategy extends Strategy {
                             price: ltp,
                             timestamp: currentData.timestamp,
                             tag: symbol,
+                        }, async (placedOrder) => {
+                            await setBoughtQuantityWithTagToRedis(symbol, placedOrder.quantity, strategy_details.deployment_id);
                         });
                         if (placed) {
-                            await setBoughtQuantityWithTagToRedis(symbol, order.quantity, strategy_details.deployment_id);
                             position = { direction: "LONG", entryPrice: ltp };
                             lastBuyPrice = ltp;
                             closedByTargetOrSl = false;
@@ -410,4 +418,6 @@ export class MsbPtsStrategy extends Strategy {
     }
 }
 
-new MsbPtsStrategy();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    new MsbPtsStrategy();
+}

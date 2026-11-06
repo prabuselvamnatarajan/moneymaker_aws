@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Strategy } from '/app/strategy/Strategy.js';
 import { buildTimeframeCandle } from './candleBuilder.js';
 import {
@@ -164,13 +166,15 @@ export class MsbStrategy extends Strategy {
                         price: ltp,
                         timestamp: currentData.timestamp,
                         tag: symbol,
+                    }, async (placedOrder) => {
+                        await setBoughtQuantityWithTagToRedis(symbol, placedOrder.quantity, strategy_details.deployment_id);
                     });
-                    if (placed) {
-                        await setBoughtQuantityWithTagToRedis(symbol, order.quantity, strategy_details.deployment_id);
-                    } else if (order.quantity <= 0) {
-                        logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${order.quantity}`);
-                    } else {
-                        logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                    if (!placed) {
+                        if (order.quantity <= 0) {
+                            logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${order.quantity}`);
+                        } else {
+                            logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                        }
                     }
                 }
             } else if (prevHigh.low > low) {
@@ -209,13 +213,15 @@ export class MsbStrategy extends Strategy {
                         price: ltp,
                         timestamp: currentData.timestamp,
                         tag: symbol,
-                    });
-                    if (placed) {
+                    }, async () => {
                         await setBoughtQuantityWithTagToRedis(symbol, 0, strategy_details.deployment_id);
-                    } else if (order.quantity <= 0) {
-                        logger.warn(`MSB: Skipping SELL order due to zero/negative quantity: ${order.quantity}`);
-                    } else {
-                        logger.warn('MSB: SELL order failed; keeping bought_quantity for retry');
+                    });
+                    if (!placed) {
+                        if (order.quantity <= 0) {
+                            logger.warn(`MSB: Skipping SELL order due to zero/negative quantity: ${order.quantity}`);
+                        } else {
+                            logger.warn('MSB: SELL order failed; keeping bought_quantity for retry');
+                        }
                     }
                 }
             }
@@ -250,13 +256,15 @@ export class MsbStrategy extends Strategy {
                         price: ltp,
                         timestamp: currentData.timestamp,
                         tag: symbol,
+                    }, async (placedOrder) => {
+                        await setBoughtQuantityWithTagToRedis(symbol, placedOrder.quantity, strategy_details.deployment_id);
                     });
-                    if (placed) {
-                        await setBoughtQuantityWithTagToRedis(symbol, order.quantity, strategy_details.deployment_id);
-                    } else if (order.quantity <= 0) {
-                        logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${order.quantity}`);
-                    } else {
-                        logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                    if (!placed) {
+                        if (order.quantity <= 0) {
+                            logger.warn(`MSB: Skipping BUY order due to zero/negative quantity: ${order.quantity}`);
+                        } else {
+                            logger.warn('MSB: BUY order failed; not updating bought_quantity');
+                        }
                     }
                 }
             }
@@ -272,4 +280,6 @@ export class MsbStrategy extends Strategy {
     }
 }
 
-new MsbStrategy();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    new MsbStrategy();
+}

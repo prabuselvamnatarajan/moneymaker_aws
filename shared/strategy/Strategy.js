@@ -155,10 +155,16 @@ export class Strategy {
         });
     }
 
-    async placeOrder(order) {
+    async placeOrder(order, onOrderPlaced = null) {
         const ctx = this.messageCtx();
         const attempts = this.constructor.orderAttempts ?? 1;
-        const place = () => placeOrderHttp(order, attempts);
+        const place = async () => {
+            const placed = await placeOrderHttp(order, attempts);
+            if (placed && typeof onOrderPlaced === 'function') {
+                await onOrderPlaced(order);
+            }
+            return placed;
+        };
         if (this.constructor.lockOrders) {
             return executeOrderWithLock(
                 ctx.symbol,
@@ -172,10 +178,12 @@ export class Strategy {
     /**
      * Build payload and place. Returns { placed, order } so children can update
      * bought/short quantity exactly as they do today.
+     * When onOrderPlaced callback is supplied, it executes while the order lock
+     * is held (if lockOrders is enabled), ensuring atomic holdings updates in Redis.
      */
-    async triggerOrder(type, overrides = {}) {
+    async triggerOrder(type, overrides = {}, onOrderPlaced = null) {
         const order = await this.computeOrderPayload(type, overrides);
-        const placed = await this.placeOrder(order);
+        const placed = await this.placeOrder(order, onOrderPlaced);
         return { placed, order };
     }
 
@@ -232,7 +240,7 @@ export class Strategy {
                     return;
                 }
 
-                console.log(`msg: ${JSON.stringify(msg)}`);
+                logger.debug('Received Kafka message:', msg);
 
                 const isBackTest = resolveIsBackTest(strategy_details);
                 if (

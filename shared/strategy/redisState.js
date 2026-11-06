@@ -4,6 +4,7 @@ import { logger } from '/app/utils/logUtils.js';
 const redisUrl = process.env.REDIS_URL;
 const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
 let redisJson;
+let connectPromise = null;
 
 export class StaleStateEpochError extends Error {
     constructor(message) {
@@ -28,8 +29,18 @@ async function ensureRedisJson() {
         throw new Error('REDIS_URL is required for strategy state');
     }
     if (!redisJson) {
-        await redisClientInstance.connect();
-        redisJson = new RedisJson(redisClientInstance.getClient());
+        if (!connectPromise) {
+            connectPromise = (async () => {
+                try {
+                    await redisClientInstance.connect();
+                    redisJson = new RedisJson(redisClientInstance.getClient());
+                } catch (err) {
+                    connectPromise = null;
+                    throw err;
+                }
+            })();
+        }
+        await connectPromise;
     }
     return redisJson;
 }
