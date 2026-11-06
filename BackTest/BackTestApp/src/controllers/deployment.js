@@ -99,7 +99,7 @@ const lifecycleAction = (action) => async (req, res, next) => {
   try {
     let userId = req.auth?.userId;
     if (!userId && req.serviceAuth) {
-      const deployment = await Deployment.findById(req.params.id).select("user_id");
+      const deployment = await Deployment.findById(req.params.id).select("user_id").lean();
       if (!deployment) {
         return res.status(404).json({ message: "Deployment not found" });
       }

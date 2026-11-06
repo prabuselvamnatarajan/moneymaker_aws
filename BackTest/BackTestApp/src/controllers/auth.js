@@ -65,7 +65,7 @@ export const refreshToken = async (req, res, next) => {
     }
 
     const User = mongoose.model("User");
-    const user = await User.findById(payload.userId);
+    const user = await User.findById(payload.userId).lean();
     if (!user) {
       return res.status(401).json({ message: "User not found" });
     }
@@ -176,7 +176,7 @@ export const resetPassword = async (req, res, next) => {
 
 export const getSessions = async (req, res, next) => {
   try {
-    const sessions = await Session.find({ user: req.auth.userId, active: true }).sort({ startedAt: -1 });
+    const sessions = await Session.find({ user: req.auth.userId, active: true }).sort({ startedAt: -1 }).lean();
     const formattedSessions = sessions.map(s => ({
       id: s._id.toString(),
       device: s.device,
@@ -225,7 +225,7 @@ export const revokeOtherSessions = async (req, res, next) => {
 
 export const getApiKeys = async (req, res, next) => {
   try {
-    const keys = await PersonalAccessToken.find({ user: req.auth.userId, active: true }).sort({ createdAt: -1 });
+    const keys = await PersonalAccessToken.find({ user: req.auth.userId, active: true }).sort({ createdAt: -1 }).lean();
     const formattedKeys = keys.map(k => ({
       id: k._id.toString(),
       name: k.name,
