@@ -4,6 +4,7 @@ export const store = {
     short: {},
     orderFail: false,
     orders: [],
+    lockHeldDuringHoldingsUpdate: null,
 };
 
 export function resetStore(overrides = {}) {
@@ -12,6 +13,7 @@ export function resetStore(overrides = {}) {
     store.short = overrides.short ?? {};
     store.orderFail = overrides.orderFail ?? false;
     store.orders = [];
+    store.lockHeldDuringHoldingsUpdate = null;
 }
 
 export async function getAccountBalanceFromRedis() {
@@ -25,6 +27,7 @@ export async function getBoughtQuantityWithTagFromRedis(tag, deploymentId) {
 
 export async function setBoughtQuantityWithTagToRedis(tag, quantity, deploymentId) {
     const key = deploymentId ? `${deploymentId}:${tag}` : tag;
+    store.lockHeldDuringHoldingsUpdate = activeLocks.has(key);
     store.bought[key] = quantity;
 }
 
@@ -35,6 +38,7 @@ export async function getShortQuantityWithTagFromRedis(tag, deploymentId) {
 
 export async function setShortQuantityWithTagToRedis(tag, quantity, deploymentId) {
     const key = deploymentId ? `${deploymentId}:${tag}` : tag;
+    store.lockHeldDuringHoldingsUpdate = activeLocks.has(key);
     store.short[key] = quantity;
 }
 

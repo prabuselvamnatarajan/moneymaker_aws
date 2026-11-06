@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { MSB } from '../MSB.js';
+import { MsbPtsStrategy } from '../MSB.js';
 import { store, resetStore } from './mocks/account_utils.js';
 
 const DEPLOYMENT_ID = 'dep-pts-1';
@@ -28,16 +28,21 @@ function holdingsKey() {
 }
 
 describe('msb_pts buy/sell consistency', () => {
+    /** @type {MsbPtsStrategy} */
+    let strategy;
+
     beforeEach(() => {
         process.env.PLACEORDER_API = 'http://localhost/placeorder';
+        process.env.NODE_ENV = 'test';
         resetStore({ balance: 100000, bought: {} });
+        strategy = new MsbPtsStrategy();
     });
 
     it('clears bought_quantity and position after successful trend-break SELL', async () => {
-        let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
+        let state = await strategy.executeStrategy(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
 
         // Initial uptrend → BUY + LONG position
-        state = await MSB(
+        state = await strategy.executeStrategy(
             state,
             candle({ high: 101, low: 100, ltp: 101 }),
             SYMBOL,
@@ -48,7 +53,7 @@ describe('msb_pts buy/sell consistency', () => {
         assert.ok(store.bought[holdingsKey()] > 0);
 
         // Trend break down → SELL
-        state = await MSB(
+        state = await strategy.executeStrategy(
             { ...state, prevHigh: { high: 101, low: 100.5 } },
             candle({ high: 100, low: 99, ltp: 99 }),
             SYMBOL,
@@ -61,10 +66,10 @@ describe('msb_pts buy/sell consistency', () => {
     });
 
     it('keeps position and holdings when trend-break SELL fails', async () => {
-        let state = await MSB(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
+        let state = await strategy.executeStrategy(null, candle({ high: 100, low: 99, ltp: 100 }), SYMBOL, strategyDetails());
 
         // BUY
-        state = await MSB(
+        state = await strategy.executeStrategy(
             state,
             candle({ high: 101, low: 100, ltp: 101 }),
             SYMBOL,
@@ -74,7 +79,7 @@ describe('msb_pts buy/sell consistency', () => {
         resetStore({ balance: 100000, bought: { [holdingsKey()]: 50 }, orderFail: true });
 
         // Sell attempt fails
-        state = await MSB(
+        state = await strategy.executeStrategy(
             { ...state, prevHigh: { high: 101, low: 100.5 } },
             candle({ high: 100, low: 99, ltp: 99 }),
             SYMBOL,
@@ -96,7 +101,7 @@ describe('msb_pts buy/sell consistency', () => {
         resetStore({ balance: 100000, bought: { [holdingsKey()]: 50 } });
 
         // Trend breaks UP (high: 97 > prevLow.high: 96)
-        state = await MSB(
+        state = await strategy.executeStrategy(
             state,
             candle({ high: 97, low: 91, ltp: 97 }),
             SYMBOL,
@@ -128,7 +133,7 @@ describe('msb_pts buy/sell consistency', () => {
         // 2. Intra-bar tick arrives at 09:18:00 (mid-bar, isClosed: false) with LTP = 110 (Target hit!)
         const tickMidBarTarget = { high: 110, low: 99, ltp: 110, isClosed: false };
 
-        state = await MSB(state, tickMidBarTarget, null, SYMBOL, details);
+        state = await strategy.executeStrategy(state, tickMidBarTarget, SYMBOL, details);
 
         assert.equal(store.orders.length, 1, 'Target exit must fire immediately on intra-bar tick without waiting for candle close');
         assert.equal(store.orders[0].transaction_type, 'SELL');
@@ -137,14 +142,19 @@ describe('msb_pts buy/sell consistency', () => {
         // 3. Additional intra-bar ticks arrive during forming 15m candle — no new MSB breakout entries must fire
         const formingTick = { high: 108, low: 97, ltp: 108, isClosed: false };
         for (let i = 0; i < 10; i++) {
-            state = await MSB(state, formingTick, null, SYMBOL, details);
+            state = await strategy.executeStrategy(state, formingTick, SYMBOL, details);
         }
 
         assert.equal(store.orders.length, 1, 'No new MSB entry orders must fire on intra-bar ticks');
 
         // 4. Closed 15m candle arrives at 09:30:01 AM
         const closed15mCandle = { open: 98, high: 108, low: 97, close: 107, isClosed: true };
-        state = await MSB(state, formingTick, closed15mCandle, SYMBOL, details);
+        state = await strategy.executeStrategy(
+            state,
+            { ...formingTick, closedCandle: closed15mCandle },
+            SYMBOL,
+            details
+        );
 
         // Trend breaks UP on closed candle -> new LONG entry
         assert.equal(store.orders.length, 2, 'New MSB entry order fires ONLY on closed 15m candle');

@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
     getAccountBalanceFromRedis,
     getBoughtQuantityWithTagFromRedis,
@@ -15,45 +14,18 @@ import { logger } from '/app/utils/logUtils.js';
 import { buildTradeLevels, updateTrailingStop } from './tradeLevels.js';
 import { logTradeEvent } from './signalLogger.js';
 
-async function triggerOrder(requestBody) {
-    if (!requestBody || requestBody.quantity <= 0) {
-        logger.warn('Order quantity is zero or negative, skipping order trigger.');
-        return false;
-    }
-    const placeOrderApi = process.env.PLACEORDER_API;
-    if (!placeOrderApi) {
-        logger.error('PLACEORDER_API env variable not set');
-        return false;
-    }
-    try {
-        const res = await axios.post(placeOrderApi, requestBody);
-        if (res.status >= 200 && res.status < 300) {
-            logger.debug('Order API response:', res.data);
-            return true;
-        }
-        logger.error(`Order API non-success status: ${res.status}`);
-        return false;
-    } catch (err) {
-        logger.error('Order API error:', err.message);
-        return false;
-    }
-}
-
-async function computeOrderPayload(strategy_details, transaction_type, ltp, tag, quantityOverride, timestamp) {
+/**
+ * Sweep-specific quantity resolution (risk size is computed separately).
+ * Short-cover and balance fallback (-0.05) run here before triggerOrder when
+ * no explicit quantity was provided.
+ */
+async function resolveOrderQuantity(strategy_details, transaction_type, ltp, tag, quantityOverride) {
     let {
         account_id,
         use_full_amount = false,
         quantity = 1,
         no_of_lots = 1,
         lot_size,
-        instrument_token,
-        product = 'D',
-        validity = 'DAY',
-        order_type = 'MARKET',
-        is_amo = false,
-        slice = true,
-        disclosed_quantity = 0,
-        trigger_price = 0,
         commission_type = 'PERCENTAGE',
         commission_rate = 0,
     } = strategy_details;
@@ -62,12 +34,15 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
     const lots = Number(no_of_lots) >= 1 ? Math.floor(Number(no_of_lots)) : 1;
 
     if (quantityOverride != null && quantityOverride > 0) {
-        quantity = quantityOverride;
-    } else if (transaction_type === 'BUY') {
+        return quantityOverride;
+    }
+
+    if (transaction_type === 'BUY') {
         const shortQty = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
         if (shortQty > 0) {
-            quantity = shortQty;
-        } else if (use_full_amount) {
+            return shortQty;
+        }
+        if (use_full_amount) {
             const current_acc_balance = await getAccountBalanceFromRedis(account_id);
             let maxAffordableValue = current_acc_balance;
             if (commission_type === 'FLAT') {
@@ -77,14 +52,17 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
             }
             maxAffordableValue = Math.max(0, maxAffordableValue - 0.05);
             if (lot) {
-                quantity = Math.floor(maxAffordableValue / (ltp * lot)) * lot;
-            } else {
-                quantity = Math.floor(maxAffordableValue / ltp);
+                return Math.floor(maxAffordableValue / (ltp * lot)) * lot;
             }
-        } else if (lot) {
-            quantity = lots * lot;
+            return Math.floor(maxAffordableValue / ltp);
         }
-    } else if (transaction_type === 'SELL') {
+        if (lot) {
+            return lots * lot;
+        }
+        return quantity;
+    }
+
+    if (transaction_type === 'SELL') {
         quantity = await getBoughtQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
         if (quantity <= 0) {
             quantity = await getShortQuantityWithTagFromRedis(tag, strategy_details.deployment_id);
@@ -108,27 +86,10 @@ async function computeOrderPayload(strategy_details, transaction_type, ltp, tag,
                 quantity = lots * lot;
             }
         }
+        return quantity;
     }
 
-    if (timestamp) {
-        strategy_details.execution_time = new Date(timestamp).toISOString();
-    }
-
-    return {
-        quantity,
-        product,
-        validity,
-        price: ltp,
-        tag: tag ? tag.replace(/[^a-zA-Z0-9_-]/g, '_') : '',
-        instrument_token,
-        order_type,
-        transaction_type,
-        disclosed_quantity: Number(disclosed_quantity),
-        trigger_price: Number(trigger_price),
-        is_amo: String(is_amo) === 'true',
-        slice: String(slice) === 'true',
-        strategy_details,
-    };
+    return quantity;
 }
 
 async function computeRiskBasedQuantity(strategy_details, entry, riskDistance, params) {
@@ -152,7 +113,7 @@ async function computeRiskBasedQuantity(strategy_details, entry, riskDistance, p
     return Math.max(qty, 1);
 }
 
-async function tryExecuteEntry(signal, state, symbol, strategy_details, params, openedAt) {
+async function tryExecuteEntry(strategy, signal, state, symbol, strategy_details, params, openedAt) {
     const levels = buildTradeLevels(signal, state, params);
     if (!levels.sufficientRR) {
         logTradeEvent(symbol, 'skipped_insufficient_rr', {
@@ -170,16 +131,15 @@ async function tryExecuteEntry(signal, state, symbol, strategy_details, params, 
     );
 
     const transactionType = levels.isLong ? 'BUY' : 'SELL';
-    const requestBody = await computeOrderPayload(
+    const quantity = await resolveOrderQuantity(
         strategy_details,
         transactionType,
         levels.entry,
         symbol,
-        qty,
-        openedAt
+        qty
     );
 
-    if (!requestBody?.quantity || requestBody.quantity <= 0) {
+    if (!quantity || quantity <= 0) {
         return { position: null, reason: 'zero_qty' };
     }
 
@@ -189,17 +149,22 @@ async function tryExecuteEntry(signal, state, symbol, strategy_details, params, 
         return { position: null, reason: 'max_concurrent' };
     }
 
-    const orderPlaced = await triggerOrder(requestBody);
-    if (!orderPlaced) {
+    const { placed, order } = await strategy.triggerOrder(transactionType, {
+        price: levels.entry,
+        quantity,
+        tag: symbol,
+        timestamp: openedAt,
+    }, async (placedOrder) => {
+        if (levels.isLong) {
+            await setBoughtQuantityWithTagToRedis(symbol, placedOrder.quantity, strategy_details.deployment_id);
+        } else {
+            await setShortQuantityWithTagToRedis(symbol, placedOrder.quantity, strategy_details.deployment_id);
+        }
+    });
+    if (!placed) {
         await releaseOpenSlot(strategy_details.account_id);
         logTradeEvent(symbol, 'skipped_order_failed', { transactionType }, strategy_details);
         return { position: null, reason: 'order_failed' };
-    }
-
-    if (levels.isLong) {
-        await setBoughtQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
-    } else {
-        await setShortQuantityWithTagToRedis(symbol, requestBody.quantity, strategy_details.deployment_id);
     }
 
     logTradeEvent(symbol, 'OPEN', {
@@ -207,7 +172,7 @@ async function tryExecuteEntry(signal, state, symbol, strategy_details, params, 
         entry: levels.entry,
         stop: levels.stop,
         target: levels.target,
-        qty: requestBody.quantity,
+        qty: order.quantity,
     }, strategy_details);
 
     return {
@@ -218,8 +183,8 @@ async function tryExecuteEntry(signal, state, symbol, strategy_details, params, 
             target: levels.target,
             target1: levels.target1,
             riskDistance: levels.riskDistance,
-            qty: requestBody.quantity,
-            remainingQty: requestBody.quantity,
+            qty: order.quantity,
+            remainingQty: order.quantity,
             openedAt: openedAt || Date.now(),
             breakevenMoved: false,
             partialTaken: false,
@@ -229,44 +194,49 @@ async function tryExecuteEntry(signal, state, symbol, strategy_details, params, 
     };
 }
 
-async function openPosition(signal, state, symbol, strategy_details, params, openedAt) {
-    const result = await tryExecuteEntry(signal, state, symbol, strategy_details, params, openedAt);
+async function openPosition(strategy, signal, state, symbol, strategy_details, params, openedAt) {
+    const result = await tryExecuteEntry(strategy, signal, state, symbol, strategy_details, params, openedAt);
     return result.position;
 }
 
-async function closePosition(position, ltp, symbol, strategy_details, reason, qtyOverride, timestamp) {
+async function closePosition(strategy, position, ltp, symbol, strategy_details, reason, qtyOverride, timestamp) {
     const isLong = position.direction === 'long';
     const closeQty = qtyOverride ?? position.remainingQty ?? position.qty;
     const transactionType = isLong ? 'SELL' : 'BUY';
 
-    const requestBody = await computeOrderPayload(
+    const quantity = await resolveOrderQuantity(
         strategy_details,
         transactionType,
         ltp,
         symbol,
-        closeQty,
-        timestamp
+        closeQty
     );
 
-    if (!requestBody?.quantity || requestBody.quantity <= 0) {
+    if (!quantity || quantity <= 0) {
         logger.warn(`[liquidity_sweep] Skipping close (${reason}): zero quantity`);
         return false;
     }
 
-    const orderPlaced = await triggerOrder(requestBody);
-    if (!orderPlaced) {
-        logTradeEvent(symbol, 'close_failed', { reason, ltp, qty: requestBody.quantity }, strategy_details);
+    const { placed, order } = await strategy.triggerOrder(transactionType, {
+        price: ltp,
+        quantity,
+        tag: symbol,
+        timestamp,
+    }, async () => {
+        if (isLong) {
+            const remaining = Math.max(0, (await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - quantity);
+            await setBoughtQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
+        } else {
+            const remaining = Math.max(0, (await getShortQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - quantity);
+            await setShortQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
+        }
+    });
+    if (!placed) {
+        logTradeEvent(symbol, 'close_failed', { reason, ltp, qty: quantity }, strategy_details);
         return false;
     }
 
-    if (isLong) {
-        const remaining = Math.max(0, (await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - closeQty);
-        await setBoughtQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
-    } else {
-        const remaining = Math.max(0, (await getShortQuantityWithTagFromRedis(symbol, strategy_details.deployment_id)) - closeQty);
-        await setShortQuantityWithTagToRedis(symbol, remaining, strategy_details.deployment_id);
-    }
-    logTradeEvent(symbol, 'CLOSE', { reason, ltp, qty: requestBody.quantity }, strategy_details);
+    logTradeEvent(symbol, 'CLOSE', { reason, ltp, qty: order.quantity }, strategy_details);
     return true;
 }
 
@@ -275,7 +245,7 @@ async function finalizeClose(state, tick, symbol, strategy_details, params) {
     return enterCooldown(state, params, tick.timestamp);
 }
 
-async function manageOpenPosition(state, tick, symbol, strategy_details, params) {
+async function manageOpenPosition(strategy, state, tick, symbol, strategy_details, params) {
     const position = state.position;
     if (!position) {
         return state;
@@ -290,7 +260,7 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
             ? (ltp - position.entry) / position.riskDistance
             : (position.entry - ltp) / position.riskDistance;
         if (profitR < params.breakevenAtR) {
-            const closed = await closePosition(position, ltp, symbol, strategy_details, 'time_stop', null, tick.timestamp);
+            const closed = await closePosition(strategy, position, ltp, symbol, strategy_details, 'time_stop', null, tick.timestamp);
             if (closed) {
                 return finalizeClose(state, tick, symbol, strategy_details, params);
             }
@@ -318,6 +288,7 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
     const stopHit = isLong ? ltp <= effectiveStop : ltp >= effectiveStop;
     if (stopHit) {
         const closed = await closePosition(
+            strategy,
             position,
             ltp,
             symbol,
@@ -344,7 +315,7 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
                 partialQty = lot ? Math.min(lot, position.remainingQty) : 1;
             }
             if (partialQty > 0) {
-                const closed = await closePosition(position, ltp, symbol, strategy_details, 'partial_target1', partialQty, tick.timestamp);
+                const closed = await closePosition(strategy, position, ltp, symbol, strategy_details, 'partial_target1', partialQty, tick.timestamp);
                 if (closed) {
                     position.remainingQty -= partialQty;
                     position.partialTaken = true;
@@ -357,7 +328,7 @@ async function manageOpenPosition(state, tick, symbol, strategy_details, params)
 
     const targetHit = isLong ? ltp >= position.target : ltp <= position.target;
     if (targetHit && position.remainingQty > 0) {
-        const closed = await closePosition(position, ltp, symbol, strategy_details, 'target', position.remainingQty, tick.timestamp);
+        const closed = await closePosition(strategy, position, ltp, symbol, strategy_details, 'target', position.remainingQty, tick.timestamp);
         if (closed) {
             return finalizeClose(state, tick, symbol, strategy_details, params);
         }
@@ -379,8 +350,7 @@ function enterCooldown(state, params, timestamp) {
 }
 
 export {
-    triggerOrder,
-    computeOrderPayload,
+    resolveOrderQuantity,
     openPosition,
     tryExecuteEntry,
     manageOpenPosition,
