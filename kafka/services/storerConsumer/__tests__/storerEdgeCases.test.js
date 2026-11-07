@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mongoCollectionNameForSymbol, buildStoreDocument } from '../storeDocument.js';
+import { mongoCollectionNameForSymbol, buildStoreDocument, parseKafkaMessage } from '../storeDocument.js';
 
 describe('storerConsumer Edge Cases & Document Ingestion Tests', () => {
 
@@ -24,16 +24,21 @@ describe('storerConsumer Edge Cases & Document Ingestion Tests', () => {
     });
 
     it('handles message payload parsing safely and flags non-JSON input', () => {
-        function parseMessageValue(bufferOrString) {
-            return JSON.parse(bufferOrString.toString());
-        }
-
         assert.throws(
-            () => parseMessageValue('NOT_JSON_PAYLOAD'),
+            () => parseKafkaMessage({ key: 'NSE_EQ|INFY', value: Buffer.from('NOT_JSON_PAYLOAD') }),
             { name: 'SyntaxError' }
         );
 
-        const valid = parseMessageValue(JSON.stringify({ test: 123 }));
-        assert.equal(valid.test, 123);
+        assert.throws(
+            () => parseKafkaMessage(null),
+            /Invalid Kafka message format/
+        );
+
+        const valid = parseKafkaMessage({
+            key: Buffer.from('NSE_EQ|INFY'),
+            value: Buffer.from(JSON.stringify({ test: 123 }))
+        });
+        assert.equal(valid.symbol, 'NSE_EQ|INFY');
+        assert.equal(valid.data.test, 123);
     });
 });
