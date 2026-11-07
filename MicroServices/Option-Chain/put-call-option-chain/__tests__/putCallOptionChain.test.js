@@ -1,53 +1,44 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+    validateOptionChainRequest,
+    extractUpstoxErrorMessage,
+    handleApiCallbackError,
+} from '../requestHelper.js';
 
-describe('MicroServices/Option-Chain/put-call-option-chain Unit Tests', () => {
+describe('MicroServices/Option-Chain/put-call-option-chain requestHelper (Real Codebase)', () => {
+    it('rejects request with missing or empty userId (400)', () => {
+        const r1 = validateOptionChainRequest({ symbol: 'NIFTY', expiry: '2024-12-26' });
+        assert.equal(r1.status, 400);
+        assert.ok(r1.error.includes('userId is required'));
 
-    function validateChainRequest(query) {
-        const userId = typeof query?.userId === 'string' ? query.userId.trim() : '';
-        if (!userId) {
-            return { status: 400, message: 'Bad Request: userId is required' };
-        }
-        const symbol = typeof query?.symbol === 'string' ? query.symbol.trim() : '';
-        if (!symbol) {
-            return { status: 400, message: 'Bad Request: symbol is required' };
-        }
-        const expiry = typeof query?.expiry === 'string' ? query.expiry.trim() : '';
-        if (!expiry) {
-            return { status: 400, message: 'Bad Request: expiry is required' };
-        }
-
-        return { status: 200, userId, symbol, expiry };
-    }
-
-    function extractUpstoxErrorMessage(error) {
-        try {
-            const text = error?.response?.text || error?.text;
-            if (text) {
-                const parsed = JSON.parse(text);
-                const first = parsed?.errors?.[0];
-                if (first?.message) return first.message;
-            }
-        } catch {
-            // ignore parse errors
-        }
-        return error?.message || 'Upstox API request failed';
-    }
-
-    it('rejects request with missing userId (400)', () => {
-        assert.equal(validateChainRequest({ symbol: 'NIFTY', expiry: '2024-12-26' }).status, 400);
+        const r2 = validateOptionChainRequest({ userId: '   ', symbol: 'NIFTY', expiry: '2024-12-26' });
+        assert.equal(r2.status, 400);
+        assert.ok(r2.error.includes('userId is required'));
     });
 
-    it('rejects request with missing symbol (400)', () => {
-        assert.equal(validateChainRequest({ userId: 'u1', expiry: '2024-12-26' }).status, 400);
+    it('rejects request with missing or empty symbol (400)', () => {
+        const r1 = validateOptionChainRequest({ userId: 'u1', expiry: '2024-12-26' });
+        assert.equal(r1.status, 400);
+        assert.ok(r1.error.includes('symbol is required'));
+
+        const r2 = validateOptionChainRequest({ userId: 'u1', symbol: '   ', expiry: '2024-12-26' });
+        assert.equal(r2.status, 400);
+        assert.ok(r2.error.includes('symbol is required'));
     });
 
-    it('rejects request with missing expiry (400)', () => {
-        assert.equal(validateChainRequest({ userId: 'u1', symbol: 'NIFTY' }).status, 400);
+    it('rejects request with missing or empty expiry (400)', () => {
+        const r1 = validateOptionChainRequest({ userId: 'u1', symbol: 'NIFTY' });
+        assert.equal(r1.status, 400);
+        assert.ok(r1.error.includes('expiry is required'));
+
+        const r2 = validateOptionChainRequest({ userId: 'u1', symbol: 'NIFTY', expiry: '   ' });
+        assert.equal(r2.status, 400);
+        assert.ok(r2.error.includes('expiry is required'));
     });
 
     it('accepts valid chain request with trimmed fields', () => {
-        const res = validateChainRequest({ userId: ' u1 ', symbol: ' NIFTY ', expiry: ' 2024-12-26 ' });
+        const res = validateOptionChainRequest({ userId: ' u1 ', symbol: ' NIFTY ', expiry: ' 2024-12-26 ' });
         assert.equal(res.status, 200);
         assert.equal(res.userId, 'u1');
         assert.equal(res.symbol, 'NIFTY');
@@ -57,5 +48,20 @@ describe('MicroServices/Option-Chain/put-call-option-chain Unit Tests', () => {
     it('extracts Upstox error message when request fails', () => {
         const err = { response: { text: JSON.stringify({ errors: [{ message: 'Expiry date not found' }] }) } };
         assert.equal(extractUpstoxErrorMessage(err), 'Expiry date not found');
+
+        const generic = new Error('Socket closed');
+        assert.equal(extractUpstoxErrorMessage(generic), 'Socket closed');
+
+        assert.equal(extractUpstoxErrorMessage(null), 'Upstox API request failed');
+    });
+
+    it('handles callback errors appropriately (401 vs 500)', () => {
+        const authErr = handleApiCallbackError({ status: 403 });
+        assert.equal(authErr.statusCode, 401);
+        assert.equal(authErr.invalidateToken, true);
+
+        const serverErr = handleApiCallbackError({ status: 502, message: 'Bad Gateway' });
+        assert.equal(serverErr.statusCode, 500);
+        assert.equal(serverErr.invalidateToken, false);
     });
 });
