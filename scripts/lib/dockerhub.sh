@@ -110,3 +110,37 @@ dockerhub_ensure_push_dir_public() {
   done
   [ "$_fail" -eq 0 ]
 }
+
+# Delete an image tag from namespace/repository on Docker Hub.
+# Args: namespace repository tag jwt
+# Returns 0 on success (200, 204) or if tag already absent (404).
+# Returns 1 on failure.
+dockerhub_delete_tag() {
+  _ns="$1"
+  _name="$2"
+  _tag="$3"
+  _jwt="$4"
+  if [ -z "$_ns" ] || [ -z "$_name" ] || [ -z "$_tag" ] || [ -z "$_jwt" ]; then
+    echo "ERROR: dockerhub_delete_tag requires namespace, repository, tag, and jwt" >&2
+    return 1
+  fi
+  _url="https://hub.docker.com/v2/repositories/${_ns}/${_name}/tags/${_tag}/"
+  _code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$_url" \
+    -H "Authorization: JWT $_jwt" \
+    -H 'Accept: application/json') || return 1
+  if [ "$_code" = "200" ] || [ "$_code" = "204" ]; then
+    printf 'deleted\n'
+    return 0
+  fi
+  if [ "$_code" = "404" ]; then
+    printf 'not_found\n'
+    return 0
+  fi
+  if [ "$_code" = "403" ]; then
+    echo "ERROR: failed to delete tag $_ns/$_name:$_tag (HTTP 403: ensure DOCKERHUB_TOKEN has Read, Write, Delete permissions)" >&2
+    return 1
+  fi
+  echo "ERROR: failed to delete tag $_ns/$_name:$_tag (HTTP $_code)" >&2
+  return 1
+}
+
