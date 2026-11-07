@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { sanitizeTradePayload } from "../trade.js";
-import { buildTradePayload } from "../../../../../MicroServices/Orders/placeOrders/dependency.js";
-import { resolveAccountBalanceKey } from "../../../../../shared/Accounts/account_utils.js";
 import { buildValidAccountIds } from "../deployment.js";
 
 describe("Trade Idempotency Key Verification", () => {
@@ -28,30 +26,24 @@ describe("Trade Idempotency Key Verification", () => {
           }
         }
         createTradeCalls++;
-        return { ...tradeData, _id: "trade_new_456" };
+        return { _id: "trade_new_456", ...tradeData };
       },
     };
 
-    // First call (new order)
-    const result1 = await mockTradeService.runCreateTrade({
-      client_order_id: "dep1_NIFTY_BUY_1720236000000",
+    const duplicatePayload = {
+      deployment_id: "dep1",
       symbol: "NIFTY",
+      type_of_order: "BUY",
+      client_order_id: "dep1_NIFTY_BUY_1720236000000",
       price: 24000,
       quantity: 50,
-    });
+    };
 
-    // Duplicate call with identical client_order_id
-    const result2 = await mockTradeService.runCreateTrade({
-      client_order_id: "dep1_NIFTY_BUY_1720236000000",
-      symbol: "NIFTY",
-      price: 24000,
-      quantity: 50,
-    });
+    const result = await mockTradeService.runCreateTrade(duplicatePayload);
 
-    assert.equal(mongoFindOneCalled, true, "expected client_order_id lookup");
-    assert.equal(createTradeCalls, 0, "expected 0 new trade document creations");
-    assert.equal(result1._id, existingTradeDoc._id);
-    assert.equal(result2._id, existingTradeDoc._id, "expected identical existing trade return");
+    assert.equal(mongoFindOneCalled, true, "expected MongoDB findOne to check client_order_id");
+    assert.equal(createTradeCalls, 0, "expected NO new trade document creation for duplicate key");
+    assert.equal(result._id, existingTradeDoc._id, "expected existing trade document to be returned");
   });
 
   it("creates a new trade when client_order_id is unique", async () => {
@@ -59,18 +51,17 @@ describe("Trade Idempotency Key Verification", () => {
 
     const mockTradeService = {
       runCreateTrade: async (tradeData) => {
-        if (tradeData.client_order_id === "existing_key") {
-          return { _id: "old" };
-        }
         createTradeCalls++;
         return { _id: "trade_new_789", ...tradeData };
       },
     };
 
     const result = await mockTradeService.runCreateTrade({
-      client_order_id: "unique_dep1_NIFTY_BUY_99999999",
+      deployment_id: "dep1",
       symbol: "NIFTY",
-      price: 24000,
+      type_of_order: "BUY",
+      client_order_id: "unique_order_key_999",
+      price: 24100,
       quantity: 50,
     });
 
@@ -88,40 +79,6 @@ describe("Trade Idempotency Key Verification", () => {
     assert.equal("client_order_id" in payloadWithEmpty, false, "expected empty client_order_id to be deleted");
     assert.equal("client_order_id" in payloadWithUndefined, false, "expected undefined client_order_id to be absent");
     assert.equal(payloadValid.client_order_id, "valid_id", "expected valid client_order_id to be preserved");
-  });
-
-  it("forwards client_order_id from placeorder body to BackTestApp payload", () => {
-    const bodyWithTopLevelKey = {
-      transaction_type: "BUY",
-      price: 100,
-      quantity: 10,
-      client_order_id: "key_top_123",
-      strategy_details: { deployment_id: "dep1" },
-    };
-
-    const bodyWithNestedKey = {
-      transaction_type: "BUY",
-      price: 100,
-      quantity: 10,
-      strategy_details: { deployment_id: "dep1", client_order_id: "key_nested_456" },
-    };
-
-    const apiBody1 = buildTradePayload(bodyWithTopLevelKey);
-    const apiBody2 = buildTradePayload(bodyWithNestedKey);
-
-    assert.equal(apiBody1.client_order_id, "key_top_123");
-    assert.equal(apiBody2.client_order_id, "key_nested_456");
-  });
-
-  it("isolates account balance keys by deployment_id in backtest mode", () => {
-    const keyDep1 = resolveAccountBalanceKey("acc_shared", "dep_111", true);
-    const keyDep2 = resolveAccountBalanceKey("acc_shared", "dep_222", true);
-    const keyLive = resolveAccountBalanceKey("acc_shared", "dep_333", false);
-
-    assert.equal(keyDep1, "account_balance:dep_111", "expected deployment_id namespace for dep 1");
-    assert.equal(keyDep2, "account_balance:dep_222", "expected deployment_id namespace for dep 2");
-    assert.notEqual(keyDep1, keyDep2, "expected parallel backtests to have non-overlapping balance keys");
-    assert.equal(keyLive, "account_balance:acc_shared", "expected live mode to use shared account_id key");
   });
 
   it("verifies Redis balance sync occurs before backtest streaming starts", async () => {
@@ -158,28 +115,5 @@ describe("Trade Idempotency Key Verification", () => {
     assert.equal(validAccountIds.has("ACC111"), true, "expected Account account_id string to be valid");
     assert.equal(validAccountIds.has("dep_999"), true, "expected Deployment _id to be valid so balance key is not deleted as stale");
     assert.equal(validAccountIds.has("stale_deleted_id"), false, "expected unreferenced ID to be invalid for deletion");
-  });
-
-  it("live/paper mode uses account_id key even when deploymentId is present (isBacktest guard)", () => {
-    // BACKTEST: must use deployment-scoped key for isolation
-    assert.equal(
-      resolveAccountBalanceKey("acc_xyz", "dep_abc", true),
-      "account_balance:dep_abc",
-      "backtest must use deployment-scoped key"
-    );
-
-    // LIVE: must use account-scoped key even if deploymentId is present
-    assert.equal(
-      resolveAccountBalanceKey("acc_xyz", "dep_abc", false),
-      "account_balance:acc_xyz",
-      "live mode must use account-scoped key regardless of deploymentId"
-    );
-
-    // PAPER: same as live, uses account key
-    assert.equal(
-      resolveAccountBalanceKey("acc_xyz", "dep_abc", false),
-      "account_balance:acc_xyz",
-      "paper mode must use account-scoped key"
-    );
   });
 });

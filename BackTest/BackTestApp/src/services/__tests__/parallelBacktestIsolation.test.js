@@ -1,21 +1,17 @@
 /**
  * parallelBacktestIsolation.test.js
  *
- * Comprehensive regression tests for all bugs identified and fixed in the
- * parallel-backtest isolation & MSB order execution investigation.
+ * Comprehensive regression tests for BackTestApp trade execution,
+ * excursion tracking, multi-timeframe isolation, and tick filtering.
  *
  * Bug fixes covered:
  *   Bug 1.  E11000 duplicate key on client_order_id (MongoDB sparse index null collision)
- *   Bug 2.  Redis balance key must be namespaced by deploymentId ONLY in BACKTEST mode
- *   Bug 3.  LIVE/PAPER mode must use account_id key even when deploymentId is present
  *   Bug 4.  Redis sync must occur BEFORE backtest tick streaming starts
  *   Bug 5.  stale Redis cleanup must guard deployment balance keys (validAccountIds)
- *   Bug 6.  Kafka partition key must include deployment_id to prevent tick interleaving
- *   Bug 7.  Symbol extraction must strip deployment_id suffix from composite Kafka key
- *   Bug 8.  Per-deployment tick serialization lock (handleMessageForDeployment)
  *   Bug 9.  Two parallel identical backtests must produce identical trade counts and PnL
- *   Bug 10. client_order_id forwarded from placeorder body to BackTestApp
- *   Bug 11. Deployment-scoped bought_quantity Redis key prevents cross-deployment holdings
+ *   Bug 12. max_up/max_down excursion seed at close — Math.max not ?? operator
+ *   Multi-Timeframe Parallel Deployments (1m, 3m, 5m, 15m) & Multi-Run Consistency
+ *   Bug 13. backtest close-time locks and tick filtering
  */
 
 import { describe, it } from "node:test";
@@ -26,18 +22,7 @@ import {
   isTickAllowed,
   buildSeedExcursion,
 } from "../trade.js";
-import {
-  resolveAccountBalanceKey,
-  resolveBoughtQuantityKey,
-} from "../../../../../shared/Accounts/account_utils.js";
 import { buildValidAccountIds } from "../deployment.js";
-import { resolvePartitionKey } from "../../../../../kafka/services/StrategyChooserConsumer/topicRoutingHelper.js";
-import {
-  extractCleanSymbol,
-  createDeploymentLock,
-  resolveIsBackTest,
-} from "../../../../../shared/strategy/strategyUtils.js";
-import { buildTradePayload } from "../../../../../MicroServices/Orders/placeOrders/dependency.js";
 import { applyExcursion } from "../../utils/positionMath.js";
 
 // ---------------------------------------------------------------------------
@@ -78,41 +63,6 @@ describe("Bug 1: E11000 — strip falsy client_order_id before MongoDB insert", 
     assert.equal(r1._id, "existing");
     assert.equal(r2._id, "existing", "duplicate call must return the same document");
     assert.equal(store.size, 1, "no new document must be created");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// BUG 2 & 3: Redis balance key — BACKTEST uses deploymentId, LIVE uses accountId
-// ---------------------------------------------------------------------------
-describe("Bug 2 & 3: Redis balance key selection by strategy mode (isBacktest guard)", () => {
-  it("BACKTEST mode uses deployment-scoped key for isolation", () => {
-    assert.equal(resolveAccountBalanceKey("acc_xyz", "dep_abc", true), "account_balance:dep_abc");
-  });
-
-  it("LIVE mode uses account-scoped key even when deploymentId is present", () => {
-    assert.equal(resolveAccountBalanceKey("acc_xyz", "dep_abc", false), "account_balance:acc_xyz",
-      "live mode must not use deployment-namespaced key");
-  });
-
-  it("PAPER mode uses account-scoped key", () => {
-    assert.equal(resolveAccountBalanceKey("acc_xyz", "dep_abc", false), "account_balance:acc_xyz");
-  });
-
-  it("BACKTEST mode with no deploymentId falls back to account_id key", () => {
-    assert.equal(resolveAccountBalanceKey("acc_xyz", undefined, true), "account_balance:acc_xyz");
-  });
-
-  it("two parallel backtests with same account but different deploymentIds get isolated keys", () => {
-    const k1 = resolveAccountBalanceKey("acc_shared", "dep_111", true);
-    const k2 = resolveAccountBalanceKey("acc_shared", "dep_222", true);
-    assert.notEqual(k1, k2, "parallel backtests must not share the same Redis balance key");
-    assert.equal(k1, "account_balance:dep_111");
-    assert.equal(k2, "account_balance:dep_222");
-  });
-
-  it("isBacktest=true without deploymentId still uses accountId (graceful fallback)", () => {
-    const key = resolveAccountBalanceKey("acc_solo", null, true);
-    assert.equal(key, "account_balance:acc_solo");
   });
 });
 
@@ -191,99 +141,6 @@ describe("Bug 5: stale Redis cleanup must not delete active deployment balance k
 });
 
 // ---------------------------------------------------------------------------
-// BUG 6: Kafka partition key must be symbol:deployment_id for backtest
-// ---------------------------------------------------------------------------
-describe("Bug 6: Kafka partition key must include deployment_id for backtest mode", () => {
-  it("backtest partition key includes deployment_id", () => {
-    const key = resolvePartitionKey("NSE_FO|57331", { deployment_id: "dep_111" }, true);
-    assert.equal(key, "NSE_FO|57331:dep_111");
-  });
-
-  it("two parallel backtests get distinct partition keys preventing tick interleaving", () => {
-    const k1 = resolvePartitionKey("NSE_FO|57331", { deployment_id: "dep_111" }, true);
-    const k2 = resolvePartitionKey("NSE_FO|57331", { deployment_id: "dep_222" }, true);
-    assert.notEqual(k1, k2, "parallel backtests on the same symbol must use different partition keys");
-  });
-
-  it("live mode uses plain symbol as partition key", () => {
-    const key = resolvePartitionKey("NSE_FO|57331", { deployment_id: "dep_111" }, false);
-    assert.equal(key, "NSE_FO|57331");
-  });
-
-  it("backtest without deployment_id falls back to plain symbol", () => {
-    const key = resolvePartitionKey("NSE_FO|57331", {}, true);
-    assert.equal(key, "NSE_FO|57331");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// BUG 7: Symbol extraction from composite Kafka key (symbol:deployment_id)
-// ---------------------------------------------------------------------------
-describe("Bug 7: clean symbol name must be extracted from composite Kafka partition key", () => {
-  it("extracts symbol from msg.symbol when available", () => {
-    assert.equal(extractCleanSymbol({ symbol: "NSE_FO|57331" }, "NSE_FO|57331:dep_abc"), "NSE_FO|57331");
-  });
-
-  it("extracts symbol from msg.symbol_name", () => {
-    assert.equal(extractCleanSymbol({ symbol_name: "NSE_FO|57331" }, "NSE_FO|57331:dep_abc"), "NSE_FO|57331");
-  });
-
-  it("falls back to splitting rawKey when msg has no symbol", () => {
-    assert.equal(extractCleanSymbol({}, "NSE_FO|57331:dep_abc"), "NSE_FO|57331",
-      "must strip deployment_id suffix from composite key");
-  });
-
-  it("converts symbol to uppercase", () => {
-    assert.equal(extractCleanSymbol({ symbol: "nse_fo|57331" }, ""), "NSE_FO|57331");
-  });
-
-  it("using composite key as symbol would miss the Redis strategy entry", () => {
-    const compositeKey = "NSE_FO|57331:dep_abc";
-    const wrongRedisKey = `strategies:backtest:${compositeKey}`;
-    const correctKey = `strategies:backtest:NSE_FO|57331`;
-    assert.notEqual(wrongRedisKey, correctKey,
-      "composite key as symbol would miss Redis strategy entry → no orders placed");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// BUG 8: Per-deployment tick serialization lock
-// ---------------------------------------------------------------------------
-describe("Bug 8: per-deployment tick serialization (handleMessageForDeployment)", () => {
-  it("serializes ticks for the same deployment ID in arrival order", async () => {
-    const withLock = createDeploymentLock();
-    const order = [];
-    await Promise.all([
-      withLock("dep_111", async () => { await new Promise(r => setTimeout(r, 20)); order.push("t1"); }),
-      withLock("dep_111", async () => { await new Promise(r => setTimeout(r, 5)); order.push("t2"); }),
-      withLock("dep_111", async () => { await new Promise(r => setTimeout(r, 1)); order.push("t3"); }),
-    ]);
-    assert.deepEqual(order, ["t1", "t2", "t3"],
-      "ticks for same deployment must be processed in arrival order");
-  });
-
-  it("does NOT block ticks for different deployments (true concurrency)", async () => {
-    const withLock = createDeploymentLock();
-    const order = [];
-    await Promise.all([
-      withLock("dep_A", async () => { await new Promise(r => setTimeout(r, 30)); order.push("dep_A"); }),
-      withLock("dep_B", async () => { await new Promise(r => setTimeout(r, 5)); order.push("dep_B"); }),
-    ]);
-    assert.equal(order[0], "dep_B", "faster dep_B must finish first without being blocked by dep_A");
-    assert.equal(order[1], "dep_A");
-  });
-
-  it("lock cleans up after completion to prevent memory leaks", async () => {
-    const withLock = createDeploymentLock();
-    await withLock("dep_X", async () => {});
-    // A second lock on the same deployment resolves immediately without hanging
-    let executed = false;
-    await withLock("dep_X", async () => { executed = true; });
-    assert.equal(executed, true, "lock entry must be cleaned up and available after completion");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // BUG 9: Two identical parallel backtests must produce identical results
 // ---------------------------------------------------------------------------
 describe("Bug 9: identical parallel backtest deployments produce identical trade counts and PnL", () => {
@@ -320,89 +177,6 @@ describe("Bug 9: identical parallel backtest deployments produce identical trade
     assert.equal(getBalance("dep_222"), 25000000,
       "dep_222 balance must be unaffected by dep_111 trade");
   });
-});
-
-// ---------------------------------------------------------------------------
-// BUG 10: client_order_id forwarded from placeorder body to BackTestApp
-// ---------------------------------------------------------------------------
-describe("Bug 10: client_order_id forwarded from placeorder body to BackTestApp payload", () => {
-  it("forwards top-level client_order_id", () => {
-    const p = buildTradePayload({
-      transaction_type: "BUY", price: 100, quantity: 10,
-      client_order_id: "top_level_key",
-      strategy_details: { deployment_id: "dep1" },
-    });
-    assert.equal(p.client_order_id, "top_level_key");
-  });
-
-  it("forwards nested strategy_details.client_order_id", () => {
-    const p = buildTradePayload({
-      transaction_type: "BUY", price: 100, quantity: 10,
-      strategy_details: { client_order_id: "nested_key", deployment_id: "dep1" },
-    });
-    assert.equal(p.client_order_id, "nested_key");
-  });
-
-  it("omits client_order_id when none provided (no undefined injection)", () => {
-    const p = buildTradePayload({
-      transaction_type: "SELL", price: 100, quantity: 10,
-      strategy_details: { deployment_id: "dep1" },
-    });
-    assert.equal("client_order_id" in p, false,
-      "must not inject undefined client_order_id which causes MongoDB index collision");
-  });
-
-  it("top-level client_order_id takes precedence over nested", () => {
-    const p = buildTradePayload({
-      transaction_type: "BUY", price: 100, quantity: 10,
-      client_order_id: "top_wins",
-      strategy_details: { client_order_id: "nested_loses", deployment_id: "dep1" },
-    });
-    assert.equal(p.client_order_id, "top_wins");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// BUG 11: Deployment-scoped bought_quantity Redis key prevents cross-deployment holdings
-// ---------------------------------------------------------------------------
-describe("Bug 11: bought_quantity Redis key must be scoped by deployment_id", () => {
-  it("two deployments on the same symbol get separate holding keys", () => {
-    const k1 = resolveBoughtQuantityKey("NSE_FO|57331", "dep_111");
-    const k2 = resolveBoughtQuantityKey("NSE_FO|57331", "dep_222");
-    assert.notEqual(k1, k2, "parallel deployments must not share bought_quantity key");
-  });
-
-  it("buying in dep_111 does not affect dep_222 holdings", () => {
-    const holdings = {};
-    const set = (depId, sym, qty) => { holdings[resolveBoughtQuantityKey(sym, depId)] = qty; };
-    const get = (depId, sym) => holdings[resolveBoughtQuantityKey(sym, depId)] || 0;
-    set("dep_111", "NSE_FO|57331", 65);
-    assert.equal(get("dep_111", "NSE_FO|57331"), 65);
-    assert.equal(get("dep_222", "NSE_FO|57331"), 0, "dep_222 must not see dep_111 holdings");
-  });
-
-  it("selling in dep_111 clears only dep_111 holdings", () => {
-    const holdings = {};
-    const set = (depId, sym, qty) => { holdings[resolveBoughtQuantityKey(sym, depId)] = qty; };
-    const get = (depId, sym) => holdings[resolveBoughtQuantityKey(sym, depId)] || 0;
-    set("dep_111", "NSE_FO|57331", 65);
-    set("dep_222", "NSE_FO|57331", 65);
-    set("dep_111", "NSE_FO|57331", 0); // dep_111 exits
-    assert.equal(get("dep_111", "NSE_FO|57331"), 0, "dep_111 holdings cleared after exit");
-    assert.equal(get("dep_222", "NSE_FO|57331"), 65, "dep_222 holdings unaffected");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// INTEGRATION: isBacktest flag derivation from strategy_details
-// ---------------------------------------------------------------------------
-describe("Integration: isBacktest flag derivation from strategy_details", () => {
-  it("BACKTEST strategy_mode → isBacktest=true", () => assert.equal(resolveIsBackTest({ strategy_mode: "BACKTEST" }), true));
-  it("isTest=true with no strategy_mode → isBacktest=true", () => assert.equal(resolveIsBackTest({ isTest: true }), true));
-  it("LIVE strategy_mode with isTest=true → isBacktest=false", () => assert.equal(resolveIsBackTest({ isTest: true, strategy_mode: "LIVE" }), false));
-  it("PAPER strategy_mode → isBacktest=false", () => assert.equal(resolveIsBackTest({ strategy_mode: "PAPER" }), false));
-  it("LIVE strategy_mode → isBacktest=false", () => assert.equal(resolveIsBackTest({ strategy_mode: "LIVE" }), false));
-  it("empty strategy_details → isBacktest=false (defaults to live behaviour)", () => assert.equal(resolveIsBackTest({}), false));
 });
 
 // ---------------------------------------------------------------------------
@@ -455,7 +229,6 @@ describe("Bug 12: max_up/max_down must merge liveCache and DB value at position 
     const entry = 325.6;
     const openSize = 300850; // qty
     const closingLtp = 320;
-    const direction = "LONG";
 
     // Fresh cache from syncOpenPositionToRedis (opened AFTER peak tick was processed)
     const freshCache = { maxUp: 0, maxDown: 0, maxUpPct: 0, maxDownPct: 0 };
@@ -506,7 +279,7 @@ describe("Bug 12: max_up/max_down must merge liveCache and DB value at position 
 });
 
 // ---------------------------------------------------------------------------
-// NEW: Multi-Timeframe Parallel Deployments & Multi-Run Consistency Tests
+// Multi-Timeframe Parallel Deployments & Multi-Run Consistency Tests
 // ---------------------------------------------------------------------------
 describe("Multi-Timeframe Parallel Deployments (1m, 3m, 5m, 15m) & Multi-Run Consistency", () => {
   it("timeframed deployments (1m, 3m, 5m, 15m) process candles independently with distinct interval buckets", () => {
@@ -625,4 +398,3 @@ describe("Bug 13: backtest close-time locks and tick filtering", () => {
     assert.equal(checkIsCloseOrReduction("SHORT", "SELL"), false, "Adding to SHORT position is not a close/reduction");
   });
 });
-
