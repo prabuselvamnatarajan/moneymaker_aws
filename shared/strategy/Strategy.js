@@ -20,6 +20,17 @@ import {
     placeOrderHttp,
     executeOrderWithLock,
 } from './orders.js';
+import {
+    extractCleanSymbol,
+    createDeploymentLock,
+    resolveIsBackTest,
+} from './strategyUtils.js';
+
+export {
+    extractCleanSymbol,
+    createDeploymentLock,
+    resolveIsBackTest,
+};
 
 const STRATEGY_NAME_RE = /^[a-z][a-z0-9_]*$/;
 const RECOVERABLE_CONFIG_RE =
@@ -27,18 +38,6 @@ const RECOVERABLE_CONFIG_RE =
 
 /** Per-message context so concurrent deployments/symbols cannot clobber this.symbol / strategyDetails. */
 const messageContext = new AsyncLocalStorage();
-
-function envIsBacktest() {
-    const raw = process.env.IS_BACKTEST;
-    return raw === true || raw === 'true' || raw === '1';
-}
-
-function resolveIsBackTest(strategy_details = {}) {
-    if (envIsBacktest() || strategy_details.strategy_mode === 'BACKTEST') {
-        return true;
-    }
-    return strategy_details.isTest === true;
-}
 
 export class Strategy {
     /** @type {string} */
@@ -232,9 +231,7 @@ export class Strategy {
 
         await this.handleMessageForDeployment(deploymentId, async () => {
             try {
-                const symbol = String(
-                    msg.symbol || msg.symbol_name || strategy_details.symbol || rawKey.split(':')[0]
-                ).toUpperCase();
+                const symbol = extractCleanSymbol(msg, rawKey);
                 if (!symbol) {
                     logger.warn('Received Kafka message without symbol key, skipping.');
                     return;
