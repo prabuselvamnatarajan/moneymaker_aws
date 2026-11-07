@@ -8,23 +8,23 @@
 
 backtest-app|run_backtest_app_test_cases.sh|1|BackTestApp API Playwright (project=api)
 backtest-ui|run_backtest_ui_test_cases.sh|1|BackTestUI browser Playwright (project=ui)
-kafka-wsdatasplitter|run_kafka_wsdatasplitter_test_cases.sh|0|Future: wsDataSplitter consumer
-kafka-strategy-chooser|run_kafka_strategy_chooser_test_cases.sh|0|Future: StrategyChooser consumer
-kafka-storer|run_kafka_storer_test_cases.sh|0|Future: price/order storer consumers
-kafka-position-tracker|run_kafka_position_tracker_test_cases.sh|0|Future: position tracker consumer
-kafka-deployment-symbol-resolver|run_kafka_deployment_symbol_resolver_test_cases.sh|0|Future: deployment-symbol-resolver
-kafka-stream-to-client|run_kafka_stream_to_client_test_cases.sh|0|Future: stream-to-client WS fan-out
-strategy-msb|run_strategy_msb_test_cases.sh|0|Future: MSB live/backtest strategy
-strategy-msb-pts|run_strategy_msb_pts_test_cases.sh|0|Future: msb_pts strategy
-strategy-liquidity-sweep|run_strategy_liquidity_sweep_test_cases.sh|0|Future: liquidity_sweep strategy
-backtest-streamer-client|run_backtest_streamer_client_test_cases.sh|0|Future: BacktestStreamer/Client
-backtest-data-export|run_backtest_data_export_test_cases.sh|0|Future: ExportToFile / backtest data export
-microservice-placeorder|run_microservice_placeorder_test_cases.sh|0|Future: placeorder gateway
-microservice-upstox-auth|run_microservice_upstox_auth_test_cases.sh|0|Future: Upstox OAuth/tokens
-microservice-market-data|run_microservice_market_data_test_cases.sh|0|Future: getLTP/OHLC/fullMarketQuote
-microservice-orders-options|run_microservice_orders_options_test_cases.sh|0|Future: orderbook/funds/options
-microservice-connectws-upstox|run_microservice_connectws_upstox_test_cases.sh|0|Future: ConnectWS-Upstox
+kafka-wsdatasplitter|run_kafka_wsdatasplitter_test_cases.sh|0|wsDataSplitter consumer unit & batch tests
+kafka-strategy-chooser|run_kafka_strategy_chooser_test_cases.sh|0|StrategyChooser consumer routing tests
+kafka-storer|run_kafka_storer_test_cases.sh|0|price/order storer consumers unit tests
+kafka-position-tracker|run_kafka_position_tracker_test_cases.sh|0|position tracker excursion & lifecycle tests
+kafka-deployment-symbol-resolver|run_kafka_deployment_symbol_resolver_test_cases.sh|0|deployment-symbol-resolver strike tests
+kafka-stream-to-client|run_kafka_stream_to_client_test_cases.sh|0|stream-to-client WS fan-out & channel tests
+strategy-msb|run_strategy_msb_test_cases.sh|0|MSB strategy unit & multi-timeframe tests
+strategy-msb-pts|run_strategy_msb_pts_test_cases.sh|0|msb_pts strategy unit & order lock tests
+strategy-liquidity-sweep|run_strategy_liquidity_sweep_test_cases.sh|0|liquidity_sweep strategy & ATR tests
+backtest-streamer-client|run_backtest_streamer_client_test_cases.sh|0|BacktestStreamer & BacktestClient tests
+backtest-data-export|run_backtest_data_export_test_cases.sh|0|ExportToFile collection & window tests
+microservice-placeorder|run_microservice_placeorder_test_cases.sh|0|placeorder gateway routing & validation tests
+microservice-upstox-auth|run_microservice_upstox_auth_test_cases.sh|0|Upstox OAuth & token management tests
+microservice-market-data|run_microservice_market_data_test_cases.sh|0|getLTP/getOHLC/fullMarketQuote tests
+microservice-orders-options|run_microservice_orders_options_test_cases.sh|0|orderbook/funds/options chain tests
+microservice-connectws-upstox|run_microservice_connectws_upstox_test_cases.sh|0|ConnectWS-Upstox subscription tests
 infrastructure-docker-compose|run_infrastructure_docker_compose_test_cases.sh|0|Future: Docker/Kafka/network infra
 infrastructure-nginx|run_infrastructure_nginx_test_cases.sh|0|Future: reverse-proxy / nginx
 infrastructure-mongo-redis|run_infrastructure_mongo_redis_test_cases.sh|0|Future: Mongo/Redis infra
-appinit-scheduled|run_appinit_scheduled_test_cases.sh|0|Future: appInit / scheduled services
+appinit-scheduled|run_appinit_scheduled_test_cases.sh|0|appInit & scheduled services config tests
