@@ -1,37 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+    validateOhlcRequest,
+    extractUpstoxErrorMessage,
+    handleApiCallbackError,
+} from '../requestHelper.js';
 
-describe('MicroServices/market-quote/getOHLC Unit Tests', () => {
-
-    function validateOhlcRequest(query) {
-        const userId = typeof query?.userId === 'string' ? query.userId.trim() : '';
-        if (!userId) {
-            return { status: 400, message: 'Bad Request: userId is required' };
-        }
-        const symbol = typeof query?.symbol === 'string' ? query.symbol.trim() : '';
-        if (!symbol) {
-            return { status: 400, message: 'Bad Request: symbol is required' };
-        }
-        const interval = typeof query?.interval === 'string' && query.interval.trim()
-            ? query.interval.trim()
-            : 'I1';
-
-        return { status: 200, userId, symbol, interval };
-    }
-
-    function extractUpstoxErrorMessage(error) {
-        try {
-            const text = error?.response?.text || error?.text;
-            if (text) {
-                const parsed = JSON.parse(text);
-                const first = parsed?.errors?.[0];
-                if (first?.message) return first.message;
-            }
-        } catch {
-            // ignore parse errors
-        }
-        return error?.message || 'Upstox API request failed';
-    }
+describe('MicroServices/market-quote/getOHLC Unit Tests (Real Codebase)', () => {
 
     it('rejects request with missing or empty userId (400)', () => {
         assert.equal(validateOhlcRequest({}).status, 400);
@@ -66,5 +41,11 @@ describe('MicroServices/market-quote/getOHLC Unit Tests', () => {
             },
         };
         assert.equal(extractUpstoxErrorMessage(error), 'Historical data unavailable');
+    });
+
+    it('handles 401 / 403 token expiry by flagging token invalidation', () => {
+        const res401 = handleApiCallbackError({ status: 401 });
+        assert.equal(res401.statusCode, 401);
+        assert.ok(res401.invalidateToken);
     });
 });
