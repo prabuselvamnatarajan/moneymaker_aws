@@ -1,30 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+    resolveTopicName,
+    extractSymbol,
+    buildMessagePayload,
+    resolvePartitionKey,
+    filterBacktestStrategies,
+} from '../topicRoutingHelper.js';
 
-describe('StrategyChooserConsumer Topic Routing & Payload Construction Tests', () => {
-
-    function resolveTopicName(strategyName, isTestMode) {
-        return isTestMode
-            ? `${strategyName}_backtest_data`
-            : `${strategyName}_live_data`;
-    }
-
-    function extractSymbol(data, rawKey) {
-        return String(data?.symbol || data?.name || data?.symbolName || rawKey || '').toUpperCase();
-    }
-
-    function buildMessagePayload(baseData, strategy, isTestMode) {
-        const strategyData = { ...baseData };
-        strategyData.strategy_details = { ...strategy };
-        strategyData.strategy_details.isTest = Boolean(isTestMode);
-        return strategyData;
-    }
-
-    function resolvePartitionKey(symbol, strategy, isTestMode) {
-        return isTestMode && strategy?.deployment_id
-            ? `${symbol}:${strategy.deployment_id}`
-            : symbol;
-    }
+describe('StrategyChooserConsumer Topic Routing & Payload Construction Tests (Real Codebase)', () => {
 
     it('resolves correct Kafka topic for backtest and live modes', () => {
         assert.equal(resolveTopicName('MSB', true), 'MSB_backtest_data');
@@ -71,5 +55,21 @@ describe('StrategyChooserConsumer Topic Routing & Payload Construction Tests', (
         // Live mode uses shared symbol key
         const liveKey = resolvePartitionKey('NIFTY', strat1, false);
         assert.equal(liveKey, 'NIFTY');
+    });
+
+    it('filters backtest strategies by deployment_id and validates run_id freshness', () => {
+        const strategies = [
+            { deployment_id: 'dep_1', backtest_run_id: 'run_100' },
+            { deployment_id: 'dep_1', backtest_run_id: 'run_99' },
+            { deployment_id: 'dep_2', backtest_run_id: 'run_100' },
+        ];
+
+        // Matching deployment_id and run_id
+        const filtered = filterBacktestStrategies(strategies, { deployment_id: 'dep_1', run_id: 'run_100' });
+        assert.equal(filtered.length, 1);
+        assert.equal(filtered[0].backtest_run_id, 'run_100');
+
+        // Missing deployment_id returns empty array
+        assert.deepEqual(filterBacktestStrategies(strategies, {}), []);
     });
 });
