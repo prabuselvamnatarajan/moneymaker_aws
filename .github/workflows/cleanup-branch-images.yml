@@ -1,0 +1,31 @@
+name: Cleanup Branch Images
+
+# Triggers when a git reference (branch or tag) is deleted.
+# Docker image tags corresponding to non-main branches are removed from Docker Hub.
+on:
+  delete:
+
+jobs:
+  cleanup:
+    name: Delete Docker Hub branch tags
+    if: github.event.ref_type == 'branch' && github.event.ref != 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/delete-branch-images.sh
+          find scripts -type f -name '*.sh' -exec chmod +x {} +
+
+      - name: Delete branch image tags from Docker Hub
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          IMAGE_REGISTRY: ${{ secrets.DOCKERHUB_USERNAME || 'prabuselvamnatarajan' }}
+          DELETED_BRANCH: ${{ github.event.ref }}
+        run: |
+          ./scripts/delete-branch-images.sh \
+            --branch "$DELETED_BRANCH" \
+            --registry "$IMAGE_REGISTRY"
