@@ -1,64 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+    splitAndTransformBatch,
+    getCalculateLatency,
+    retryOperation,
+    connectWithRetry,
+} from '../batchSplitter.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const candidates = [
-    path.resolve(__dirname, '../utils/latencyUtil.js'),                  // Baked into container (/app/utils/latencyUtil.js)
-    path.resolve(__dirname, '../../../../shared/utils/latencyUtil.js'), // Local repository checkout
-    '/app/utils/latencyUtil.js',                                      // Absolute container fallback
-];
-const latencyPath = candidates.find(p => existsSync(p));
-if (!latencyPath) {
-    throw new Error(`Failed to locate latencyUtil.js. Checked: ${candidates.join(', ')}`);
-}
-const { calculateLatency } = await import(pathToFileURL(latencyPath).href);
+const calculateLatency = await getCalculateLatency();
 
-describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
-
-    /**
-     * Core message splitting and transformation logic replicated from wsDataSplitterConsumer.js
-     */
-    function splitAndTransformBatch(data, livePrefix = 'live') {
-        if (!data || typeof data !== 'object') {
-            throw new Error('Invalid payload: expected object');
-        }
-
-        const kafkaMessages = [];
-        const redisPublishes = [];
-
-        for (const [key, value] of Object.entries(data)) {
-            // Attach latency metadata before split
-            const latency = calculateLatency(key, value);
-            const enriched = {
-                ...value,
-                latency: { beforeSplit: latency },
-                symbol_name: key,
-            };
-
-            const topic = 'splited-live-data';
-            const msgStr = JSON.stringify(enriched);
-
-            // Channel sanitization (TC-WDS-004)
-            const redisPublishChannel = `${livePrefix}:${key.replace(/'/g, '')}`;
-
-            kafkaMessages.push({
-                topic,
-                key,
-                value: msgStr,
-                parsed: enriched,
-            });
-
-            redisPublishes.push({
-                channel: redisPublishChannel,
-                message: msgStr,
-            });
-        }
-
-        return { kafkaMessages, redisPublishes };
-    }
+describe('wsDataSplitterConsumer Unit & Edge Case Tests (Real Codebase)', () => {
 
     it('TC-WDS-001: Multi-symbol batch is split into one Kafka message per symbol', () => {
         const batch = {
@@ -66,7 +17,7 @@ describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
             TCS: { ltp: 3800, ltpc: { ltp: 3800, ltt: Date.now() - 60 } },
         };
 
-        const { kafkaMessages } = splitAndTransformBatch(batch);
+        const { kafkaMessages } = splitAndTransformBatch(batch, 'live', calculateLatency);
         assert.equal(kafkaMessages.length, 2);
 
         const relianceMsg = kafkaMessages.find((m) => m.key === 'RELIANCE');
@@ -87,7 +38,7 @@ describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
             HDFC: { ltp: 1600, ltpc: { ltp: 1600, ltt: Date.now() } },
         };
 
-        const { redisPublishes } = splitAndTransformBatch(batch, 'live');
+        const { redisPublishes } = splitAndTransformBatch(batch, 'live', calculateLatency);
         assert.equal(redisPublishes.length, 2);
         assert.equal(redisPublishes[0].channel, 'live:INFY');
         assert.equal(redisPublishes[1].channel, 'live:HDFC');
@@ -100,7 +51,7 @@ describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
             SBIN: { ltpc: { ltp: 750, ltt: now - 120 } },
         };
 
-        const { kafkaMessages } = splitAndTransformBatch(batch);
+        const { kafkaMessages } = splitAndTransformBatch(batch, 'live', calculateLatency);
         assert.equal(kafkaMessages.length, 1);
         const latency = kafkaMessages[0].parsed.latency.beforeSplit;
         assert.ok(typeof latency === 'number');
@@ -113,13 +64,13 @@ describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
             "O'REILLY": { ltp: 950 },
         };
 
-        const { redisPublishes } = splitAndTransformBatch(batch, 'live');
+        const { redisPublishes } = splitAndTransformBatch(batch, 'live', calculateLatency);
         assert.equal(redisPublishes[0].channel, 'live:M&MS');
         assert.equal(redisPublishes[1].channel, 'live:OREILLY');
     });
 
     it('TC-WDS-010: Empty object {} produces zero downstream messages', () => {
-        const { kafkaMessages, redisPublishes } = splitAndTransformBatch({});
+        const { kafkaMessages, redisPublishes } = splitAndTransformBatch({}, 'live', calculateLatency);
         assert.equal(kafkaMessages.length, 0);
         assert.equal(redisPublishes.length, 0);
     });
@@ -135,7 +86,7 @@ describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
 
         assert.throws(
             () => {
-                splitAndTransformBatch(null);
+                splitAndTransformBatch(null, 'live', calculateLatency);
             },
             { message: /Invalid payload/ }
         );
@@ -149,18 +100,6 @@ describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
                 throw new Error('Transient Kafka Broker Error');
             }
             return 'SUCCESS';
-        }
-
-        async function retryOperation(fn, maxRetries = 5) {
-            let lastError;
-            for (let i = 1; i <= maxRetries; i++) {
-                try {
-                    return await fn();
-                } catch (err) {
-                    lastError = err;
-                }
-            }
-            throw new Error(`Exhausted retries: ${lastError.message}`);
         }
 
         const result = await retryOperation(() => mockFailingOperation(3), 5);
@@ -178,19 +117,6 @@ describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
     });
 
     it('TC-WDS-013: Connection retry helper connects or fails loudly after max attempts', async () => {
-        async function connectWithRetry(target, maxAttempts = 3) {
-            for (let i = 0; i < maxAttempts; i++) {
-                try {
-                    await target.connect();
-                    return true;
-                } catch (e) {
-                    if (i === maxAttempts - 1) {
-                        throw new Error(`Failed to connect after ${maxAttempts} attempts: ${e.message}`);
-                    }
-                }
-            }
-        }
-
         let connectCalls = 0;
         const mockClient = {
             connect: async () => {
@@ -201,7 +127,7 @@ describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
 
         await assert.rejects(
             async () => {
-                await connectWithRetry(mockClient, 3);
+                await connectWithRetry(mockClient, 'MockService', 3, 0, { warn: () => {}, info: () => {} });
             },
             { message: /Failed to connect after 3 attempts/ }
         );
