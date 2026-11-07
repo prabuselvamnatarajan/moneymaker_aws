@@ -84,6 +84,38 @@ function buildPositionBase(tradeData, account, deployment, direction, size, entr
   return position;
 }
 
+export function buildSeedExcursion(liveCache, positionDoc = {}) {
+  return {
+    max_up: Math.max(liveCache?.maxUp ?? 0, positionDoc.max_up || 0),
+    max_down: Math.min(liveCache?.maxDown ?? 0, positionDoc.max_down || 0),
+    max_up_pct: Math.max(liveCache?.maxUpPct ?? 0, positionDoc.max_up_pct || 0),
+    max_down_pct: Math.min(liveCache?.maxDownPct ?? 0, positionDoc.max_down_pct || 0),
+  };
+}
+
+export function checkIsCloseOrReduction(positionDirection, orderType) {
+  return (
+    (positionDirection === "LONG" && orderType === "SELL") ||
+    (positionDirection === "SHORT" && orderType === "BUY")
+  );
+}
+
+export function isTickAllowed(tickTimeMs, closeTimeMs, strategyMode) {
+  if (strategyMode === "BACKTEST" && closeTimeMs) {
+    if (tickTimeMs > closeTimeMs) return false;
+  }
+  return true;
+}
+
+export function sanitizeTradePayload(tradePayload) {
+  const payload = { ...tradePayload };
+  delete payload.force_close;
+  if (!payload.client_order_id) {
+    delete payload.client_order_id;
+  }
+  return payload;
+}
+
 async function finalizeClosePosition(position, trade, price, pnlContribution, session, liveCache) {
   const entry = position.average_entry_price || 0;
   const openBeforeClose = position.open_size || 0;
@@ -100,17 +132,9 @@ async function finalizeClosePosition(position, trade, price, pnlContribution, se
     // Using ?? would pass 0 from a freshly-opened position's cache and discard the
     // DB value — causing max_up=0 on positions whose Redis cache missed the peak
     // (race window between BUY commit and position-tracker Redis sync).
-    const seedMaxUp    = Math.max(liveCache?.maxUp    ?? 0, position.max_up    || 0);
-    const seedMaxDown  = Math.min(liveCache?.maxDown  ?? 0, position.max_down  || 0);
-    const seedMaxUpPct = Math.max(liveCache?.maxUpPct ?? 0, position.max_up_pct || 0);
-    const seedMaxDownPct = Math.min(liveCache?.maxDownPct ?? 0, position.max_down_pct || 0);
+    const seed = buildSeedExcursion(liveCache, position);
     const extremum = applyExcursion(
-      {
-        max_up: seedMaxUp,
-        max_down: seedMaxDown,
-        max_up_pct: seedMaxUpPct,
-        max_down_pct: seedMaxDownPct,
-      },
+      seed,
       unrealised,
       pct
     );
@@ -171,9 +195,7 @@ const runCreateTrade = async (tradeData) => {
       status: "OPEN",
     });
     if (openPos) {
-      isCloseOrReduction =
-        (openPos.direction === "LONG" && type_of_order === "SELL") ||
-        (openPos.direction === "SHORT" && type_of_order === "BUY");
+      isCloseOrReduction = checkIsCloseOrReduction(openPos.direction, type_of_order);
     }
   }
 
@@ -481,18 +503,14 @@ const runCreateTrade = async (tradeData) => {
       Math.abs(newPositionSize) < Math.abs(positionSize);
 
     // Create trade first (without position_id), then update with linked position
-    const tradePayload = {
+    const tradePayload = sanitizeTradePayload({
       ...tradeData,
       account_id: account._id,
       user_id,
       pnl,
       commission,
       position_id: null,
-    };
-    delete tradePayload.force_close;
-    if (!tradePayload.client_order_id) {
-      delete tradePayload.client_order_id;
-    }
+    });
     if (tradeData.execution_time) {
       tradePayload.execution_time = new Date(tradeData.execution_time);
       tradePayload.created_at = new Date(tradeData.execution_time);

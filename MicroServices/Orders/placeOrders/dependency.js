@@ -123,8 +123,8 @@ function buildTradePayload(body, resolvedLtp = null) {
         type_of_order: body.transaction_type,
         price,
         quantity: body.quantity,
-        ...(clientOrderId ? { client_order_id: clientOrderId } : {}),
         ...strategy_details,
+        ...(clientOrderId ? { client_order_id: clientOrderId } : {}),
     };
 }
 

@@ -1717,6 +1717,18 @@ export const getDeploymentAnalysis = async (userId, id, startDate, endDate, star
   };
 };
 
+export function buildValidAccountIds(allAccounts = [], allDeployments = []) {
+  const validAccountIds = new Set();
+  for (const acc of allAccounts) {
+    if (acc._id) validAccountIds.add(acc._id.toString());
+    if (acc.account_id) validAccountIds.add(acc.account_id.toString());
+  }
+  for (const dep of allDeployments) {
+    if (dep._id) validAccountIds.add(dep._id.toString());
+  }
+  return validAccountIds;
+}
+
 export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
@@ -1826,14 +1838,7 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
     // Clean up stale account balance keys and liquidity sweep keys for deleted accounts and deployments
     const allAccounts = await Account.find({}, { _id: 1, account_id: 1 }).lean();
     const allDeployments = await Deployment.find({}, { _id: 1 }).lean();
-    const validAccountIds = new Set();
-    for (const acc of allAccounts) {
-      if (acc._id) validAccountIds.add(acc._id.toString());
-      if (acc.account_id) validAccountIds.add(acc.account_id.toString());
-    }
-    for (const dep of allDeployments) {
-      if (dep._id) validAccountIds.add(dep._id.toString());
-    }
+    const validAccountIds = buildValidAccountIds(allAccounts, allDeployments);
 
     const existingBalanceKeys = await client.keys("account_balance:*");
     for (const key of existingBalanceKeys) {
