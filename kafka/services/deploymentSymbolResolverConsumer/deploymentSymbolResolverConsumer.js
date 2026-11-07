@@ -3,6 +3,7 @@ import { Kafka } from 'kafkajs';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 import { extractLtp } from './extractLtp.js';
+import { computeReferenceStrike, shouldTriggerResolve } from './strikeResolver.js';
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPICS = (process.env.TARGET_TOPIC || 'splited-live-data,backtest-stream-data')
@@ -32,13 +33,6 @@ let interestMap = new Map();
 const lastResolveAt = new Map();
 
 registerFatalErrorHandlers();
-
-function computeReferenceStrike(ltp, strikePriceDiff) {
-  const diff = Number(strikePriceDiff);
-  const price = Number(ltp);
-  if (!(diff > 0) || !(price > 0)) return null;
-  return Math.round(price / diff) * diff;
-}
 
 async function getJson(key) {
   if (typeof redisClient.json?.get === 'function') {
@@ -130,33 +124,12 @@ async function handleTick(symbol, data) {
   await Promise.all(
     deps.map(async (dep) => {
       try {
-        const strikeDiff = Number(dep.strike_price_diff);
-        if (!(strikeDiff > 0)) {
-          return;
-        }
-
-        // Already waiting for flat — flush happens in BackTestApp on position close
-        if (dep.pending_resolve) {
-          return;
-        }
-
-        const referenceStrike = computeReferenceStrike(ltp, strikeDiff);
-        if (referenceStrike == null) {
-          return;
-        }
-
-        if (
-          dep.last_resolved_strike != null &&
-          Number(dep.last_resolved_strike) === referenceStrike
-        ) {
-          return;
-        }
-
         const now = Date.now();
-        const last = lastResolveAt.get(dep.deployment_id) || 0;
-        if (now - last < RESOLVE_THROTTLE_MS) {
+        if (!shouldTriggerResolve(dep, ltp, now, lastResolveAt, RESOLVE_THROTTLE_MS)) {
           return;
         }
+
+        const referenceStrike = computeReferenceStrike(ltp, dep.strike_price_diff);
         lastResolveAt.set(dep.deployment_id, now);
 
         logger.info(

@@ -1,34 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+    computeReferenceStrike,
+    shouldTriggerResolve,
+} from '../strikeResolver.js';
 
-describe('deploymentSymbolResolverConsumer Reference Strike & Throttle Tests', () => {
-
-    function computeReferenceStrike(ltp, strikePriceDiff) {
-        const diff = Number(strikePriceDiff);
-        const price = Number(ltp);
-        if (!(diff > 0) || !(price > 0)) return null;
-        return Math.round(price / diff) * diff;
-    }
-
-    function shouldTriggerResolve(dep, ltp, now, lastResolveAt, throttleMs = 5000) {
-        const strikeDiff = Number(dep.strike_price_diff);
-        if (!(strikeDiff > 0)) return false;
-        if (dep.pending_resolve) return false;
-
-        const referenceStrike = computeReferenceStrike(ltp, strikeDiff);
-        if (referenceStrike == null) return false;
-
-        if (dep.last_resolved_strike != null && Number(dep.last_resolved_strike) === referenceStrike) {
-            return false;
-        }
-
-        const last = lastResolveAt.get(dep.deployment_id) || 0;
-        if (now - last < throttleMs) {
-            return false;
-        }
-
-        return true;
-    }
+describe('deploymentSymbolResolverConsumer Reference Strike & Throttle Tests (Real Codebase)', () => {
 
     it('computes ATM reference strike rounded to strikePriceDiff multiple', () => {
         // Nifty diff 50
