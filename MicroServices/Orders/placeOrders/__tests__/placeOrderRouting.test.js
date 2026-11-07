@@ -1,32 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildBrokerOrderPayload } from '../dependency.js';
+import {
+    resolveExecutionMode,
+    buildBrokerOrderPayload,
+    buildTradePayload,
+} from '../dependency.js';
 
-describe('placeOrders Routing, Payload Transformation & Client Order ID Tests', () => {
-
-    function resolveExecutionMode(strategyDetails) {
-        const strategy_details = strategyDetails || {};
-        const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
-        const isInternalBroker = Boolean(strategy_details.is_internal_broker);
-        return { isLive, isInternalBroker, shouldCallExternalBroker: isLive && !isInternalBroker };
-    }
-
-    function buildTradePayload(body) {
-        const strategy_details = body.strategy_details || {};
-        let price = body.price;
-        if (price === 0 || price === '0' || price === undefined || price === null) {
-            price = body.resolvedLtp || 0;
-        }
-
-        const clientOrderId = body.client_order_id || strategy_details.client_order_id;
-        return {
-            type_of_order: body.transaction_type,
-            price,
-            quantity: body.quantity,
-            ...(clientOrderId ? { client_order_id: clientOrderId } : {}),
-            ...strategy_details,
-        };
-    }
+describe('placeOrders Routing, Payload Transformation & Client Order ID Tests (Real Codebase)', () => {
 
     it('TC-PO-007: routes to external broker when strategy_mode is LIVE and is_internal_broker is false', () => {
         const mode = resolveExecutionMode({ strategy_mode: 'LIVE', is_internal_broker: false });
@@ -66,10 +46,9 @@ describe('placeOrders Routing, Payload Transformation & Client Order ID Tests', 
             transaction_type: 'BUY',
             price: 0,
             quantity: 5,
-            resolvedLtp: 152.35,
             strategy_details: { user_id: 'user_1', account_id: 'acc_1' },
         };
-        const tradePayload = buildTradePayload(body);
+        const tradePayload = buildTradePayload(body, 152.35);
         assert.equal(tradePayload.price, 152.35);
         assert.equal(tradePayload.type_of_order, 'BUY');
         assert.equal(tradePayload.quantity, 5);
