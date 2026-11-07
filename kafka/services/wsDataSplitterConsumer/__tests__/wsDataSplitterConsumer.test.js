@@ -1,6 +1,20 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateLatency } from '../../../../shared/utils/latencyUtil.js';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const candidates = [
+    path.resolve(__dirname, '../utils/latencyUtil.js'),                  // Baked into container (/app/utils/latencyUtil.js)
+    path.resolve(__dirname, '../../../../shared/utils/latencyUtil.js'), // Local repository checkout
+    '/app/utils/latencyUtil.js',                                      // Absolute container fallback
+];
+const latencyPath = candidates.find(p => existsSync(p));
+if (!latencyPath) {
+    throw new Error(`Failed to locate latencyUtil.js. Checked: ${candidates.join(', ')}`);
+}
+const { calculateLatency } = await import(pathToFileURL(latencyPath).href);
 
 describe('wsDataSplitterConsumer Unit & Edge Case Tests', () => {
 
