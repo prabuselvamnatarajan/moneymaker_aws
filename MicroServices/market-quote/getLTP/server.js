@@ -6,6 +6,11 @@ import {
     resetAuthorisedClient,
     invalidateUserAccessToken,
 } from './redis_utils/AuthoriseUpstoxClient.js';
+import {
+    validateLtpRequest,
+    extractUpstoxErrorMessage,
+    handleApiCallbackError,
+} from './requestHelper.js';
 
 const app = express();
 const port = process.env.PORT || 80;
@@ -23,30 +28,13 @@ function sendAuthError(res, e) {
     res.status(status).send(message);
 }
 
-function extractUpstoxErrorMessage(error) {
-    try {
-        const text = error?.response?.text || error?.text;
-        if (text) {
-            const parsed = JSON.parse(text);
-            const first = parsed?.errors?.[0];
-            if (first?.message) return first.message;
-        }
-    } catch {
-        // ignore parse errors
-    }
-    return error?.message || 'Upstox API request failed';
-}
-
 app.get('/', async (req, res) => {
     try {
-        const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
-        if (!userId) {
-            return res.status(400).send('Bad Request: userId is required');
+        const validated = validateLtpRequest(req.query);
+        if (validated.error) {
+            return res.status(validated.status).send(validated.error);
         }
-        const symbol = typeof req.query.symbol === 'string' ? req.query.symbol.trim() : '';
-        if (!symbol) {
-            return res.status(400).send('Bad Request: symbol is required');
-        }
+        const { userId, symbol } = validated;
 
         const UpstoxClient = await getAuthorisedClient(userId);
         const marketQuoteApiInstance = new UpstoxClient.MarketQuoteV3Api();
@@ -54,14 +42,11 @@ app.get('/', async (req, res) => {
             if (error) {
                 console.error('Failed to get LTP:', error);
                 resetAuthorisedClient();
-                const status = error.status || error.statusCode;
-                if (status === 401 || status === 403) {
+                const errResult = handleApiCallbackError(error);
+                if (errResult.invalidateToken) {
                     await invalidateUserAccessToken(userId).catch(() => {});
-                    return res.status(401).send(
-                        'Unauthorized: Invalid or expired Upstox access token — re-authenticate via Brokers page.'
-                    );
                 }
-                return res.status(500).send(`Internal Server Error: ${extractUpstoxErrorMessage(error)}`);
+                return res.status(errResult.statusCode).send(errResult.body);
             }
             console.log('API called successfully. Returned data: ' + JSON.stringify(data));
             res.send(data);
