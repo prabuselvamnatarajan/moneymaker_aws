@@ -1,31 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+    validateOrderBookRequest,
+    handleApiCallbackError,
+} from '../utils.js';
 
-describe('MicroServices/Orders/getOrderBook Route & Validation Tests', () => {
-
-    function validateOrderBookRequest(query) {
-        const userId = typeof query?.userId === 'string' ? query.userId.trim() : '';
-        if (!userId) {
-            return { status: 400, message: 'Bad Request: userId is required' };
-        }
-        return { status: 200, userId, apiVersion: '2.0' };
-    }
-
-    function handleApiCallbackError(error) {
-        const status = error.status || error.statusCode;
-        if (status === 401 || status === 403) {
-            return {
-                statusCode: 401,
-                body: 'Unauthorized: Invalid or expired Upstox access token — re-authenticate via Brokers page.',
-                invalidateToken: true,
-            };
-        }
-        return {
-            statusCode: 500,
-            body: `Internal Server Error: ${error.message || 'Request failed'}`,
-            invalidateToken: false,
-        };
-    }
+describe('MicroServices/Orders/getOrderBook Route & Validation Tests (Real Codebase)', () => {
 
     it('rejects orderbook request with missing or empty userId (400)', () => {
         assert.equal(validateOrderBookRequest({}).status, 400);
