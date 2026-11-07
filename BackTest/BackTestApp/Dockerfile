@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:26.13.0-alpine
 
 RUN apk add --no-cache docker-cli
 

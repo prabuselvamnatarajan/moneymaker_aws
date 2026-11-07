@@ -1,5 +1,5 @@
 # Use official Node.js LTS Alpine image
-FROM node:18-alpine
+FROM node:26.13.0-alpine
 
 # Built from the repo root so shared/redis_operations is in the image.
 #   docker build -f ./appInit/Dockerfile -t appinit:latest .
