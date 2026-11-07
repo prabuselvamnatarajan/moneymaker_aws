@@ -1,17 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRedisKeyPrefix } from '../Init/redisKey.js';
+import { buildItemKey } from '../Init/redisKey.js';
 
-describe('appInit Configs & Key Resolution Tests', () => {
-
-    function buildItemKey(redisKey, item, targetProperty) {
-        const propertyValue = item ? item[targetProperty] : undefined;
-        if (propertyValue === undefined) {
-            return null;
-        }
-        const cleanRedisKey = normalizeRedisKeyPrefix(redisKey);
-        return `${cleanRedisKey}:${propertyValue}`;
-    }
+describe('appInit Configs & Key Resolution Tests (Real Codebase)', () => {
 
     it('builds item key by combining clean prefix with target property value', () => {
         const item = { symbol: 'RELIANCE', name: 'Reliance Industries' };
