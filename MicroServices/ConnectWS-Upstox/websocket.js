@@ -3,6 +3,13 @@ import { Kafka } from 'kafkajs';
 import protobuf from 'protobufjs';
 import { createClient } from 'redis';
 import { getOrgAccessTokenFromRedis, invalidateOrgAccessToken } from './redis_utils/AuthoriseUpstoxClient.js';
+import {
+  normalizeSymbolsInput,
+  buildSubscriptionFrame,
+  calculateBackoffDelay,
+  unionSymbols,
+  processSymbolUpdateEvent,
+} from './wsHelpers.js';
 
 // Initialize global variables
 let protobufRoot = null;
@@ -45,7 +52,7 @@ function scheduleReconnect(reason) {
     return;
   }
 
-  const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY_MS);
+  const delay = calculateBackoffDelay(reconnectAttempt, MAX_RECONNECT_DELAY_MS);
   reconnectAttempt += 1;
   console.log(`[WS Upstox] Scheduling reconnect in ${delay}ms (${reason}). Active symbols: ${activeSymbols.size}`);
 
@@ -91,7 +98,7 @@ async function ensureWSConnection() {
 }
 
 function subscribeSymbols(symbolInput, userId = '') {
-  const symbolArray = Array.isArray(symbolInput) ? symbolInput : [symbolInput];
+  const symbolArray = normalizeSymbolsInput(symbolInput);
   if (symbolArray.length === 0) return;
 
   // Add to the list of symbols we expect to be subscribed to
@@ -114,14 +121,7 @@ function subscribeSymbols(symbolInput, userId = '') {
     }
 
     console.log('[WS Upstox] Subscribing to symbols:', toSubscribe);
-    const data = {
-      guid: "someguid",
-      method: "sub",
-      data: {
-        mode: "full",
-        instrumentKeys: toSubscribe
-      },
-    };
+    const data = buildSubscriptionFrame('sub', toSubscribe);
     const content = Buffer.from(JSON.stringify(data));
     activeWS.send(content);
   } else {
@@ -133,7 +133,7 @@ function subscribeSymbols(symbolInput, userId = '') {
 }
 
 function unsubscribeSymbols(symbolInput) {
-  const symbolArray = Array.isArray(symbolInput) ? symbolInput : [symbolInput];
+  const symbolArray = normalizeSymbolsInput(symbolInput);
   if (symbolArray.length === 0) return;
 
   // Remove from the list of symbols we expect to be subscribed to
@@ -156,13 +156,7 @@ function unsubscribeSymbols(symbolInput) {
     }
 
     console.log('[WS Upstox] Unsubscribing from symbols:', toUnsubscribe);
-    const data = {
-      guid: "someguid",
-      method: "unsub",
-      data: {
-        instrumentKeys: toUnsubscribe
-      },
-    };
+    const data = buildSubscriptionFrame('unsub', toUnsubscribe);
     const content = Buffer.from(JSON.stringify(data));
     activeWS.send(content);
   } else {
@@ -205,7 +199,7 @@ async function initRedisSubscriber() {
         console.warn('[WS Upstox] Could not fetch symbols:active set:', err.message);
       }
 
-      const allStartupSymbols = Array.from(new Set([...deploymentSymbols, ...activeSymbolsList]));
+      const allStartupSymbols = unionSymbols(deploymentSymbols, activeSymbolsList);
 
       if (allStartupSymbols.length > 0) {
         console.log('[WS Upstox] Auto-subscribing on startup to running deployment & active symbols:', allStartupSymbols);
@@ -218,22 +212,10 @@ async function initRedisSubscriber() {
 
     await redisSubscriber.subscribe('symbol_updates', (message) => {
       try {
-        const payload = JSON.parse(message);
-        console.log('[WS Upstox Redis Sub] Received update:', payload);
-        const { action, instrument_token, old_instrument_token, userId } = payload;
-
-        if (action === 'subscribe' && instrument_token) {
-          subscribeSymbols([instrument_token], userId);
-        } else if (action === 'unsubscribe' && instrument_token) {
-          unsubscribeSymbols([instrument_token]);
-        } else if (action === 'update') {
-          if (old_instrument_token) {
-            unsubscribeSymbols([old_instrument_token]);
-          }
-          if (instrument_token) {
-            subscribeSymbols([instrument_token], userId);
-          }
-        }
+        processSymbolUpdateEvent(message, {
+          onSubscribe: (symbols, userId) => subscribeSymbols(symbols, userId),
+          onUnsubscribe: (symbols) => unsubscribeSymbols(symbols),
+        });
       } catch (err) {
         console.error('[WS Upstox Redis Sub] Error processing event message:', err);
       }
