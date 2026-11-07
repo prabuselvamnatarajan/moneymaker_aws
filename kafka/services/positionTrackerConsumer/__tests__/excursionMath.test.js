@@ -8,6 +8,7 @@ import {
   extractTickTimeMs,
   tickTargetsPosition,
 } from '../excursionMath.js';
+import { topicAllowsMode, throttleKey } from '../cacheHelpers.js';
 
 describe('calcUnrealizedPnl', () => {
   it('computes LONG unrealised as (ltp - entry) * size', () => {
@@ -87,15 +88,7 @@ describe('extractTickTimeMs', () => {
   });
 });
 
-describe('topic vs mode isolation (contract)', () => {
-  // Mirrors topicAllowsMode in positionTrackerConsumer.js
-  function topicAllowsMode(topic, strategyMode, backtestTopic = 'backtest-stream-data') {
-    const mode = String(strategyMode || '').toUpperCase();
-    const isBacktestTopic = topic === backtestTopic;
-    if (isBacktestTopic) return mode === 'BACKTEST';
-    return mode === 'LIVE' || mode === 'PAPER';
-  }
-
+describe('topic vs mode isolation (Real Codebase Contract)', () => {
   it('backtest topic only updates BACKTEST positions', () => {
     assert.equal(topicAllowsMode('backtest-stream-data', 'BACKTEST'), true);
     assert.equal(topicAllowsMode('backtest-stream-data', 'LIVE'), false);
@@ -133,16 +126,8 @@ describe('tickTargetsPosition', () => {
   });
 });
 
-describe('throttleKey & client_order_id contract', () => {
+describe('throttleKey contract (Real Codebase)', () => {
   it('formats Redis throttle key with position mongo id', () => {
-    const formatThrottleKey = (id) => `position:throttle:unrealised:${id}`;
-    assert.equal(formatThrottleKey('pos123'), 'position:throttle:unrealised:pos123');
-  });
-
-  it('formats deterministic client_order_id payload', () => {
-    const buildClientOrderId = (deploymentId, tag, transactionType, tsMs) =>
-      `${deploymentId || 'manual'}_${tag}_${transactionType}_${tsMs}`;
-    const id = buildClientOrderId('dep789', 'NIFTY', 'BUY', 1720236000000);
-    assert.equal(id, 'dep789_NIFTY_BUY_1720236000000');
+    assert.equal(throttleKey('pos123'), 'position:throttle:unrealised:pos123');
   });
 });
