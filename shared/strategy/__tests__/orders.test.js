@@ -1,55 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+    computeBuyQuantity,
+    sanitizeTag,
+    buildClientOrderId,
+    computeOrderPayload,
+} from '../orders.js';
 
 describe('shared/strategy orders - Order Payload Math & Sizing Rules', () => {
-
-    function computeBuyQuantity({
-        use_full_amount,
-        balance,
-        ltp,
-        lot_size,
-        no_of_lots = 1,
-        default_qty = 1,
-        commission_type = 'PERCENTAGE',
-        commission_rate = 0,
-    }) {
-        const lot = Number(lot_size) > 0 ? Number(lot_size) : null;
-        const lots = Number(no_of_lots) >= 1 ? Math.floor(Number(no_of_lots)) : 1;
-
-        if (use_full_amount) {
-            if (balance != null && balance >= 0) {
-                let maxAffordableValue = balance;
-                if (commission_type === 'FLAT') {
-                    maxAffordableValue = Math.max(0, balance - commission_rate);
-                } else if (commission_type === 'PERCENTAGE') {
-                    maxAffordableValue = balance / (1 + (commission_rate / 100));
-                }
-                maxAffordableValue = Math.max(0, maxAffordableValue + 1e-5);
-
-                if (lot) {
-                    return Math.floor(maxAffordableValue / (ltp * lot)) * lot;
-                } else {
-                    return Math.floor(maxAffordableValue / ltp);
-                }
-            } else {
-                return lot ? (lots * lot) : default_qty;
-            }
-        } else if (lot) {
-            return lots * lot;
-        } else {
-            return default_qty;
-        }
-    }
-
-    function sanitizeTag(tag) {
-        return tag ? tag.replace(/[^a-zA-Z0-9_-]/g, '_') : 'symbol';
-    }
-
-    function buildClientOrderId(deploymentId, tag, timestamp) {
-        const sanitizedTag = sanitizeTag(tag);
-        const timePart = timestamp ? new Date(timestamp).getTime() : Date.now();
-        return `${deploymentId || 'dep'}-${sanitizedTag}-${timePart}`;
-    }
 
     it('computes BUY quantity using fixed lots and lot size when use_full_amount is false', () => {
         const qty = computeBuyQuantity({
@@ -125,11 +83,34 @@ describe('shared/strategy orders - Order Payload Math & Sizing Rules', () => {
         assert.equal(sanitizeTag(''), 'symbol');
     });
 
-    it('builds unique deterministic client_order_id', () => {
+    it('builds unique deterministic client_order_id adhering to production format', () => {
         const ts = 1700000000000;
-        const id1 = buildClientOrderId('dep_1', 'tagA', ts);
-        const id2 = buildClientOrderId('dep_2', 'tagA', ts);
-        assert.equal(id1, 'dep_1-tagA-1700000000000');
+        const id1 = buildClientOrderId('dep_1', 'tagA', 'BUY', ts);
+        const id2 = buildClientOrderId('dep_2', 'tagA', 'BUY', ts);
+        assert.equal(id1, 'dep_1_tagA_BUY_1700000000000');
         assert.notEqual(id1, id2);
+    });
+
+    it('computeOrderPayload builds full order payload with client_order_id and sanitized tag', async () => {
+        const payload = await computeOrderPayload({
+            strategyDetails: {
+                account_id: 'acc_1',
+                deployment_id: 'dep_99',
+                quantity: 10,
+                lot_size: 10,
+                strategy_mode: 'LIVE',
+            },
+            transactionType: 'BUY',
+            price: 500,
+            tag: 'TEST:SYMBOL',
+            timestamp: 1700000000000,
+            includeClientOrderId: true,
+        });
+
+        assert.equal(payload.quantity, 10);
+        assert.equal(payload.price, 500);
+        assert.equal(payload.tag, 'TEST_SYMBOL');
+        assert.equal(payload.transaction_type, 'BUY');
+        assert.equal(payload.client_order_id, 'dep_99_TEST_SYMBOL_BUY_1700000000000');
     });
 });
