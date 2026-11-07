@@ -1,46 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import {
+    validateFundsRequest,
+    extractUpstoxErrorMessage,
+    handleApiCallbackError,
+} from '../requestHelper.js';
 
-describe('MicroServices/Users/FundsAndMargin Unit Tests', () => {
-
-    function validateFundsRequest(query) {
-        const userId = typeof query?.userId === 'string' ? query.userId.trim() : '';
-        if (!userId) {
-            return { status: 400, message: 'Bad Request: userId is required' };
-        }
-        return { status: 200, userId, apiVersion: '2.0' };
-    }
-
-    function extractUpstoxErrorMessage(error) {
-        try {
-            const text = error?.response?.text || error?.text;
-            if (text) {
-                const parsed = JSON.parse(text);
-                const first = parsed?.errors?.[0];
-                if (first?.message) return first.message;
-            }
-        } catch {
-            // ignore parse errors
-        }
-        return error?.message || 'Upstox API request failed';
-    }
-
-    function handleApiCallbackError(error) {
-        const status = error.status || error.statusCode;
-        if (status === 401 || status === 403) {
-            return {
-                statusCode: 401,
-                body: 'Unauthorized: Invalid or expired Upstox access token — re-authenticate via Brokers page.',
-                invalidateToken: true,
-            };
-        }
-        return {
-            statusCode: 500,
-            body: `Internal Server Error: ${extractUpstoxErrorMessage(error)}`,
-            invalidateToken: false,
-        };
-    }
-
+describe('MicroServices/Users/FundsAndMargin requestHelper (Real Codebase)', () => {
     it('rejects request with missing or empty userId (400)', () => {
         assert.equal(validateFundsRequest({}).status, 400);
         assert.equal(validateFundsRequest({ userId: '' }).status, 400);
@@ -58,6 +24,11 @@ describe('MicroServices/Users/FundsAndMargin Unit Tests', () => {
     it('extracts human-readable error from Upstox error JSON', () => {
         const err = { response: { text: JSON.stringify({ errors: [{ message: 'User not registered with broker' }] }) } };
         assert.equal(extractUpstoxErrorMessage(err), 'User not registered with broker');
+
+        const generic = new Error('Connection reset');
+        assert.equal(extractUpstoxErrorMessage(generic), 'Connection reset');
+
+        assert.equal(extractUpstoxErrorMessage(null), 'Upstox API request failed');
     });
 
     it('handles 401 token expiration by returning 401 and flagging invalidation', () => {
@@ -65,5 +36,14 @@ describe('MicroServices/Users/FundsAndMargin Unit Tests', () => {
         const res = handleApiCallbackError(err);
         assert.equal(res.statusCode, 401);
         assert.ok(res.invalidateToken);
+        assert.ok(res.body.includes('re-authenticate via Brokers page'));
+    });
+
+    it('handles 500 server errors without invalidating token', () => {
+        const err = { status: 500, message: 'Upstox database timeout' };
+        const res = handleApiCallbackError(err);
+        assert.equal(res.statusCode, 500);
+        assert.equal(res.invalidateToken, false);
+        assert.ok(res.body.includes('Upstox database timeout'));
     });
 });
