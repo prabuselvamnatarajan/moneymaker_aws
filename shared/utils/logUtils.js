@@ -62,18 +62,26 @@ try {
 const serviceName = process.env.SERVICE_NAME || 'all_service';
 const serviceMode = process.env.SERVICE_MODE || 'live';
 const redisUrl = process.env.REDIS_URL;
-const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
+let redisClientInstance = null;
 let redisJson;
 
 const DEFAULT_LOG_LEVEL = 'info';
 const LOG_REFRESH_MS = Number(process.env.LOG_CONFIG_REFRESH_MS || 5000);
 
-let logger;
+let logger = {
+    info: console.log,
+    warn: console.warn,
+    error: console.error,
+    debug: () => {},
+};
 let isLoggerInitialized = false;
 let refreshIntervalId;
 
 async function ensureRedisJson() {
     if (redisJson) return;
+    if (!redisClientInstance) {
+        redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
+    }
     await redisClientInstance.connect();
     redisJson = new RedisJson(redisClientInstance.getClient());
 }

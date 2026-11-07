@@ -56,6 +56,7 @@ export async function resolve(specifier, context, nextResolve) {
         specifier === '/app/redis_utils/account_utils.js'
         || specifier.endsWith('/redis_utils/account_utils.js')
         || specifier === './redis_utils/account_utils.js'
+        || specifier.endsWith('/account_utils.js')
     ) {
         return {
             shortCircuit: true,

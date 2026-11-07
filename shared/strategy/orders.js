@@ -17,6 +17,29 @@ async function getAxios() {
     return _axios;
 }
 
+const logUtilsCandidates = [
+    '/app/utils/logUtils.js',
+    path.resolve(__dirname, '../utils/logUtils.js'),
+    path.resolve(__dirname, '../../utils/logUtils.js'),
+    path.resolve(process.cwd(), 'shared/utils/logUtils.js'),
+];
+const logUtilsPath = logUtilsCandidates.find(p => existsSync(p));
+let rawLogger = console;
+if (logUtilsPath) {
+    try {
+        const mod = await import(pathToFileURL(logUtilsPath).href);
+        rawLogger = mod.logger || console;
+    } catch {
+        rawLogger = console;
+    }
+}
+const logger = {
+    info: (...args) => (rawLogger?.info ? rawLogger.info(...args) : console.log(...args)),
+    warn: (...args) => (rawLogger?.warn ? rawLogger.warn(...args) : console.warn(...args)),
+    error: (...args) => (rawLogger?.error ? rawLogger.error(...args) : console.error(...args)),
+    debug: (...args) => (rawLogger?.debug ? rawLogger.debug(...args) : console.debug(...args)),
+};
+
 const accountUtilsCandidates = [
     '/app/redis_utils/account_utils.js',
     path.resolve(__dirname, '../Accounts/account_utils.js'),
@@ -36,24 +59,6 @@ const {
         getBoughtQuantityWithTagFromRedis: async () => 0,
         acquireOrderLockInRedis: async () => true,
         releaseOrderLockInRedis: async () => {},
-    };
-
-const logUtilsCandidates = [
-    '/app/utils/logUtils.js',
-    path.resolve(__dirname, '../utils/logUtils.js'),
-    path.resolve(__dirname, '../../utils/logUtils.js'),
-    path.resolve(__dirname, './utils/logUtils.js'),
-];
-const logUtilsPath = logUtilsCandidates.find(p => existsSync(p));
-const { logger } = logUtilsPath
-    ? await import(pathToFileURL(logUtilsPath).href)
-    : {
-        logger: {
-            info: console.log,
-            warn: console.warn,
-            error: console.error,
-            debug: () => {},
-        },
     };
 
 export function sanitizeTag(tag) {
