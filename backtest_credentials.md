@@ -6,8 +6,8 @@ This document contains the credentials and seed data structure for the `Backtest
 
 | Role | Username | Email | Password | Name |
 | --- | --- | --- | --- | --- |
-| **Admin** | `admin` | `admin@moneymaker.com` | `adminpassword123` | Admin User |
-| **Standard User** | `standarduser` | `user@moneymaker.com` | `userpassword123` | Standard User |
+| **Admin** | `admin` | `admin@cobratrades.com` | `adminpassword123` | Admin User |
+| **Standard User** | `standarduser` | `user@cobratrades.com` | `userpassword123` | Standard User |
 
 ---
 
