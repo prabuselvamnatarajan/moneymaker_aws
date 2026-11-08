@@ -415,7 +415,7 @@ recreate_appinit_job() {
 
 wait_for_core() {
   log "Waiting for core workloads in namespace $NAMESPACE"
-  kubectl -n "$NAMESPACE" rollout status deployment/reverse-proxy --timeout=300s
+  kubectl -n "$NAMESPACE" rollout status deployment/reverse-proxy --timeout=600s
   kubectl -n "$NAMESPACE" rollout status deployment/backtest-app --timeout=600s
   kubectl -n "$NAMESPACE" rollout status deployment/backtest-ui --timeout=600s
   for _dep in $RESTARTED_DEPLOYS; do
