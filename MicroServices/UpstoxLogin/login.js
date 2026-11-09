@@ -68,23 +68,43 @@ function requireUserId(userId) {
     return cleanUserId;
 }
 
+function isDummyCredential(value) {
+    if (!value || typeof value !== 'string') return true;
+    const trimmed = value.trim().toLowerCase();
+    return trimmed.startsWith('dummy') || trimmed === 'dummy';
+}
+
 function assertUpstoxCredentialFields(credentials, userId, { requireSecret = false } = {}) {
     if (!credentials || typeof credentials !== 'object') {
         throw new Error(`Upstox broker credentials missing in MongoDB for user: ${userId}`);
     }
+    const creds = credentials;
 
-    const clientId = String(credentials.client_id || '').trim();
-    const redirectUri = String(credentials.redirect_uri || '').trim();
-    const clientSecret = String(credentials.client_secret || '').trim();
+    const clientId = String(creds.client_id || '').trim();
+    const redirectUri = String(creds.redirect_uri || '').trim();
+    const clientSecret = String(creds.client_secret || '').trim();
 
     if (!clientId) {
-        throw new Error(`Upstox client_id missing in MongoDB broker credentials for user: ${userId}`);
+        throw new Error(`Upstox client_id missing in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
     }
+    if (isDummyCredential(clientId)) {
+        throw new Error(`Upstox client_id contains an invalid dummy placeholder in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
+    }
+
     if (!redirectUri) {
-        throw new Error(`Upstox redirect_uri missing in MongoDB broker credentials for user: ${userId}`);
+        throw new Error(`Upstox redirect_uri missing in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
     }
-    if (requireSecret && !clientSecret) {
-        throw new Error(`Upstox client_secret missing in MongoDB broker credentials for user: ${userId}`);
+    if (isDummyCredential(redirectUri)) {
+        throw new Error(`Upstox redirect_uri contains an invalid dummy placeholder in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
+    }
+
+    if (requireSecret) {
+        if (!clientSecret) {
+            throw new Error(`Upstox client_secret missing in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
+        }
+        if (isDummyCredential(clientSecret)) {
+            throw new Error(`Upstox client_secret contains an invalid dummy placeholder in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
+        }
     }
 
     return {
@@ -107,7 +127,34 @@ async function withMongoClient(callback) {
     }
 }
 
-async function getUpstoxBrokerFromDb(userId, { requireSecret = false } = {}) {
+async function isAdminUser(userId) {
+    return withMongoClient(async (db) => {
+        const adminRole = await db.collection('roles').findOne({ name: 'admin' });
+        if (!adminRole) {
+            return false;
+        }
+
+        const adminRoleIds = new Set([adminRole._id.toString(), String(adminRole._id)]);
+
+        let user;
+        try {
+            user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+        } catch {
+            user = await db.collection('users').findOne({ _id: userId });
+        }
+
+        if (!user || !Array.isArray(user.roles)) {
+            return false;
+        }
+
+        return user.roles.some((role) => {
+            const roleIdStr = typeof role === 'object' && role !== null ? String(role._id || role) : String(role);
+            return adminRoleIds.has(roleIdStr);
+        });
+    });
+}
+
+async function getUpstoxBrokerFromDb(userId, { requireSecret = false, brokerId = null } = {}) {
     const cleanUserId = requireUserId(userId);
 
     const userIds = [cleanUserId];
@@ -115,12 +162,29 @@ async function getUpstoxBrokerFromDb(userId, { requireSecret = false } = {}) {
         userIds.push(new ObjectId(cleanUserId));
     }
 
-    const broker = await withMongoClient(async (db) =>
-        db.collection('brokers').findOne({
-            user_id: { $in: userIds },
-            external_broker_id: 'upstox',
-        })
-    );
+    const isAdmin = await isAdminUser(cleanUserId);
+
+    let broker = null;
+    if (brokerId && ObjectId.isValid(brokerId)) {
+        broker = await withMongoClient(async (db) => {
+            const query = isAdmin
+                ? { _id: new ObjectId(brokerId), external_broker_id: 'upstox' }
+                : { _id: new ObjectId(brokerId), user_id: { $in: userIds }, external_broker_id: 'upstox' };
+            return db.collection('brokers').findOne(query);
+        });
+        if (!broker) {
+            throw new Error(`Upstox broker configuration with ID ${brokerId} not found${isAdmin ? '' : ' or does not belong to user: ' + cleanUserId}`);
+        }
+    }
+
+    if (!broker) {
+        broker = await withMongoClient(async (db) =>
+            db.collection('brokers').findOne({
+                user_id: { $in: userIds },
+                external_broker_id: 'upstox',
+            })
+        );
+    }
 
     if (!broker) {
         throw new Error(`Upstox broker configuration not found in MongoDB for user: ${cleanUserId}`);
@@ -137,54 +201,40 @@ async function getUpstoxBrokerFromDb(userId, { requireSecret = false } = {}) {
 
 async function getRedisString() {
     if (!redisString) {
+        let RedisClientClass, RedisStringClass;
+        try {
+            const redisModule = await import('./redis_utils/redis_operations/index.js');
+            RedisClientClass = redisModule.RedisClient;
+            RedisStringClass = redisModule.RedisString;
+        } catch {
+            const redisModule = await import('../../shared/redis_operations/index.js');
+            RedisClientClass = redisModule.RedisClient;
+            RedisStringClass = redisModule.RedisString;
+        }
         const redisUrl = requireEnv('REDIS_URL');
-        redisClientInstance = new RedisClient({ url: redisUrl });
+        redisClientInstance = new RedisClientClass({ url: redisUrl });
         await redisClientInstance.connect();
-        redisString = new RedisString(redisClientInstance.getClient());
+        redisString = new RedisStringClass(redisClientInstance.getClient());
     }
     return redisString;
 }
 
-async function isAdminUser(userId) {
-    return withMongoClient(async (db) => {
-        const adminRole = await db.collection('roles').findOne({ name: 'admin' });
-        if (!adminRole) {
-            throw new Error('Admin role not found in MongoDB while resolving Upstox token scope.');
-        }
-
-        const adminRoleIds = new Set([adminRole._id.toString(), String(adminRole._id)]);
-
-        let user;
-        try {
-            user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
-        } catch {
-            user = await db.collection('users').findOne({ _id: userId });
-        }
-
-        if (!user) {
-            throw new Error(`User ${userId} not found in MongoDB while resolving Upstox token scope.`);
-        }
-
-        if (!Array.isArray(user.roles)) {
-            return false;
-        }
-
-        return user.roles.some((role) => {
-            const roleIdStr = typeof role === 'object' && role !== null ? String(role._id || role) : String(role);
-            return adminRoleIds.has(roleIdStr);
-        });
-    });
-}
-
-function buildAuthDialogUrl(credentials, userId) {
+function buildAuthDialogUrl(credentials, userId, brokerId = null) {
     const cleanUserId = requireUserId(userId);
+    const stateValue = brokerId ? `${cleanUserId}:${brokerId}` : cleanUserId;
     const params = new URLSearchParams({
         response_type: 'code',
         client_id: credentials.client_id,
         redirect_uri: credentials.redirect_uri,
-        state: cleanUserId,
+        state: stateValue,
     });
     return `${UPSTOX_AUTH_DIALOG_URL}?${params.toString()}`;
+}
+
+async function start_app_upstox(userId, brokerId = null) {
+    const { credentials, userId: cleanUserId, broker } = await getUpstoxBrokerFromDb(userId, { brokerId });
+    const effectiveBrokerId = broker?._id ? String(broker._id) : (brokerId || '');
+    return buildAuthDialogUrl(credentials, cleanUserId, effectiveBrokerId);
 }
 
 function extractUpstoxError(error) {
@@ -212,12 +262,7 @@ function formatBrokerUpdate(userId) {
     });
 }
 
-async function start_app_upstox(userId) {
-    const { credentials, userId: cleanUserId } = await getUpstoxBrokerFromDb(userId);
-    return buildAuthDialogUrl(credentials, cleanUserId);
-}
-
-async function get_new_access_token(code, userId) {
+async function get_new_access_token(code, userId, brokerId = null) {
     if (!code || !String(code).trim()) {
         throw new Error('The "code" parameter is required but was not provided.');
     }
@@ -225,7 +270,7 @@ async function get_new_access_token(code, userId) {
     const cleanCode = String(code).trim();
     console.log(`Processing Upstox authorization code for user: ${requireUserId(userId)}`);
 
-    const { credentials, userId: cleanUserId } = await getUpstoxBrokerFromDb(userId, { requireSecret: true });
+    const { credentials, userId: cleanUserId, broker } = await getUpstoxBrokerFromDb(userId, { requireSecret: true, brokerId });
 
     const data = {
         code: cleanCode,
@@ -255,36 +300,51 @@ async function get_new_access_token(code, userId) {
         throw new Error(errorText);
     }
 
-    await persistAccessTokenInMongo(cleanUserId, access_token);
-    await setAccessTokenInRedis(access_token, cleanUserId);
-    await publishBrokerUpdate(cleanUserId);
+    await persistAccessTokenInMongo(cleanUserId, access_token, broker?._id || brokerId);
+
+    const targetUserId = broker?.user_id ? String(broker.user_id) : cleanUserId;
+    await setAccessTokenInRedis(access_token, targetUserId);
+    if (targetUserId !== cleanUserId) {
+        await setAccessTokenInRedis(access_token, cleanUserId);
+    }
+    await publishBrokerUpdate(targetUserId);
+    if (targetUserId !== cleanUserId) {
+        await publishBrokerUpdate(cleanUserId);
+    }
 
     return access_token;
 }
 
-async function persistAccessTokenInMongo(userId, accessToken) {
-    const userIds = [userId];
-    if (ObjectId.isValid(userId)) {
-        userIds.push(new ObjectId(userId));
+async function persistAccessTokenInMongo(userId, accessToken, brokerId = null) {
+    const cleanUserId = requireUserId(userId);
+    const userIds = [cleanUserId];
+    if (ObjectId.isValid(cleanUserId)) {
+        userIds.push(new ObjectId(cleanUserId));
     }
+
+    const isAdmin = await isAdminUser(cleanUserId);
+
+    const filter = (brokerId && ObjectId.isValid(brokerId))
+        ? (isAdmin ? { _id: new ObjectId(brokerId), external_broker_id: 'upstox' } : { _id: new ObjectId(brokerId), user_id: { $in: userIds }, external_broker_id: 'upstox' })
+        : { user_id: { $in: userIds }, external_broker_id: 'upstox' };
+
+    const updateFields = {
+        access_token: accessToken,
+        created_at: new Date(),
+    };
 
     const updateResult = await withMongoClient(async (db) =>
         db.collection('brokers').updateOne(
-            { user_id: { $in: userIds }, external_broker_id: 'upstox' },
-            {
-                $set: {
-                    access_token: accessToken,
-                    created_at: new Date(),
-                },
-            }
+            filter,
+            { $set: updateFields }
         )
     );
 
     if (updateResult.matchedCount === 0) {
-        throw new Error(`Upstox broker record not found in MongoDB while saving access token for user: ${userId}`);
+        throw new Error(`Upstox broker record not found or does not belong to user: ${cleanUserId}`);
     }
 
-    console.log(`Access token updated in MongoDB brokers collection for user: ${userId}`);
+    console.log(`Access token updated in MongoDB brokers collection for user: ${cleanUserId}`);
 }
 
 async function setAccessTokenInRedis(accessToken, userId) {
@@ -323,4 +383,7 @@ export {
     extractUpstoxError,
     validateTokenPayload,
     formatBrokerUpdate,
+    isDummyCredential,
+    getUpstoxBrokerFromDb,
+    isAdminUser,
 };

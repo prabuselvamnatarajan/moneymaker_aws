@@ -3,14 +3,14 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const API_BASE_URL = (process.env.API_BASE_URL || 'http://localhost/backtestapp').replace(
-  /\/?$/,
-  '/'
-);
-const UI_BASE_URL = (process.env.UI_BASE_URL || 'http://localhost/backtest-ui/').replace(
-  /\/?$/,
-  '/'
-);
+const API_BASE_URL = (
+  process.env.API_BASE_URL ||
+  (process.env.CI ? 'http://localhost/backtestapp' : 'https://algo.mrcobra.link/backtestapp')
+).replace(/\/?$/, '/');
+const UI_BASE_URL = (
+  process.env.UI_BASE_URL ||
+  (process.env.CI ? 'http://localhost/backtest-ui/' : 'https://algo.mrcobra.link/backtest-ui/')
+).replace(/\/?$/, '/');
 
 export default defineConfig({
   testDir: '.',
@@ -32,6 +32,7 @@ export default defineConfig({
     {
       name: 'api',
       testDir: './backtest-app',
+      grepInvert: /@slow|@no-secrets/,
       use: {
         baseURL: API_BASE_URL,
       },

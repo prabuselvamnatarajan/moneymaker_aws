@@ -26,50 +26,65 @@ window.fetch = async function (input, init) {
     if (
       !urlString.includes('/auth/refresh-token') &&
       !urlString.includes('/auth/login') &&
+      !urlString.includes('/auth/logout') &&
       !urlString.includes('/auth/signup') &&
       !urlString.includes('/auth/mfa/login-verify')
     ) {
       try {
         console.log('[Auth Interceptor] 401 detected, attempting to refresh token...');
         
-        // Deduplicate concurrent refresh requests
-        if (!refreshPromise) {
-          refreshPromise = (async () => {
-            const refreshToken = localStorage.getItem('refreshToken');
-            if (!refreshToken) throw new AuthError('No refresh token available');
-            
-            let refreshRes: Response;
-            try {
-              refreshRes = await originalFetch(`${BASE_URL}/auth/refresh-token`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refreshToken }),
-              });
-            } catch (networkErr) {
-              console.error('[Auth Interceptor] Network error during refresh:', networkErr);
-              throw networkErr; // Propagate network error, do NOT throw AuthError
-            }
-            
-            if (refreshRes.status === 401 || refreshRes.status === 403 || refreshRes.status === 400) {
-              throw new AuthError(`Session expired with status: ${refreshRes.status}`);
-            }
-            
-            if (!refreshRes.ok) {
-              throw new Error(`Refresh token request failed with status: ${refreshRes.status}`);
-            }
-            
-            const data = await refreshRes.json() as { accessToken: string };
-            if (!data.accessToken) {
-              throw new Error('No access token in refresh response');
-            }
-            
-            localStorage.setItem('accessToken', data.accessToken);
-            return data.accessToken;
-          })();
+        const currentTokenInStorage = localStorage.getItem('accessToken');
+        const reqHeaders = (init?.headers || {}) as Record<string, string>;
+        const authHeader = reqHeaders['Authorization'] || reqHeaders['authorization'];
+        const sentToken = authHeader?.replace(/^Bearer\s+/i, '');
+
+        let newAccessToken: string;
+        if (currentTokenInStorage && sentToken && currentTokenInStorage !== sentToken) {
+          // Token in localStorage was already refreshed by another concurrent request
+          newAccessToken = currentTokenInStorage;
+        } else {
+          // Deduplicate concurrent refresh requests
+          if (!refreshPromise) {
+            refreshPromise = (async () => {
+              const refreshToken = localStorage.getItem('refreshToken');
+              if (!refreshToken) throw new AuthError('No refresh token available');
+              
+              let refreshRes: Response;
+              try {
+                refreshRes = await originalFetch(`${BASE_URL}/auth/refresh-token`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ refreshToken }),
+                });
+              } catch (networkErr) {
+                console.error('[Auth Interceptor] Network error during refresh:', networkErr);
+                throw networkErr; // Propagate network error, do NOT throw AuthError
+              }
+              
+              if (refreshRes.status === 401 || refreshRes.status === 403 || refreshRes.status === 400) {
+                throw new AuthError(`Session expired with status: ${refreshRes.status}`);
+              }
+              
+              if (!refreshRes.ok) {
+                throw new Error(`Refresh token request failed with status: ${refreshRes.status}`);
+              }
+              
+              const data = await refreshRes.json() as { accessToken: string };
+              if (!data.accessToken) {
+                throw new Error('No access token in refresh response');
+              }
+              
+              localStorage.setItem('accessToken', data.accessToken);
+              return data.accessToken;
+            })().finally(() => {
+              setTimeout(() => {
+                refreshPromise = null;
+              }, 200);
+            });
+          }
+          
+          newAccessToken = await refreshPromise;
         }
-        
-        const newAccessToken = await refreshPromise;
-        refreshPromise = null;
         
         // Clone init to update Authorization header
         const newInit = { ...(init || {}) };

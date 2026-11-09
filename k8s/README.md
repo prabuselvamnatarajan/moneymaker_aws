@@ -47,11 +47,12 @@ k8s/
 
 ## Dev (minikube)
 
-1. Start minikube and map the hostname to its IP:
+1. Start minikube and map the hostname in `/etc/hosts`:
 
 ```sh
 minikube start
-echo "$(minikube ip) algo.mrcobra.link" | sudo tee -a /etc/hosts
+# With minikube tunnel (Docker driver), the tunnel binds ports on 127.0.0.1:
+echo "127.0.0.1 algo.mrcobra.link" | sudo tee -a /etc/hosts
 ```
 
 2. Build and deploy:
@@ -61,10 +62,27 @@ echo "$(minikube ip) algo.mrcobra.link" | sudo tee -a /etc/hosts
 ./scripts/deploy-k8s.sh --overlay dev
 ```
 
+3. Run `minikube tunnel` (in a separate terminal or as a service):
+
+```sh
+minikube tunnel
+```
+
 `deploy-k8s.sh --overlay dev` requires a running minikube cluster, enables the
 ingress and metrics-server addons, loads local images, and does **not** install
-k3s. TLS uses the existing self-signed cert from `certs/` (synced into
-`k8s/base/files/`). Browsers will warn about the self-signed certificate.
+k3s.
+
+The `dev` overlay patches `mongo-express` (port 8081) and `redisinsight` (port 8001)
+to `type: LoadBalancer`. With `minikube tunnel` running, `minikube tunnel` routes traffic to them,
+making them directly accessible from your host at:
+- **Web App / BackTest UI**: `https://algo.mrcobra.link/backtest-ui/`
+- **Mongo Express**: `http://algo.mrcobra.link:8081/` or `http://localhost:8081/`
+- **RedisInsight**: `http://algo.mrcobra.link:8001/` or `http://localhost:8001/`
+
+*(If `minikube tunnel` is not active, you can alternatively use `kubectl -n moneymaker port-forward svc/mongo-express 8081:8081` and `kubectl -n moneymaker port-forward svc/redisinsight 8001:8001`)*
+
+TLS uses the existing self-signed cert from `certs/` (synced into `k8s/base/files/`).
+Browsers will warn about the self-signed certificate.
 
 ## Prod (EKS + Terraform)
 

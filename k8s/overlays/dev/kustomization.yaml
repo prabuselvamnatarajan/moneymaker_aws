@@ -36,3 +36,20 @@ patches:
           - hosts:
               - algo.mrcobra.link
             secretName: reverse-proxy-tls
+  # Expose mongo-express via LoadBalancer so minikube tunnel binds 8081 to 127.0.0.1 (algo.mrcobra.link:8081)
+  - target:
+      kind: Service
+      name: mongo-express
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+  # Expose redisinsight via LoadBalancer so minikube tunnel binds 8001 to 127.0.0.1 (algo.mrcobra.link:8001)
+  - target:
+      kind: Service
+      name: redisinsight
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+

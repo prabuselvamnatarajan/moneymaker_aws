@@ -5,10 +5,13 @@ export function getUpstoxRedirectUri(): string {
   return `${window.location.origin}${UPSTOX_OAUTH_CALLBACK_PATH}`;
 }
 
-export function getUpstoxOAuthStartUrl(userId: string): string {
+export function getUpstoxOAuthStartUrl(userId: string, brokerId?: string): string {
   const params = new URLSearchParams();
   if (userId) {
     params.set('userId', userId);
+  }
+  if (brokerId) {
+    params.set('brokerId', brokerId);
   }
   const query = params.toString();
   return `${window.location.origin}${UPSTOX_OAUTH_CALLBACK_PATH}${query ? `?${query}` : ''}`;

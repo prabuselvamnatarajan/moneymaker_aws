@@ -530,4 +530,11 @@ else
   wait_for_core
   log "Deploy finished"
 fi
+
+if [ "$OVERLAY" = "dev" ]; then
+  log "Dev overlay active. Ensure 'minikube tunnel' is running to access:"
+  log "  - Web App:       https://algo.mrcobra.link/backtest-ui/"
+  log "  - Mongo Express: http://algo.mrcobra.link:8081/ (or http://localhost:8081/)"
+  log "  - RedisInsight:  http://algo.mrcobra.link:8001/ (or http://localhost:8001/)"
+fi
 exit 0

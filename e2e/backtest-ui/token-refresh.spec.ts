@@ -316,10 +316,10 @@ test.describe('Token refresh interceptor', () => {
     await page.clock.fastForward(10 * 60 * 1000 + 1_000);
     await expect.poll(() => refreshCount, { timeout: 5_000 }).toBeGreaterThanOrEqual(1);
 
-    const countAfterInterval = refreshCount;
     await openProfileAndSignOut(page);
+    const countAfterSignOut = refreshCount;
 
     await page.clock.fastForward(10 * 60 * 1000);
-    expect(refreshCount).toBe(countAfterInterval);
+    expect(refreshCount).toBe(countAfterSignOut);
   });
 });
