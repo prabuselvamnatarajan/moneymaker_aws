@@ -456,8 +456,6 @@ services:
       GET_LTP_SERVICE_URL: http://get-ltp:80
       GET_OPTION_CHAIN_SERVICE_URL: http://get-put-call-option-chain:80
       SHARED_DIR: /shared
-      CLIENT_ID: ${CLIENT_ID:-}
-      CLIENT_SECRET: ${CLIENT_SECRET:-}
       REDIRECT_URI: ${REDIRECT_URI:-}
     volumes:
       - backtest-data:/shared
@@ -512,8 +510,6 @@ services:
       MONGO_DB: BacktestApp
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       PORT: 80
-      CLIENT_ID: ${CLIENT_ID:-}
-      CLIENT_SECRET: ${CLIENT_SECRET:-}
       REDIRECT_URI: ${REDIRECT_URI:-}
     volumes:
       - ./shared/redis_operations:/app/redis_utils/redis_operations:ro

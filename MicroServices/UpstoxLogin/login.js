@@ -6,10 +6,6 @@ import dotenv from 'dotenv';
 import { MongoClient, ObjectId } from 'mongodb';
 
 dotenv.config();
-if (!process.env.CLIENT_ID && !process.env.UPSTOX_CLIENT_ID) {
-    dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
-    dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const redisOpsCandidates = [
@@ -84,40 +80,31 @@ function assertUpstoxCredentialFields(credentials, userId, { requireSecret = fal
     }
     const creds = credentials;
 
-    let clientId = String(creds.client_id || '').trim();
+    const clientId = String(creds.client_id || '').trim();
     let redirectUri = String(creds.redirect_uri || '').trim();
-    let clientSecret = String(creds.client_secret || '').trim();
+    const clientSecret = String(creds.client_secret || '').trim();
 
-    // Fall back to environment variables if credentials are dummy or empty
-    if (!clientId || isDummyCredential(clientId)) {
-        const envClientId = (process.env.UPSTOX_CLIENT_ID || process.env.CLIENT_ID || '').trim();
-        if (envClientId && !isDummyCredential(envClientId)) {
-            clientId = envClientId;
-        }
+    if (!clientId) {
+        throw new Error(`Upstox client_id missing in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
+    }
+    if (isDummyCredential(clientId)) {
+        throw new Error(`Upstox client_id contains an invalid dummy placeholder in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
     }
 
-    if (!redirectUri || isDummyCredential(redirectUri)) {
-        const envRedirect = (process.env.UPSTOX_REDIRECT_URI || process.env.REDIRECT_URI || '').trim();
-        if (envRedirect && !isDummyCredential(envRedirect)) {
-            redirectUri = envRedirect;
-        }
-    }
-
-    if (!clientSecret || isDummyCredential(clientSecret)) {
-        const envSecret = (process.env.UPSTOX_CLIENT_SECRET || process.env.CLIENT_SECRET || '').trim();
-        if (envSecret && !isDummyCredential(envSecret)) {
-            clientSecret = envSecret;
-        }
-    }
-
-    if (!clientId || isDummyCredential(clientId)) {
-        throw new Error(`Upstox client_id missing or invalid (dummy value detected) for user: ${userId}. Please configure valid Upstox credentials.`);
+    if (!redirectUri) {
+        redirectUri = (process.env.REDIRECT_URI || process.env.UPSTOX_REDIRECT_URI || '').trim();
     }
     if (!redirectUri || isDummyCredential(redirectUri)) {
         throw new Error(`Upstox redirect_uri missing or invalid in broker credentials for user: ${userId}`);
     }
-    if (requireSecret && (!clientSecret || isDummyCredential(clientSecret))) {
-        throw new Error(`Upstox client_secret missing or invalid (dummy value detected) for user: ${userId}. Please configure valid Upstox credentials.`);
+
+    if (requireSecret) {
+        if (!clientSecret) {
+            throw new Error(`Upstox client_secret missing in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
+        }
+        if (isDummyCredential(clientSecret)) {
+            throw new Error(`Upstox client_secret contains an invalid dummy placeholder in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
+        }
     }
 
     return {
@@ -311,14 +298,14 @@ async function get_new_access_token(code, userId, brokerId = null) {
         throw new Error(errorText);
     }
 
-    await persistAccessTokenInMongo(cleanUserId, access_token, broker?._id || brokerId, credentials);
+    await persistAccessTokenInMongo(cleanUserId, access_token, broker?._id || brokerId);
     await setAccessTokenInRedis(access_token, cleanUserId);
     await publishBrokerUpdate(cleanUserId);
 
     return access_token;
 }
 
-async function persistAccessTokenInMongo(userId, accessToken, brokerId = null, credentials = null) {
+async function persistAccessTokenInMongo(userId, accessToken, brokerId = null) {
     const userIds = [userId];
     if (ObjectId.isValid(userId)) {
         userIds.push(new ObjectId(userId));
@@ -332,19 +319,6 @@ async function persistAccessTokenInMongo(userId, accessToken, brokerId = null, c
         access_token: accessToken,
         created_at: new Date(),
     };
-
-    // If real credentials were used (e.g. from environment variable fallback), heal the broker document
-    if (credentials) {
-        if (credentials.client_id && !isDummyCredential(credentials.client_id)) {
-            updateFields['credentials.client_id'] = credentials.client_id;
-        }
-        if (credentials.client_secret && !isDummyCredential(credentials.client_secret)) {
-            updateFields['credentials.client_secret'] = credentials.client_secret;
-        }
-        if (credentials.redirect_uri) {
-            updateFields['credentials.redirect_uri'] = credentials.redirect_uri;
-        }
-    }
 
     const updateResult = await withMongoClient(async (db) =>
         db.collection('brokers').updateOne(

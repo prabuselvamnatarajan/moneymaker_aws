@@ -146,15 +146,13 @@ async function sanitizeExpiredUpstoxBrokers(brokers) {
     if (!broker.is_internal && broker.external_broker_id === "upstox" && broker.credentials) {
       const creds = broker.credentials;
       let modifiedCreds = false;
-      const envClientId = (process.env.UPSTOX_CLIENT_ID || process.env.CLIENT_ID || "").trim();
-      const envClientSecret = (process.env.UPSTOX_CLIENT_SECRET || process.env.CLIENT_SECRET || "").trim();
 
       if (isDummyCredential(creds.client_id)) {
-        creds.client_id = !isDummyCredential(envClientId) ? envClientId : "";
+        creds.client_id = "";
         modifiedCreds = true;
       }
       if (isDummyCredential(creds.client_secret)) {
-        creds.client_secret = !isDummyCredential(envClientSecret) ? envClientSecret : "";
+        creds.client_secret = "";
         modifiedCreds = true;
       }
       if (modifiedCreds && broker.save) {

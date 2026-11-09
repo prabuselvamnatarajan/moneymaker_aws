@@ -141,21 +141,75 @@ describe('UpstoxLogin - Credential Validation & Security', () => {
         });
     });
 
-    describe('assertUpstoxCredentialFields', () => {
-        it('rejects dummy client_id when no environment fallback is configured', () => {
+    describe('assertUpstoxCredentialFields (Strict DB-Only Credentials)', () => {
+        it('rejects missing client_id in database credentials', () => {
+            const creds = {
+                client_id: '',
+                client_secret: 'valid-secret-12345',
+                redirect_uri: 'http://localhost/logedin',
+            };
+
+            assert.throws(
+                () => assertUpstoxCredentialFields(creds, 'user-123'),
+                /Upstox client_id missing in database for user: user-123/
+            );
+        });
+
+        it('rejects dummy client_id in database credentials with loud error', () => {
             const dummyCreds = {
                 client_id: 'dummy_client_id_admin',
-                client_secret: 'dummy_client_secret_admin',
+                client_secret: 'valid-secret-12345',
                 redirect_uri: 'http://localhost/logedin',
             };
 
             assert.throws(
                 () => assertUpstoxCredentialFields(dummyCreds, 'user-123'),
-                /Upstox client_id missing or invalid \(dummy value detected\)/
+                /Upstox client_id contains an invalid dummy placeholder in database for user: user-123/
             );
         });
 
-        it('rejects dummy client_secret when requireSecret is true and no env fallback exists', () => {
+        it('does not fall back to environment variables for client_id when DB has dummy or missing value', () => {
+            process.env.CLIENT_ID = '50b489f2-env-client-id';
+            process.env.UPSTOX_CLIENT_ID = 'priority-env-client-id';
+
+            const dummyCreds = {
+                client_id: 'dummy_client_id_admin',
+                client_secret: 'valid-secret-123',
+                redirect_uri: 'http://localhost/logedin',
+            };
+
+            // Must throw despite env vars being set, because credentials must come from DB alone
+            assert.throws(
+                () => assertUpstoxCredentialFields(dummyCreds, 'user-123'),
+                /Upstox client_id contains an invalid dummy placeholder in database for user: user-123/
+            );
+
+            const emptyCreds = {
+                client_id: '',
+                client_secret: 'valid-secret-123',
+                redirect_uri: 'http://localhost/logedin',
+            };
+
+            assert.throws(
+                () => assertUpstoxCredentialFields(emptyCreds, 'user-123'),
+                /Upstox client_id missing in database for user: user-123/
+            );
+        });
+
+        it('rejects missing client_secret when requireSecret is true', () => {
+            const creds = {
+                client_id: 'valid-client-id-12345',
+                client_secret: '',
+                redirect_uri: 'http://localhost/logedin',
+            };
+
+            assert.throws(
+                () => assertUpstoxCredentialFields(creds, 'user-123', { requireSecret: true }),
+                /Upstox client_secret missing in database for user: user-123/
+            );
+        });
+
+        it('rejects dummy client_secret when requireSecret is true with loud error', () => {
             const creds = {
                 client_id: 'valid-client-id-12345',
                 client_secret: 'dummy_client_secret_admin',
@@ -164,27 +218,13 @@ describe('UpstoxLogin - Credential Validation & Security', () => {
 
             assert.throws(
                 () => assertUpstoxCredentialFields(creds, 'user-123', { requireSecret: true }),
-                /Upstox client_secret missing or invalid \(dummy value detected\)/
+                /Upstox client_secret contains an invalid dummy placeholder in database for user: user-123/
             );
         });
 
-        it('falls back to environment variable when MongoDB contains dummy client_id', () => {
-            process.env.CLIENT_ID = '50b489f2-real-client-id';
-
-            const dummyCreds = {
-                client_id: 'dummy_client_id_admin',
-                client_secret: 'valid-secret-123',
-                redirect_uri: 'http://localhost/logedin',
-            };
-
-            const resolved = assertUpstoxCredentialFields(dummyCreds, 'user-123');
-            assert.equal(resolved.client_id, '50b489f2-real-client-id');
-            assert.equal(resolved.client_secret, 'valid-secret-123');
-            assert.equal(resolved.redirect_uri, 'http://localhost/logedin');
-        });
-
-        it('falls back to environment variable when MongoDB contains dummy client_secret', () => {
-            process.env.CLIENT_SECRET = 'real-secret-from-env';
+        it('does not fall back to environment variables for client_secret when DB has dummy or missing value', () => {
+            process.env.CLIENT_SECRET = 'env-secret-123';
+            process.env.UPSTOX_CLIENT_SECRET = 'priority-env-secret-123';
 
             const dummyCreds = {
                 client_id: 'valid-client-id-123',
@@ -192,40 +232,38 @@ describe('UpstoxLogin - Credential Validation & Security', () => {
                 redirect_uri: 'http://localhost/logedin',
             };
 
-            const resolved = assertUpstoxCredentialFields(dummyCreds, 'user-123', { requireSecret: true });
-            assert.equal(resolved.client_id, 'valid-client-id-123');
-            assert.equal(resolved.client_secret, 'real-secret-from-env');
-        });
+            // Must throw despite env vars being set, because secrets must come from DB alone
+            assert.throws(
+                () => assertUpstoxCredentialFields(dummyCreds, 'user-123', { requireSecret: true }),
+                /Upstox client_secret contains an invalid dummy placeholder in database for user: user-123/
+            );
 
-        it('falls back to UPSTOX_CLIENT_ID and UPSTOX_CLIENT_SECRET with priority', () => {
-            process.env.UPSTOX_CLIENT_ID = 'priority-upstox-id';
-            process.env.CLIENT_ID = 'generic-client-id';
-            process.env.UPSTOX_CLIENT_SECRET = 'priority-upstox-secret';
-            process.env.CLIENT_SECRET = 'generic-secret';
-
-            const dummyCreds = {
-                client_id: 'dummy_client_id_admin',
-                client_secret: 'dummy_client_secret_admin',
+            const emptyCreds = {
+                client_id: 'valid-client-id-123',
+                client_secret: '',
                 redirect_uri: 'http://localhost/logedin',
             };
 
-            const resolved = assertUpstoxCredentialFields(dummyCreds, 'user-123', { requireSecret: true });
-            assert.equal(resolved.client_id, 'priority-upstox-id');
-            assert.equal(resolved.client_secret, 'priority-upstox-secret');
+            assert.throws(
+                () => assertUpstoxCredentialFields(emptyCreds, 'user-123', { requireSecret: true }),
+                /Upstox client_secret missing in database for user: user-123/
+            );
         });
 
-        it('preserves valid user-configured credentials without overwriting from env', () => {
-            process.env.CLIENT_ID = 'env-client-id';
+        it('resolves valid credentials strictly from database document', () => {
+            process.env.CLIENT_ID = 'other-client-id';
+            process.env.CLIENT_SECRET = 'other-secret';
 
             const userCreds = {
-                client_id: 'user-custom-client-id',
-                client_secret: 'user-custom-secret',
+                client_id: 'db-custom-client-id',
+                client_secret: 'db-custom-secret',
                 redirect_uri: 'http://localhost/logedin',
             };
 
             const resolved = assertUpstoxCredentialFields(userCreds, 'user-123', { requireSecret: true });
-            assert.equal(resolved.client_id, 'user-custom-client-id');
-            assert.equal(resolved.client_secret, 'user-custom-secret');
+            assert.equal(resolved.client_id, 'db-custom-client-id');
+            assert.equal(resolved.client_secret, 'db-custom-secret');
+            assert.equal(resolved.redirect_uri, 'http://localhost/logedin');
         });
 
         it('rejects empty or missing redirect_uri when neither doc nor env provides one', () => {
