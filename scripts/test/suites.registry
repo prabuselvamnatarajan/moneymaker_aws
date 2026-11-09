@@ -26,5 +26,5 @@ microservice-orders-options|run_microservice_orders_options_test_cases.sh|0|orde
 microservice-connectws-upstox|run_microservice_connectws_upstox_test_cases.sh|0|ConnectWS-Upstox subscription tests
 infrastructure-docker-compose|run_infrastructure_docker_compose_test_cases.sh|0|Future: Docker/Kafka/network infra
 infrastructure-nginx|run_infrastructure_nginx_test_cases.sh|0|Future: reverse-proxy / nginx
-infrastructure-mongo-redis|run_infrastructure_mongo_redis_test_cases.sh|0|Future: Mongo/Redis infra
+infrastructure-mongo-redis|run_infrastructure_mongo_redis_test_cases.sh|1|Mongo/Redis infra, Mongo Express & RedisInsight reachability
 appinit-scheduled|run_appinit_scheduled_test_cases.sh|0|appInit & scheduled services config tests
