@@ -87,14 +87,14 @@ export async function openAccountDetail(
 }
 
 export async function openProfile(page: Page): Promise<void> {
-  await page.locator('#sidebar-container').locator('button').filter({ hasText: '@' }).click();
+  await page.locator('#sidebar-container').locator('button').filter({ hasText: '@' }).first().click();
   await page.getByRole('heading', { name: 'Operator Profile & Security Center' }).waitFor({
     timeout: 15_000,
   });
 }
 
 export async function setSidebarTimezone(page: Page, mode: 'UTC' | 'Local'): Promise<void> {
-  await page.locator('#sidebar-container').getByRole('button', { name: mode === 'UTC' ? 'UTC' : 'LOC', exact: true }).click();
+  await page.locator('#sidebar-container').getByRole('button', { name: mode === 'UTC' ? 'UTC' : 'LOC', exact: true }).first().click();
 }
 
 export async function navigateToStrategies(page: Page): Promise<void> {
