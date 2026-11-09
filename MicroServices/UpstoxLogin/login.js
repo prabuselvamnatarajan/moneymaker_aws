@@ -81,7 +81,7 @@ function assertUpstoxCredentialFields(credentials, userId, { requireSecret = fal
     const creds = credentials;
 
     const clientId = String(creds.client_id || '').trim();
-    let redirectUri = String(creds.redirect_uri || '').trim();
+    const redirectUri = String(creds.redirect_uri || '').trim();
     const clientSecret = String(creds.client_secret || '').trim();
 
     if (!clientId) {
@@ -92,10 +92,10 @@ function assertUpstoxCredentialFields(credentials, userId, { requireSecret = fal
     }
 
     if (!redirectUri) {
-        redirectUri = (process.env.REDIRECT_URI || process.env.UPSTOX_REDIRECT_URI || '').trim();
+        throw new Error(`Upstox redirect_uri missing in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
     }
-    if (!redirectUri || isDummyCredential(redirectUri)) {
-        throw new Error(`Upstox redirect_uri missing or invalid in broker credentials for user: ${userId}`);
+    if (isDummyCredential(redirectUri)) {
+        throw new Error(`Upstox redirect_uri contains an invalid dummy placeholder in database for user: ${userId}. Please configure valid Upstox credentials in broker settings.`);
     }
 
     if (requireSecret) {
@@ -140,8 +140,13 @@ async function getUpstoxBrokerFromDb(userId, { requireSecret = false, brokerId =
         broker = await withMongoClient(async (db) =>
             db.collection('brokers').findOne({
                 _id: new ObjectId(brokerId),
+                user_id: { $in: userIds },
+                external_broker_id: 'upstox',
             })
         );
+        if (!broker) {
+            throw new Error(`Upstox broker configuration with ID ${brokerId} not found or does not belong to user: ${cleanUserId}`);
+        }
     }
 
     if (!broker) {
@@ -306,14 +311,19 @@ async function get_new_access_token(code, userId, brokerId = null) {
 }
 
 async function persistAccessTokenInMongo(userId, accessToken, brokerId = null) {
-    const userIds = [userId];
-    if (ObjectId.isValid(userId)) {
-        userIds.push(new ObjectId(userId));
+    const cleanUserId = requireUserId(userId);
+    const userIds = [cleanUserId];
+    if (ObjectId.isValid(cleanUserId)) {
+        userIds.push(new ObjectId(cleanUserId));
     }
 
-    const filter = brokerId && ObjectId.isValid(brokerId)
-        ? { _id: new ObjectId(brokerId) }
-        : { user_id: { $in: userIds }, external_broker_id: 'upstox' };
+    const filter = {
+        user_id: { $in: userIds },
+        external_broker_id: 'upstox',
+    };
+    if (brokerId && ObjectId.isValid(brokerId)) {
+        filter._id = new ObjectId(brokerId);
+    }
 
     const updateFields = {
         access_token: accessToken,
@@ -328,10 +338,10 @@ async function persistAccessTokenInMongo(userId, accessToken, brokerId = null) {
     );
 
     if (updateResult.matchedCount === 0) {
-        throw new Error(`Upstox broker record not found in MongoDB while saving access token for user: ${userId}`);
+        throw new Error(`Upstox broker record not found or does not belong to user: ${cleanUserId}`);
     }
 
-    console.log(`Access token updated in MongoDB brokers collection for user: ${userId}`);
+    console.log(`Access token updated in MongoDB brokers collection for user: ${cleanUserId}`);
 }
 
 async function setAccessTokenInRedis(accessToken, userId) {

@@ -135,7 +135,7 @@ export const clearAndSeedDB = async () => {
     await zerodhaBroker.save();
 
     // Seed user-specific Upstox brokers stored in DB with blank credentials awaiting user configuration
-    const defaultUpstoxRedirectUri = process.env.UPSTOX_REDIRECT_URI || process.env.REDIRECT_URI || "http://localhost/logedin";
+    const defaultUpstoxRedirectUri = "http://localhost/logedin";
 
     const upstoxBrokerAdmin = new Broker({
       name: "Upstox",

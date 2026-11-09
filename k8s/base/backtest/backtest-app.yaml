@@ -149,12 +149,6 @@ spec:
                 configMapKeyRef:
                   name: common-env
                   key: GET_OPTION_CHAIN_SERVICE_URL
-            - name: REDIRECT_URI
-              valueFrom:
-                configMapKeyRef:
-                  name: common-env
-                  key: REDIRECT_URI
-                  optional: true
             - name: SHARED_DIR
               valueFrom:
                 configMapKeyRef:

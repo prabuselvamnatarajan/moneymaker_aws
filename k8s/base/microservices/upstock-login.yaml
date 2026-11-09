@@ -72,12 +72,6 @@ spec:
                 configMapKeyRef:
                   name: common-env
                   key: MONGO_DB_BACKTEST
-            - name: REDIRECT_URI
-              valueFrom:
-                configMapKeyRef:
-                  name: common-env
-                  key: REDIRECT_URI
-                  optional: true
           resources:
             requests:
               cpu: 100m

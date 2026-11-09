@@ -266,7 +266,7 @@ describe('UpstoxLogin - Credential Validation & Security', () => {
             assert.equal(resolved.redirect_uri, 'http://localhost/logedin');
         });
 
-        it('rejects empty or missing redirect_uri when neither doc nor env provides one', () => {
+        it('rejects empty or missing redirect_uri in database credentials', () => {
             const creds = {
                 client_id: 'valid-client-id',
                 client_secret: 'valid-secret',
@@ -275,8 +275,67 @@ describe('UpstoxLogin - Credential Validation & Security', () => {
 
             assert.throws(
                 () => assertUpstoxCredentialFields(creds, 'user-123'),
-                /Upstox redirect_uri missing or invalid/
+                /Upstox redirect_uri missing in database for user: user-123/
             );
+        });
+
+        it('rejects dummy redirect_uri in database credentials with loud error', () => {
+            const creds = {
+                client_id: 'valid-client-id',
+                client_secret: 'valid-secret',
+                redirect_uri: 'dummy_redirect_uri',
+            };
+
+            assert.throws(
+                () => assertUpstoxCredentialFields(creds, 'user-123'),
+                /Upstox redirect_uri contains an invalid dummy placeholder in database for user: user-123/
+            );
+        });
+
+        it('does not fall back to environment variables for redirect_uri when DB has missing value', () => {
+            process.env.REDIRECT_URI = 'http://env-redirect/callback';
+            process.env.UPSTOX_REDIRECT_URI = 'http://priority-env-redirect/callback';
+
+            const creds = {
+                client_id: 'valid-client-id',
+                client_secret: 'valid-secret',
+                redirect_uri: '',
+            };
+
+            // Must throw despite env vars being set, because all broker configs must come from DB alone
+            assert.throws(
+                () => assertUpstoxCredentialFields(creds, 'user-123'),
+                /Upstox redirect_uri missing in database for user: user-123/
+            );
+        });
+
+        it('supports multi-tenant enterprise usage: distinct credentials per user from DB', () => {
+            const user1Creds = {
+                client_id: 'user1-client-id',
+                client_secret: 'user1-secret',
+                redirect_uri: 'https://algo.domain.com/user1/callback',
+            };
+            const user2Creds = {
+                client_id: 'user2-client-id',
+                client_secret: 'user2-secret',
+                redirect_uri: 'https://algo.domain.com/user2/callback',
+            };
+
+            const res1 = assertUpstoxCredentialFields(user1Creds, 'user-001', { requireSecret: true });
+            const res2 = assertUpstoxCredentialFields(user2Creds, 'user-002', { requireSecret: true });
+
+            assert.equal(res1.client_id, 'user1-client-id');
+            assert.equal(res1.client_secret, 'user1-secret');
+            assert.equal(res1.redirect_uri, 'https://algo.domain.com/user1/callback');
+
+            assert.equal(res2.client_id, 'user2-client-id');
+            assert.equal(res2.client_secret, 'user2-secret');
+            assert.equal(res2.redirect_uri, 'https://algo.domain.com/user2/callback');
+
+            // Confirm complete isolation: no cross-tenant leakage
+            assert.notEqual(res1.client_id, res2.client_id);
+            assert.notEqual(res1.client_secret, res2.client_secret);
+            assert.notEqual(res1.redirect_uri, res2.redirect_uri);
         });
     });
 
