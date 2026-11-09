@@ -22,7 +22,7 @@ import { purgePositionsFromRedis, readLiveCache } from "../utils/positionRedis.j
 import { sumOpenUnrealised, round2, resolveCloseExecutionTime } from "../utils/positionMath.js";
 import { completionKey as backtestCompletionKey } from "../utils/backtestCompletionUtil.js";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframe", "symbol_control"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframe", "timeframes", "data_mode", "symbol_control"];
 
 const ALLOWED_TIMEFRAMES = ["1m", "3m", "5m", "15m"];
 
@@ -1775,10 +1775,17 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
         console.warn(`[Sync] RUNNING deployment ${deploymentIdStr} missing timeframe; defaulting to 1m`);
       }
 
+      const timeframes = Array.isArray(dep.timeframes) && dep.timeframes.length > 0
+        ? dep.timeframes
+        : [timeframe];
+      const data_mode = dep.data_mode || "timeframe";
+
       newKeysData[key].push({
         name: dep.strategy_id.strategy_name,
         isTest: isTest,
         timeframe,
+        timeframes,
+        data_mode,
         state_epoch: stateEpoch,
         account_id: dep.account_id.account_id || dep.account_id._id.toString(),
         user_symbol_id: dep.user_symbol_id ? dep.user_symbol_id.toString() : undefined,

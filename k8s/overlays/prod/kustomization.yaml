@@ -110,6 +110,20 @@ patches:
         value: 3
   - target:
       kind: Deployment
+      name: timeframe-constructor
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: timeframe-constructor
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+  - target:
+      kind: Deployment
       name: backtest-streamer
     patch: |-
       - op: replace

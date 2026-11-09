@@ -6,15 +6,28 @@ import {
   extractSymbol,
   buildMessagePayload,
   resolvePartitionKey,
-  filterBacktestStrategies,
+  filterStrategiesForMessage,
+  filterSnapshotForDeployment,
 } from './topicRoutingHelper.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
-import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
+import {
+    handleFatalError,
+    registerFatalErrorHandlers,
+    registerKafkaCrashHandler,
+} from '/app/utils/kafkaErrorHandler.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
-const TARGET_TOPICS = (process.env.TARGET_TOPIC || '').split(',').map(t => t.trim()).filter(Boolean);
-const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
+const DEFAULT_TARGET_TOPICS = [
+    'splited-live-data',
+    'backtest-stream-data',
+    'timeframe_live_data',
+    'timeframe_backtest_data',
+];
+const TARGET_TOPICS = process.env.TARGET_TOPIC
+    ? process.env.TARGET_TOPIC.split(',').map(t => t.trim()).filter(Boolean)
+    : DEFAULT_TARGET_TOPICS;
+const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID || 'strategy_chooser_group';
 const BACKTEST_TOPIC = process.env.BACKTEST_TOPIC || 'backtest-stream-data';
 const KAFKA_NUM_PARTITIONS = parseInt(process.env.KAFKA_NUM_PARTITIONS || '50', 10);
 
@@ -23,8 +36,8 @@ const kafka = new Kafka({
   brokers: KAFKA_BROKERS,
   retry: {
     initialRetryTime: 300,
-    retries: 20
-  }
+    retries: 20,
+  },
 });
 
 registerFatalErrorHandlers();
@@ -109,18 +122,25 @@ async function createConsumer() {
                 const rawKey = key ? key.toString() : '';
                 const data = JSON.parse(value.toString());
                 const symbol = extractSymbol(data, rawKey);
-                const isBackTest = topic === BACKTEST_TOPIC;
-                logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
+                const isTimeframeTopic = topic === 'timeframe_live_data'
+                    || topic === 'timeframe_backtest_data'
+                    || !!data.timeframes;
+                const isBackTest = topic === BACKTEST_TOPIC
+                    || topic === 'timeframe_backtest_data'
+                    || topic.includes('backtest');
+
+                logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest}, isTimeframeTopic: ${isTimeframeTopic})`);
                 const strategies = await getStrategiesForSymbol(isBackTest, symbol);
                 logger.debug(`Active strategies for ${symbol}: ${JSON.stringify(strategies)}`);
 
-                let filteredStrategies = strategies;
+                const filteredStrategies = filterStrategiesForMessage(
+                    strategies,
+                    isBackTest,
+                    data,
+                    isTimeframeTopic
+                );
+
                 if (isBackTest) {
-                    if (!data.deployment_id) {
-                        logger.warn(`Discarding backtest message for symbol ${symbol}: missing deployment_id`);
-                        return;
-                    }
-                    filteredStrategies = filterBacktestStrategies(strategies, data);
                     logger.info(`Filtered strategies for symbol ${symbol} to deployment ${data.deployment_id}. Count: ${filteredStrategies.length}`);
                 }
 
@@ -128,8 +148,14 @@ async function createConsumer() {
                     const { name: strategyName, isTest = true } = strategy;
                     const isTestMode = isTest || isBackTest;
                     const topicName = resolveTopicName(strategyName, isTestMode);
-                    const strategyData = buildMessagePayload(data, strategy, isTestMode);
+                    const strategyData = buildMessagePayload(
+                        data,
+                        strategy,
+                        isTestMode,
+                        isTimeframeTopic
+                    );
                     const partitionKey = resolvePartitionKey(symbol, strategy, isTestMode);
+
                     await retry(async () => {
                         await producer.send({
                             topic: topicName,
@@ -158,9 +184,17 @@ async function startServer() {
     await initLogger();
     await createConsumer();
 }
+
 if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
     startServer().catch((err) => {
         handleFatalError(err, 'consumer startup');
     });
 }
-export { startServer };
+
+export {
+    startServer,
+    createConsumer,
+    filterStrategiesForMessage,
+    buildMessagePayload,
+    filterSnapshotForDeployment,
+};

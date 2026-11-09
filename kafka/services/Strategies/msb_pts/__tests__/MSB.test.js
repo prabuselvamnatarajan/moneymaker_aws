@@ -160,4 +160,50 @@ describe('msb_pts buy/sell consistency', () => {
         assert.equal(store.orders.length, 2, 'New MSB entry order fires ONLY on closed 15m candle');
         assert.equal(store.orders[1].transaction_type, 'BUY');
     });
+
+    it('processes centralized multi-timeframe snapshot: real-time Target/SL on tick LTP and MSB breakout on closedCandle', async () => {
+        const details = strategyDetails({
+            timeframe: '5m',
+            target_pts: 10,
+            sl_pts: 10,
+            target_type: 'POINTS',
+            advance_trade_decision: true,
+        });
+
+        // 1. Initial state with open LONG position at 100
+        let state = {
+            isUp: true,
+            prevHigh: { high: 105, low: 95 },
+            prevLow: { high: 105, low: 95 },
+            position: { direction: 'LONG', entryPrice: 100 },
+            lastBuyPrice: 100,
+            closedByTargetOrSl: false,
+        };
+        resetStore({ balance: 100000, bought: { [holdingsKey()]: 10 } });
+
+        // 2. Intra-bar snapshot with LTP = 111 (Target hit!)
+        const targetSnapshot = {
+            symbol: SYMBOL,
+            eventTimestamp: 1720236005000,
+            snapshotVersion: 1,
+            ltp: 111,
+            timeframes: {
+                '5m': {
+                    open: 100,
+                    high: 111,
+                    low: 99,
+                    close: 111,
+                    volume: 200,
+                    isClosed: false,
+                    closedCandle: null,
+                },
+            },
+        };
+
+        state = await strategy.executeStrategy(state, targetSnapshot, SYMBOL, details);
+        assert.equal(store.orders.length, 1, 'Target SELL must execute immediately on snapshot LTP');
+        assert.equal(store.orders[0].transaction_type, 'SELL');
+        assert.equal(state.position, null, 'Position must be cleared');
+        assert.equal(state.closedByTargetOrSl, true);
+    });
 });

@@ -24,6 +24,7 @@ resources:
   - backtest/backtest-streamer.yaml
   - backtest/backtest-client.yaml
   - consumers/wsdatasplitter-consumer.yaml
+  - consumers/timeframe-constructor.yaml
   - consumers/price-storer-consumer.yaml
   - consumers/order-storer-consumer.yaml
   - consumers/strategy-chooser-consumer.yaml

@@ -289,6 +289,32 @@ services:
         condition: any
     networks:
       - app-net
+
+  timeframe-constructor:
+    image: timeframe-constructor:latest
+    depends_on:
+      - zookeeper
+      - kafka-broker-1
+      - kafka-broker-2
+      - kafka-broker-3
+      - redis
+    environment:
+      SERVICE_NAME: timeframe-constructor
+      SERVICE_MODE: live
+      REDIS_URL: redis://:myStrongRedisPassword@redis:6379
+      KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+      CONSUMER_GROUP_ID: timeframe_constructor_group
+      INPUT_TOPICS: splited-live-data,backtest-stream-data
+      BACKTEST_INPUT_TOPIC: backtest-stream-data
+      OUTPUT_LIVE_TOPIC: timeframe_live_data
+      OUTPUT_BACKTEST_TOPIC: timeframe_backtest_data
+      KAFKA_NUM_PARTITIONS: "50"
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: any
+    networks:
+      - app-net
   
   strategy-chooser-consumer:
     image: strategy-chooser-consumer:latest
@@ -303,7 +329,7 @@ services:
       SERVICE_MODE: live
       REDIS_URL: redis://:myStrongRedisPassword@redis:6379
       KAFKA_BROKERS: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
-      TARGET_TOPIC: splited-live-data,backtest-stream-data
+      TARGET_TOPIC: splited-live-data,backtest-stream-data,timeframe_live_data,timeframe_backtest_data
       BACKTEST_TOPIC: backtest-stream-data
       TARGET_GROUP_ID: strategy_chooser_group
       KAFKA_NUM_PARTITIONS: "50"

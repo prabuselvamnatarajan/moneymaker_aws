@@ -31,10 +31,30 @@ function isRawTick(message) {
 }
 
 /**
- * Resolve candle + closedCandle for live ticks (buildTimeframeCandle) or
- * prebuilt test fixtures (high/low/ltp, optional closedCandle / isClosed).
+ * Resolve candle + closedCandle for centralized timeframe snapshots, live ticks, or
+ * prebuilt test fixtures.
  */
 function resolveCandles(message, timeframe, existingCandleState) {
+    // 1. Centralized multi-timeframe snapshot from timeframeConstructor
+    if (message?.timeframes && typeof message.timeframes === 'object') {
+        const tfData = message.timeframes[timeframe] || Object.values(message.timeframes)[0];
+        if (tfData) {
+            const candle = {
+                open: tfData.open,
+                high: tfData.high,
+                low: tfData.low,
+                close: tfData.close,
+                ltp: message.ltp ?? tfData.close,
+                volume: tfData.volume ?? 0,
+                timestamp: tfData.endTime ? new Date(tfData.endTime).toISOString() : (message.eventTimestamp ? new Date(message.eventTimestamp).toISOString() : message.timestamp),
+                isClosed: false,
+                candleState: tfData,
+            };
+            const closedCandle = tfData.closedCandle || null;
+            return { candle, closedCandle, newCandleState: tfData };
+        }
+    }
+
     if (isRawTick(message)) {
         const built = buildTimeframeCandle(message, timeframe, existingCandleState);
         if (built.candle) {

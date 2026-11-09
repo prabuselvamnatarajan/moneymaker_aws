@@ -254,4 +254,69 @@ describe('MSB buy/sell consistency', () => {
         assert.equal(store.orders.length, 1, 'must trigger exactly 1 BUY order on 15m candle close');
         assert.equal(store.orders[0].transaction_type, 'BUY');
     });
+
+    it('processes centralized multi-timeframe snapshot format and executes on closedCandle', async () => {
+        const details = strategyDetails({ timeframe: '5m' });
+
+        // Initial bar state to set swing points
+        let state = await strategy.executeStrategy(
+            null,
+            candle({ high: 100, low: 95, ltp: 98 }),
+            SYMBOL,
+            details
+        );
+
+        // Snapshot with forming bar (closedCandle = null)
+        const intraBarSnapshot = {
+            symbol: SYMBOL,
+            eventTimestamp: 1720236005000,
+            snapshotVersion: 1,
+            ltp: 102,
+            timeframes: {
+                '5m': {
+                    open: 98,
+                    high: 102,
+                    low: 97,
+                    close: 102,
+                    volume: 50,
+                    isClosed: false,
+                    closedCandle: null,
+                },
+            },
+        };
+
+        state = await strategy.executeStrategy(state, intraBarSnapshot, SYMBOL, details);
+        assert.equal(store.orders.length, 0, 'must not trade on intra-bar snapshot');
+
+        // Snapshot with closedCandle on 5m rollover (breakout above 100)
+        const rolloverSnapshot = {
+            symbol: SYMBOL,
+            eventTimestamp: 1720236305000,
+            snapshotVersion: 2,
+            ltp: 103,
+            timeframes: {
+                '5m': {
+                    open: 103,
+                    high: 103,
+                    low: 103,
+                    close: 103,
+                    volume: 10,
+                    isClosed: false,
+                    closedCandle: {
+                        open: 98,
+                        high: 105,
+                        low: 97,
+                        close: 103,
+                        volume: 500,
+                        isClosed: true,
+                    },
+                },
+            },
+        };
+
+        state = await strategy.executeStrategy(state, rolloverSnapshot, SYMBOL, details);
+        assert.equal(state.isUp, true, 'must trigger UP trend on closedCandle breakout');
+        assert.equal(store.orders.length, 1, 'must trigger exactly 1 BUY order');
+        assert.equal(store.orders[0].transaction_type, 'BUY');
+    });
 });
