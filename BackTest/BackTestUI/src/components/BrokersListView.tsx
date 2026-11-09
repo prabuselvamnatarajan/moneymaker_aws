@@ -288,7 +288,7 @@ export default function BrokersListView() {
     }
   };
 
-  const getOAuthUrl = () => getUpstoxOAuthStartUrl(currentUserId);
+  const getOAuthUrl = () => getUpstoxOAuthStartUrl(currentUserId, selectedBroker?._id);
 
   const getBrokerAuthStatus = (broker: Broker): 'authorized' | 'expired' | 'disconnected' => {
     if (broker.is_internal) return 'authorized';
@@ -663,6 +663,17 @@ export default function BrokersListView() {
                     const authStatus = getBrokerAuthStatus(selectedBroker);
                     const isAuthorized = authStatus === 'authorized';
 
+                    const currentClientId = credentialRows.find(r => r.key === 'client_id')?.value?.trim() || '';
+                    const currentClientSecret = credentialRows.find(r => r.key === 'client_secret')?.value?.trim() || '';
+                    const isDummyOrMissing = !currentClientId ||
+                      currentClientId.toLowerCase().startsWith('dummy') ||
+                      !currentClientSecret ||
+                      currentClientSecret.toLowerCase().startsWith('dummy');
+
+                    const savedClientId = selectedBroker.credentials?.client_id || '';
+                    const savedClientSecret = selectedBroker.credentials?.client_secret || '';
+                    const hasUnsavedChanges = currentClientId !== savedClientId || (currentClientSecret && currentClientSecret !== savedClientSecret);
+
                     return (
                     <div className="p-4 bg-slate-950 border border-slate-850 rounded-xl space-y-4">
                       <div className="flex items-center justify-between">
@@ -686,6 +697,27 @@ export default function BrokersListView() {
                         </div>
                       )}
 
+                      {isDummyOrMissing && (
+                        <div className="p-3 bg-amber-950/30 border border-amber-900/40 rounded-lg flex items-start gap-2.5">
+                          <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div className="text-[10px] text-amber-300 leading-normal space-y-1">
+                            <p className="font-bold">Upstox API Credentials Required</p>
+                            <p className="text-amber-300/80">
+                              Please enter and save your valid Upstox API credentials (<span className="font-mono text-amber-200">client_id</span> and <span className="font-mono text-amber-200">client_secret</span>) above. Dummy placeholders cannot be used to connect to Upstox.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {!isDummyOrMissing && hasUnsavedChanges && (
+                        <div className="p-3 bg-indigo-950/30 border border-indigo-900/40 rounded-lg flex items-center gap-2">
+                          <Info className="w-4 h-4 text-indigo-400 shrink-0" />
+                          <p className="text-[10px] text-indigo-300 leading-normal">
+                            You have unsaved changes in credentials. Please click <strong>Save Credentials</strong> before logging in.
+                          </p>
+                        </div>
+                      )}
+
                       {isAuthorized && selectedBroker.access_token && (
                         <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg space-y-1 font-mono">
                           <span className="text-[9px] uppercase font-bold text-slate-500">Access Token (Stored)</span>
@@ -695,15 +727,28 @@ export default function BrokersListView() {
                         </div>
                       )}
 
-                      <a
-                        href={getOAuthUrl()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-850 hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 font-bold font-mono tracking-wide rounded-lg text-[10px] border border-indigo-900/65 transition-colors cursor-pointer shadow-md"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        {isAuthorized ? 'Re-authenticate Account' : 'Authenticate / Login with Upstox'}
-                      </a>
+                      {isDummyOrMissing || hasUnsavedChanges ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-slate-500 font-bold font-mono tracking-wide rounded-lg text-[10px] border border-slate-800 cursor-not-allowed opacity-60"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          {isDummyOrMissing
+                            ? 'Authenticate with Upstox (Credentials Required)'
+                            : 'Save Credentials First to Authenticate'}
+                        </button>
+                      ) : (
+                        <a
+                          href={getOAuthUrl()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-850 hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 font-bold font-mono tracking-wide rounded-lg text-[10px] border border-indigo-900/65 transition-colors cursor-pointer shadow-md"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          {isAuthorized ? 'Re-authenticate Account' : 'Authenticate / Login with Upstox'}
+                        </a>
+                      )}
                     </div>
                     );
                   })()}

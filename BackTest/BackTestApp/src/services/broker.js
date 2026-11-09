@@ -10,7 +10,13 @@ const DEFAULT_REDIS_KEY = "redis_upstox_access_token";
 
 const UPSTOX_REQUIRED_CREDENTIAL_KEYS = ["client_id", "client_secret", "redirect_uri"];
 
-function validateUpstoxCredentials(credentials, { allowPartialSecret = false } = {}) {
+export function isDummyCredential(value) {
+  if (!value || typeof value !== "string") return false;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.startsWith("dummy") || trimmed === "dummy";
+}
+
+export function validateUpstoxCredentials(credentials, { allowPartialSecret = false } = {}) {
   if (!credentials || typeof credentials !== "object") {
     throw new Error("Upstox credentials are required.");
   }
@@ -22,6 +28,9 @@ function validateUpstoxCredentials(credentials, { allowPartialSecret = false } =
     }
     if (typeof value !== "string" || !value.trim()) {
       throw new Error(`Upstox credential "${key}" is required.`);
+    }
+    if (isDummyCredential(value)) {
+      throw new Error(`Upstox credential "${key}" contains an invalid dummy placeholder.`);
     }
   }
 }
@@ -133,6 +142,27 @@ async function sanitizeExpiredUpstoxBrokers(brokers) {
   const sanitized = [];
 
   for (const broker of brokers) {
+    // Sanitize any legacy or accidental dummy credentials in stored broker document
+    if (!broker.is_internal && broker.external_broker_id === "upstox" && broker.credentials) {
+      const creds = broker.credentials;
+      let modifiedCreds = false;
+      const envClientId = (process.env.UPSTOX_CLIENT_ID || process.env.CLIENT_ID || "").trim();
+      const envClientSecret = (process.env.UPSTOX_CLIENT_SECRET || process.env.CLIENT_SECRET || "").trim();
+
+      if (isDummyCredential(creds.client_id)) {
+        creds.client_id = !isDummyCredential(envClientId) ? envClientId : "";
+        modifiedCreds = true;
+      }
+      if (isDummyCredential(creds.client_secret)) {
+        creds.client_secret = !isDummyCredential(envClientSecret) ? envClientSecret : "";
+        modifiedCreds = true;
+      }
+      if (modifiedCreds && broker.save) {
+        broker.markModified("credentials");
+        await broker.save();
+      }
+    }
+
     if (
       !broker.is_internal &&
       broker.external_broker_id === "upstox" &&

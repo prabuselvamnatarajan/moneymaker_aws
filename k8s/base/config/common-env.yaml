@@ -20,5 +20,6 @@ data:
   GET_OPTION_CHAIN_SERVICE_URL: http://get-put-call-option-chain:80
   NGINX_ADDRESS: https://reverse-proxy
   SHARED_DIR: /shared
+  REDIRECT_URI: "http://localhost/logedin"
   MONGO_DB_BACKTEST: BacktestApp
   DB_NAME: stock_database

@@ -1,4 +1,12 @@
 import "dotenv/config";
+import path from "path";
+import dotenv from "dotenv";
+
+// Load root .env if CLIENT_ID/UPSTOX_CLIENT_ID was not loaded from current directory
+if (!process.env.CLIENT_ID && !process.env.UPSTOX_CLIENT_ID) {
+  dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+  dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+}
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import { connectDB } from "./connection.js";
@@ -134,17 +142,23 @@ export const clearAndSeedDB = async () => {
     const zerodhaBroker = new Broker({ name: "Zerodha" });
     await zerodhaBroker.save();
 
-    // Seed user-specific Upstox brokers with default credentials
-    const defaultUpstoxRedirectUri = process.env.UPSTOX_REDIRECT_URI || "https://localhost/logedin";
+    // Seed user-specific Upstox brokers with real credentials from environment or empty placeholders
+    const defaultUpstoxRedirectUri = process.env.UPSTOX_REDIRECT_URI || process.env.REDIRECT_URI || "http://localhost/logedin";
+    const rawClientId = (process.env.UPSTOX_CLIENT_ID || process.env.CLIENT_ID || "").trim();
+    const rawClientSecret = (process.env.UPSTOX_CLIENT_SECRET || process.env.CLIENT_SECRET || "").trim();
+
+    const isDummy = (val) => typeof val === "string" && (val.toLowerCase().startsWith("dummy") || val.toLowerCase() === "dummy");
+    const safeClientId = isDummy(rawClientId) ? "" : rawClientId;
+    const safeClientSecret = isDummy(rawClientSecret) ? "" : rawClientSecret;
+
     const upstoxBrokerAdmin = new Broker({
       name: "Upstox",
       is_internal: false,
       user_id: adminUser._id.toString(),
       external_broker_id: "upstox",
       credentials: {
-        // NOTE: These are sample contents and not actual credentials
-        client_id: "dummy_client_id_admin",
-        client_secret: "dummy_client_secret_admin",
+        client_id: safeClientId,
+        client_secret: safeClientSecret,
         redirect_uri: defaultUpstoxRedirectUri
       },
       access_token: ""
@@ -157,9 +171,8 @@ export const clearAndSeedDB = async () => {
       user_id: standardUser._id.toString(),
       external_broker_id: "upstox",
       credentials: {
-        // NOTE: These are sample contents and not actual credentials
-        client_id: "dummy_client_id_standard",
-        client_secret: "dummy_client_secret_standard",
+        client_id: safeClientId,
+        client_secret: safeClientSecret,
         redirect_uri: defaultUpstoxRedirectUri
       },
       access_token: ""

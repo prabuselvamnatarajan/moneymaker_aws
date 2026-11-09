@@ -6,6 +6,10 @@ import dotenv from 'dotenv';
 import { MongoClient, ObjectId } from 'mongodb';
 
 dotenv.config();
+if (!process.env.CLIENT_ID && !process.env.UPSTOX_CLIENT_ID) {
+    dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
+    dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const redisOpsCandidates = [
@@ -68,23 +72,52 @@ function requireUserId(userId) {
     return cleanUserId;
 }
 
+function isDummyCredential(value) {
+    if (!value || typeof value !== 'string') return true;
+    const trimmed = value.trim().toLowerCase();
+    return trimmed.startsWith('dummy') || trimmed === 'dummy';
+}
+
 function assertUpstoxCredentialFields(credentials, userId, { requireSecret = false } = {}) {
     if (!credentials || typeof credentials !== 'object') {
         throw new Error(`Upstox broker credentials missing in MongoDB for user: ${userId}`);
     }
+    const creds = credentials;
 
-    const clientId = String(credentials.client_id || '').trim();
-    const redirectUri = String(credentials.redirect_uri || '').trim();
-    const clientSecret = String(credentials.client_secret || '').trim();
+    let clientId = String(creds.client_id || '').trim();
+    let redirectUri = String(creds.redirect_uri || '').trim();
+    let clientSecret = String(creds.client_secret || '').trim();
 
-    if (!clientId) {
-        throw new Error(`Upstox client_id missing in MongoDB broker credentials for user: ${userId}`);
+    // Fall back to environment variables if credentials are dummy or empty
+    if (!clientId || isDummyCredential(clientId)) {
+        const envClientId = (process.env.UPSTOX_CLIENT_ID || process.env.CLIENT_ID || '').trim();
+        if (envClientId && !isDummyCredential(envClientId)) {
+            clientId = envClientId;
+        }
     }
-    if (!redirectUri) {
-        throw new Error(`Upstox redirect_uri missing in MongoDB broker credentials for user: ${userId}`);
+
+    if (!redirectUri || isDummyCredential(redirectUri)) {
+        const envRedirect = (process.env.UPSTOX_REDIRECT_URI || process.env.REDIRECT_URI || '').trim();
+        if (envRedirect && !isDummyCredential(envRedirect)) {
+            redirectUri = envRedirect;
+        }
     }
-    if (requireSecret && !clientSecret) {
-        throw new Error(`Upstox client_secret missing in MongoDB broker credentials for user: ${userId}`);
+
+    if (!clientSecret || isDummyCredential(clientSecret)) {
+        const envSecret = (process.env.UPSTOX_CLIENT_SECRET || process.env.CLIENT_SECRET || '').trim();
+        if (envSecret && !isDummyCredential(envSecret)) {
+            clientSecret = envSecret;
+        }
+    }
+
+    if (!clientId || isDummyCredential(clientId)) {
+        throw new Error(`Upstox client_id missing or invalid (dummy value detected) for user: ${userId}. Please configure valid Upstox credentials.`);
+    }
+    if (!redirectUri || isDummyCredential(redirectUri)) {
+        throw new Error(`Upstox redirect_uri missing or invalid in broker credentials for user: ${userId}`);
+    }
+    if (requireSecret && (!clientSecret || isDummyCredential(clientSecret))) {
+        throw new Error(`Upstox client_secret missing or invalid (dummy value detected) for user: ${userId}. Please configure valid Upstox credentials.`);
     }
 
     return {
@@ -107,7 +140,7 @@ async function withMongoClient(callback) {
     }
 }
 
-async function getUpstoxBrokerFromDb(userId, { requireSecret = false } = {}) {
+async function getUpstoxBrokerFromDb(userId, { requireSecret = false, brokerId = null } = {}) {
     const cleanUserId = requireUserId(userId);
 
     const userIds = [cleanUserId];
@@ -115,12 +148,23 @@ async function getUpstoxBrokerFromDb(userId, { requireSecret = false } = {}) {
         userIds.push(new ObjectId(cleanUserId));
     }
 
-    const broker = await withMongoClient(async (db) =>
-        db.collection('brokers').findOne({
-            user_id: { $in: userIds },
-            external_broker_id: 'upstox',
-        })
-    );
+    let broker = null;
+    if (brokerId && ObjectId.isValid(brokerId)) {
+        broker = await withMongoClient(async (db) =>
+            db.collection('brokers').findOne({
+                _id: new ObjectId(brokerId),
+            })
+        );
+    }
+
+    if (!broker) {
+        broker = await withMongoClient(async (db) =>
+            db.collection('brokers').findOne({
+                user_id: { $in: userIds },
+                external_broker_id: 'upstox',
+            })
+        );
+    }
 
     if (!broker) {
         throw new Error(`Upstox broker configuration not found in MongoDB for user: ${cleanUserId}`);
@@ -137,10 +181,20 @@ async function getUpstoxBrokerFromDb(userId, { requireSecret = false } = {}) {
 
 async function getRedisString() {
     if (!redisString) {
+        let RedisClientClass, RedisStringClass;
+        try {
+            const redisModule = await import('./redis_utils/redis_operations/index.js');
+            RedisClientClass = redisModule.RedisClient;
+            RedisStringClass = redisModule.RedisString;
+        } catch {
+            const redisModule = await import('../../shared/redis_operations/index.js');
+            RedisClientClass = redisModule.RedisClient;
+            RedisStringClass = redisModule.RedisString;
+        }
         const redisUrl = requireEnv('REDIS_URL');
-        redisClientInstance = new RedisClient({ url: redisUrl });
+        redisClientInstance = new RedisClientClass({ url: redisUrl });
         await redisClientInstance.connect();
-        redisString = new RedisString(redisClientInstance.getClient());
+        redisString = new RedisStringClass(redisClientInstance.getClient());
     }
     return redisString;
 }
@@ -176,15 +230,22 @@ async function isAdminUser(userId) {
     });
 }
 
-function buildAuthDialogUrl(credentials, userId) {
+function buildAuthDialogUrl(credentials, userId, brokerId = null) {
     const cleanUserId = requireUserId(userId);
+    const stateValue = brokerId ? `${cleanUserId}:${brokerId}` : cleanUserId;
     const params = new URLSearchParams({
         response_type: 'code',
         client_id: credentials.client_id,
         redirect_uri: credentials.redirect_uri,
-        state: cleanUserId,
+        state: stateValue,
     });
     return `${UPSTOX_AUTH_DIALOG_URL}?${params.toString()}`;
+}
+
+async function start_app_upstox(userId, brokerId = null) {
+    const { credentials, userId: cleanUserId, broker } = await getUpstoxBrokerFromDb(userId, { brokerId });
+    const effectiveBrokerId = broker?._id ? String(broker._id) : (brokerId || '');
+    return buildAuthDialogUrl(credentials, cleanUserId, effectiveBrokerId);
 }
 
 function extractUpstoxError(error) {
@@ -212,12 +273,7 @@ function formatBrokerUpdate(userId) {
     });
 }
 
-async function start_app_upstox(userId) {
-    const { credentials, userId: cleanUserId } = await getUpstoxBrokerFromDb(userId);
-    return buildAuthDialogUrl(credentials, cleanUserId);
-}
-
-async function get_new_access_token(code, userId) {
+async function get_new_access_token(code, userId, brokerId = null) {
     if (!code || !String(code).trim()) {
         throw new Error('The "code" parameter is required but was not provided.');
     }
@@ -225,7 +281,7 @@ async function get_new_access_token(code, userId) {
     const cleanCode = String(code).trim();
     console.log(`Processing Upstox authorization code for user: ${requireUserId(userId)}`);
 
-    const { credentials, userId: cleanUserId } = await getUpstoxBrokerFromDb(userId, { requireSecret: true });
+    const { credentials, userId: cleanUserId, broker } = await getUpstoxBrokerFromDb(userId, { requireSecret: true, brokerId });
 
     const data = {
         code: cleanCode,
@@ -255,28 +311,45 @@ async function get_new_access_token(code, userId) {
         throw new Error(errorText);
     }
 
-    await persistAccessTokenInMongo(cleanUserId, access_token);
+    await persistAccessTokenInMongo(cleanUserId, access_token, broker?._id || brokerId, credentials);
     await setAccessTokenInRedis(access_token, cleanUserId);
     await publishBrokerUpdate(cleanUserId);
 
     return access_token;
 }
 
-async function persistAccessTokenInMongo(userId, accessToken) {
+async function persistAccessTokenInMongo(userId, accessToken, brokerId = null, credentials = null) {
     const userIds = [userId];
     if (ObjectId.isValid(userId)) {
         userIds.push(new ObjectId(userId));
     }
 
+    const filter = brokerId && ObjectId.isValid(brokerId)
+        ? { _id: new ObjectId(brokerId) }
+        : { user_id: { $in: userIds }, external_broker_id: 'upstox' };
+
+    const updateFields = {
+        access_token: accessToken,
+        created_at: new Date(),
+    };
+
+    // If real credentials were used (e.g. from environment variable fallback), heal the broker document
+    if (credentials) {
+        if (credentials.client_id && !isDummyCredential(credentials.client_id)) {
+            updateFields['credentials.client_id'] = credentials.client_id;
+        }
+        if (credentials.client_secret && !isDummyCredential(credentials.client_secret)) {
+            updateFields['credentials.client_secret'] = credentials.client_secret;
+        }
+        if (credentials.redirect_uri) {
+            updateFields['credentials.redirect_uri'] = credentials.redirect_uri;
+        }
+    }
+
     const updateResult = await withMongoClient(async (db) =>
         db.collection('brokers').updateOne(
-            { user_id: { $in: userIds }, external_broker_id: 'upstox' },
-            {
-                $set: {
-                    access_token: accessToken,
-                    created_at: new Date(),
-                },
-            }
+            filter,
+            { $set: updateFields }
         )
     );
 
@@ -323,4 +396,6 @@ export {
     extractUpstoxError,
     validateTokenPayload,
     formatBrokerUpdate,
+    isDummyCredential,
+    getUpstoxBrokerFromDb,
 };
