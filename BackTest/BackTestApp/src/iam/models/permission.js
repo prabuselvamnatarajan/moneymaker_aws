@@ -23,4 +23,4 @@ const permissionSchema = new mongoose.Schema({
 
 permissionSchema.index({ operation: 1, entity: 1 }, { unique: true });
 
-export default mongoose.model("Permission", permissionSchema);
+export default mongoose.models.Permission || mongoose.model("Permission", permissionSchema);

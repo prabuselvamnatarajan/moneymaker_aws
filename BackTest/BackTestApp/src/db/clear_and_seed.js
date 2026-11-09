@@ -11,23 +11,9 @@ import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
 import Broker from "../models/broker.js";
 import ExternalBrokerId from "../models/externalBrokerId.js";
+import Permission from "../iam/models/permission.js";
+import Role from "../iam/models/role.js";
 import { syncAllDeploymentsToRedis } from "../services/deployment.js";
-
-const PermissionSchema = new mongoose.Schema({
-  operation: { type: String, required: true },
-  entity: { type: String, required: true },
-  description: { type: String, default: "" }
-}, { timestamps: true });
-
-const RoleSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true },
-  description: { type: String, default: "" },
-  permissions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Permission" }],
-  active: { type: Boolean, default: true }
-}, { timestamps: true });
-
-const Permission = mongoose.models.Permission || mongoose.model("Permission", PermissionSchema);
-const Role = mongoose.models.Role || mongoose.model("Role", RoleSchema);
 
 export const clearAndSeedDB = async () => {
   try {
