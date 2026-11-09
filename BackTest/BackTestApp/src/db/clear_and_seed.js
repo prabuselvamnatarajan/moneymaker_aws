@@ -11,28 +11,14 @@ import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
 import Broker from "../models/broker.js";
 import ExternalBrokerId from "../models/externalBrokerId.js";
+import Permission from "../iam/models/permission.js";
+import Role from "../iam/models/role.js";
 import { syncAllDeploymentsToRedis } from "../services/deployment.js";
-
-const PermissionSchema = new mongoose.Schema({
-  operation: { type: String, required: true },
-  entity: { type: String, required: true },
-  description: { type: String, default: "" }
-}, { timestamps: true });
-
-const RoleSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true },
-  description: { type: String, default: "" },
-  permissions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Permission" }],
-  active: { type: Boolean, default: true }
-}, { timestamps: true });
-
-const Permission = mongoose.models.Permission || mongoose.model("Permission", PermissionSchema);
-const Role = mongoose.models.Role || mongoose.model("Role", RoleSchema);
 
 export const clearAndSeedDB = async () => {
   try {
     console.log("🧹 Wiping all collections...");
-    
+
     // Clear collections and drop indexes by dropping them
     const collectionsToDrop = [
       "users", "accounts", "brokers", "external_broker_ids", "strategies",
@@ -45,7 +31,7 @@ export const clearAndSeedDB = async () => {
         // Collection might not exist yet, safe to ignore
       }
     }
-    
+
     // Clear sessions
     if (mongoose.connection.db.collection("sessions")) {
       try {
@@ -288,11 +274,11 @@ export const clearAndSeedDB = async () => {
     // 7. Create deployments
     const standardSimAcc = seededAccounts.find(a => a.account_name === "simulation" && a.user_id.equals(standardUser._id));
     const standardPaperAcc = seededAccounts.find(a => a.account_name === "Test 1" && a.user_id.equals(standardUser._id));
-    
+
     const meanReversionStrat = seededStrategies.find(s => s.strategy_name === "Mean Reversion v4" && s.user_id.equals(standardUser._id));
     const momentumStrat = seededStrategies.find(s => s.strategy_name === "Momentum Scalper" && s.user_id.equals(standardUser._id));
     const gridStrat = seededStrategies.find(s => s.strategy_name === "Grid Bot Alpha" && s.user_id.equals(standardUser._id));
-    
+
     const nifty50Symbol = seededSymbols.find(sym => sym.symbol.toUpperCase() === "NSE_INDEX|NIFTY 50" && sym.user_id.equals(standardUser._id));
     const niftyBankSymbol = seededSymbols.find(sym => sym.symbol.toUpperCase() === "NSE_INDEX|NIFTY BANK" && sym.user_id.equals(standardUser._id));
 
@@ -342,7 +328,7 @@ export const clearAndSeedDB = async () => {
 
     // 8. Create some sample trades and ledgers to generate yield history
     const nifty50Deployment = seededDeployments.find(d => d.symbol.toUpperCase() === "NSE_INDEX|NIFTY 50");
-    
+
     // Trade 1: Buy
     const buyTrade = new Trade({
       deployment_id: nifty50Deployment._id,
@@ -435,7 +421,7 @@ if (process.argv[1] && process.argv[1].endsWith("clear_and_seed.js")) {
     })
     .catch(async (error) => {
       console.error(error);
-      await mongoose.disconnect().catch(() => {});
+      await mongoose.disconnect().catch(() => { });
       process.exit(1);
     });
 }

@@ -2,22 +2,8 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import { connectDB } from "./connection.js";
 import User from "../models/user.js";
-
-const PermissionSchema = new mongoose.Schema({
-  operation: { type: String, required: true },
-  entity: { type: String, required: true },
-  description: { type: String, default: "" }
-}, { timestamps: true });
-
-const RoleSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true },
-  description: { type: String, default: "" },
-  permissions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Permission" }],
-  active: { type: Boolean, default: true }
-}, { timestamps: true });
-
-const Permission = mongoose.models.Permission || mongoose.model("Permission", PermissionSchema);
-const Role = mongoose.models.Role || mongoose.model("Role", RoleSchema);
+import Permission from "../iam/models/permission.js";
+import Role from "../iam/models/role.js";
 
 export const seedDB = async () => {
   try {
