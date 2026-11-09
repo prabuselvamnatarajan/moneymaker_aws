@@ -38,12 +38,17 @@ All topics are configured with **50 Partitions** (`KAFKA_CFG_NUM_PARTITIONS: 50`
 | Topic Name | Producer Service | Consumer Group ID | Consumer Service(s) | Replicas | Key Routing |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `incoming-ws-msg` | `ConnectWS-Upstox` | `WS_data_splitter` | `wsDataSplitterConsumer` | 3 | `"uplink_ws_data"` |
-| `splited-live-data` | `wsDataSplitterConsumer` | `strategy_chooser_group` | `StrategyChooserConsumer` | 3 | Symbol Name (e.g., `"NSE_EQ|KARURVYSYA"`) |
+| `splited-live-data` | `wsDataSplitterConsumer` | `timeframe_constructor_live_group` | `timeframe-constructor` | 1–3 | Symbol Name (e.g., `"NSE_EQ|KARURVYSYA"`) |
+| `splited-live-data` | `wsDataSplitterConsumer` | `strategy_chooser_group` | `StrategyChooserConsumer` | 3 | Symbol Name |
 | `splited-live-data` | `wsDataSplitterConsumer` | `storer-group` | `price-storer-consumer` | 3 | Symbol Name |
 | `splited-live-data` | `wsDataSplitterConsumer` | `position_tracker_group` | `position-tracker-consumer` | 1 | Symbol Name |
 | `splited-live-data` | `wsDataSplitterConsumer` | `deployment_symbol_resolver_group` | `deployment-symbol-resolver-consumer` | 1 | Symbol Name |
+| `backtest-stream-data` | `BacktestClient` | `timeframe_constructor_backtest_group` | `timeframe-constructor` | 1–3 | Symbol Name |
 | `backtest-stream-data` | `BacktestClient` | `strategy_chooser_group` | `StrategyChooserConsumer` | 3 | Symbol Name / Backtest ID |
+| `timeframe_live_data` | `timeframe-constructor` | `strategy_chooser_group` | `StrategyChooserConsumer` | 3 | Symbol Name |
+| `timeframe_backtest_data` | `timeframe-constructor` | `strategy_chooser_group` | `StrategyChooserConsumer` | 3 | Symbol Name |
 | `${strategyName}_live_data` | `StrategyChooserConsumer` | `${strategyName}_live_group` | Strategy Engines (`MSB`) | 3 | Symbol Name |
+| `${strategyName}_backtest_data` | `StrategyChooserConsumer` | `${strategyName}_backtest_group` | Strategy Engines (`MSB`) | 3 | `${symbol}:${deployment_id}` |
 | `order_details` | `placeorder` | `order_storer_group` | `order-storer-consumer` | 3 | Symbol Name / Order ID |
 
 ---

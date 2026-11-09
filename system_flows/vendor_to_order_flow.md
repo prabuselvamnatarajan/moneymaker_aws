@@ -13,11 +13,12 @@ MoneyMaker utilizes a high-throughput, event-driven microservices architecture b
 | **Upstox Login** | `upstock-login` | 1 | Handles OAuth authorization, exchanges code for access tokens, saves to MongoDB & Redis. |
 | **Upstox WebSocket Gateway** | `connect-upstox-web-socket` | 1 | Maintains persistent binary Protobuf WebSocket connection to Upstox, publishes raw batches to Kafka. |
 | **WebSocket Data Splitter** | `wsdatasplitter-consumer` | 3 | Consumes raw batches, splits them into individual symbol ticks, publishes key-partitioned messages to Kafka and Redis Pub/Sub. |
+| **Timeframe Constructor** | `timeframe-constructor` | 1–3 | Consumes raw ticks, centrally constructs candles (1m, 3m, 5m, 15m), and publishes synchronized multi-timeframe snapshots to `timeframe_live_data`. |
 | **Price Storer** | `price-storer-consumer` | 3 | Consumes split tick stream and persists raw ticks into MongoDB database `stock_database`. |
 | **Position Tracker** | `position-tracker-consumer` | 1 | Monitors live mark-to-market (MTM) unrealized PnL and price excursions (`max_up`, `max_down`). |
 | **Deployment Symbol Resolver** | `deployment-symbol-resolver-consumer` | 1 | Dynamic option chain strike tracking; triggers symbol resolution when index LTP moves. |
-| **Strategy Chooser** | `strategy-chooser-consumer` | 3 | Matches tick symbol keys to active user deployments in Redis and routes ticks to strategy-specific topics. |
-| **Strategy Engines** | `msb-strategy-live`, etc. | 3 | Evaluates technical indicators, aggregates candles, manages strategy state, and triggers buy/sell signals. |
+| **Strategy Chooser** | `strategy-chooser-consumer` | 3 | Matches tick symbol keys to active user deployments in Redis, slices timeframe snapshots dynamically, and routes ticks to strategy-specific topics. |
+| **Strategy Engines** | `msb-strategy-live`, etc. | 3 | Evaluates technical indicators, manages strategy state, enforces real-time tick risk and closed candle breakouts. |
 | **Order Placement Gateway** | `placeorder` | 1 | Routes orders to Upstox REST API (Live) or BackTestApp ledger (Paper/Internal), manages multi-account balances. |
 | **Order Audit Storer** | `order-storer-consumer` | 3 | Consumes execution payloads and persists completed orders into MongoDB `order_details`. |
 | **Client UI Streamer** | `stream-to-client` | 1 | Relays Redis Pub/Sub ticks to frontend web clients via WebSockets. |
@@ -36,6 +37,7 @@ sequenceDiagram
     participant Kafka as Kafka Brokers (50 Partitions)
     participant Splitter as wsDataSplitterConsumer (3x)
     participant Redis as Redis Cache & Pub/Sub
+    participant TimeframeService as timeframe-constructor
     participant Chooser as StrategyChooserConsumer (3x)
     participant PosTracker as position-tracker-consumer (1x)
     participant PriceStorer as price-storer-consumer (3x)
@@ -60,13 +62,17 @@ sequenceDiagram
         Splitter->>Redis: Publish tick to Redis Pub/Sub "live:<symbol_name>"
     end
 
-    Note over Kafka, Chooser: 3. Parallel Pipeline Branching
-    par Branch A: Strategy Matching
-        Kafka->>Chooser: Consume tick from "splited-live-data"
+    Note over Kafka, Chooser: 3. Parallel Pipeline Branching & Timeframe Construction
+    par Branch A: Centralized Timeframe Construction
+        Kafka->>TimeframeService: Consume tick from "splited-live-data"
+        TimeframeService->>TimeframeService: Aggregate 1m, 3m, 5m, 15m OHLCV & rollovers
+        TimeframeService->>Kafka: Publish multi-TF snapshot to "timeframe_live_data" (key: symbol_name)
+        Kafka->>Chooser: Consume timeframe snapshot
         Chooser->>Redis: Query "strategies:live:<symbol_name>"
-        Redis-->>Chooser: Return active deployments list
+        Redis-->>Chooser: Return active deployments & requested timeframes
         loop For each deployment
-            Chooser->>Kafka: Publish enriched tick to "<strategyName>_live_data" (key: symbol_name)
+            Chooser->>Chooser: Slice snapshot to match deployment's timeframes
+            Chooser->>Kafka: Publish sliced snapshot to "<strategyName>_live_data" (key: symbol_name)
         end
     and Branch B: Position Excursion Tracking
         Kafka->>PosTracker: Consume tick from "splited-live-data"

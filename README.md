@@ -1,93 +1,341 @@
-# MoneyMaker
+# MoneyMaker — Algorithmic Trading & Backtesting Platform
 
+[![CI/CD Pipeline](https://github.com/prabuselvamnatarajan/moneymaker_aws/actions/workflows/deploy.yml/badge.svg)](https://github.com/prabuselvamnatarajan/moneymaker_aws/actions/workflows/deploy.yml)
+[![Node.js](https://img.shields.io/badge/Node.js-v26.13.0-green.svg)](https://nodejs.org/)
+[![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-50_Partitions-red.svg)](https://kafka.apache.org/)
+[![Redis](https://img.shields.io/badge/Redis-Caching_%26_PubSub-red.svg)](https://redis.io/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Replica_Set-green.svg)](https://www.mongodb.com/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-k3s-blue.svg)](https://k3s.io/)
 
+MoneyMaker is an enterprise-grade, distributed, event-driven algorithmic trading and quantitative backtesting platform built for high-throughput Indian equities and derivatives markets (NSE/NFO). It integrates with real-time broker feeds (Upstox WebSocket API via binary Protobuf) for live automated execution and supports deterministic, chronological playback for historical backtesting.
 
-## Getting started
+The platform is designed around strict architectural guarantees:
+- **Centralized Timeframe Processing Framework:** Ticks are normalized and aggregated once centrally into synchronized multi-timeframe atomic snapshots (`1m`, `3m`, `5m`, `15m`, etc.), eliminating redundant candle calculations across strategy deployments.
+- **Dynamic Multi-Tenant Slicing:** A decoupled routing layer inspects active tenant deployments in Redis and dynamically slices multi-timeframe snapshots so each strategy receives only its configured intervals.
+- **Deterministic Risk & Signal Invariants:** Strategy breakout and market structure signals (e.g. MSB) evaluate **strictly on finalized closed candles**, while position risk controls (Target & Stop-Loss) evaluate **continuously on every single tick (`ltp`)**.
+- **Massive Concurrency with Strict Ordering:** All core market-data and strategy topics utilize 50 Kafka partitions keyed by symbol to guarantee strict symbol-level event ordering while enabling linear horizontal scaling.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+---
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## 1. High-Level Architecture & End-to-End System Flow
 
-## Add your files
+```mermaid
+flowchart TD
+    subgraph VENDOR ["1. External Broker Ingestion"]
+        V_WS["Upstox WebSocket API\n(Protobuf Binary Feed)"] --> C_WS["ConnectWS-Upstox\n(WebSocket Client Gateway)"]
+        C_WS -->|Protobuf Decoded Batch| K_INC[("Kafka: incoming-ws-msg\n(50 Partitions)")]
+        K_INC --> W_SPLIT["wsDataSplitterConsumer\n(3 Replicas)"]
+    end
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+    subgraph HISTORICAL ["2. Historical Backtest Feed"]
+        BT_STREAM["BacktestStreamer\n(Historical Tick Generator)"] --> BT_CLI["BacktestClient\n(Tick Streamer Client)"]
+        BT_CLI -->|Chronological Tick Stream| K_BT_STREAM[("Kafka: backtest-stream-data\n(50 Partitions)")]
+    end
 
+    subgraph BUS ["3. Normalized Tick Stream"]
+        W_SPLIT -->|Keyed by Symbol| K_SPLIT[("Kafka: splited-live-data\n(50 Partitions)")]
+        W_SPLIT -->|Pub/Sub live:symbol| R_LIVE[("Redis Pub/Sub\nlive:symbol")]
+    end
+
+    subgraph TIMEFRAME_LAYER ["4. Centralized Timeframe Constructor Microservice"]
+        K_SPLIT -->|Live Ticks| TC_IN["Tick Consumer\n(Keyed Partition Assignment)"]
+        K_BT_STREAM -->|Backtest Ticks| TC_IN
+        TC_IN --> TC_STATE["Symbol State Manager\n(Isolated In-Memory State)"]
+        TC_STATE --> TC_CANDLE["Candle Aggregator\n(1m, 3m, 5m, 15m OHLCV)"]
+        TC_CANDLE --> TC_SNAP["Snapshot Generator\n(Combined Multi-TF Payload)"]
+        TC_SNAP --> TC_PROD["Timeframe Producer"]
+        TC_PROD -->|Key: Symbol| K_TF_LIVE[("Kafka: timeframe_live_data\n(50 Partitions)")]
+        TC_PROD -->|Key: Symbol| K_TF_BT[("Kafka: timeframe_backtest_data\n(50 Partitions)")]
+        TC_STATE <-->|Periodic Checkpoint / Recovery| R_TF_STATE[("Redis: timeframe_state:symbol")]
+    end
+
+    subgraph AUXILIARY ["5. Auxiliary Consumers"]
+        K_SPLIT --> POS_TRACK["position-tracker-consumer\n(MTM & Price Excursions)"]
+        K_SPLIT --> SYM_RESOLV["deployment-symbol-resolver-consumer\n(Dynamic Strike Tracking)"]
+        K_SPLIT --> PRICE_STORE["price-storer-consumer\n(Raw Tick Archival)"]
+        POS_TRACK --> MONGO_DB[("MongoDB Replica Set")]
+        SYM_RESOLV --> BT_APP["BackTestApp API"]
+        PRICE_STORE --> MONGO_DB
+    end
+
+    subgraph ROUTING ["6. Dynamic Multi-Tenant Strategy Chooser"]
+        K_SPLIT -->|Mode: tick| SC["StrategyChooserConsumer\n(3 Replicas)"]
+        K_BT_STREAM -->|Mode: tick| SC
+        K_TF_LIVE -->|Mode: timeframe / hybrid| SC
+        K_TF_BT -->|Mode: timeframe / hybrid| SC
+        MONGO_DB -->|Deployments Sync| R_DEP[("Redis Cache\nstrategies:live / strategies:backtest")]
+        R_DEP -->|Active Deployments & Configs| SC
+        SC -->|Sliced Snapshot per Deployment| K_STRAT[("Kafka Strategy Topics\nmsb_live_data / msb_pts_live_data / liquidity_sweep_live_data")]
+    end
+
+    subgraph STRATEGIES ["7. Strategy Engines (Decoupled Alpha)"]
+        K_STRAT --> SE["Strategy Engine\n(MSB / msb_pts / LiquiditySweep)"]
+        SE -->|Real-time Every Tick LTP| RISK["Position Risk Check\n(Target / Stop-Loss Exit)"]
+        SE -->|Closed Candle Rollover| SIGNAL["Structure Breakout Check\n(MSB Swing Evaluation)"]
+        RISK -->|Trigger Order| PO["placeorder API"]
+        SIGNAL -->|Trigger Order| PO
+    end
+
+    subgraph EXECUTION ["8. Order Execution & Audit Ledger"]
+        PO -->|Live Mode| BROKER_API["Upstox REST API\n(Live Broker)"]
+        PO -->|Backtest / Paper Mode| BT_APP
+        PO -->|Order Event| K_ORD[("Kafka: order_details\n(50 Partitions)")]
+        K_ORD --> ORD_STORE["order-storer-consumer\n(3 Replicas)"]
+        ORD_STORE --> MONGO_DB
+        BT_APP --> MONGO_DB
+    end
+
+    subgraph UI ["9. Web Dashboard & Visualization"]
+        R_LIVE --> STREAM_CLI["stream-to-client\n(WebSocket Server)"]
+        STREAM_CLI -->|Live Market Feed| FE_UI["BackTest UI (React / Vite)"]
+        FE_UI <-->|REST API / JWT Auth| BT_APP
+    end
 ```
-cd existing_repo
-git remote add origin http://gitlab.local/root/moneymaker.git
-git branch -M main
-git push -uf origin main
+
+---
+
+## 2. End-to-End Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Vendor as Upstox WebSocket (Vendor)
+    participant WSGateway as ConnectWS-Upstox
+    participant Splitter as wsDataSplitterConsumer
+    participant RawKafka as Kafka (splited-live-data)
+    participant TimeframeService as Timeframe Constructor
+    participant TFKafka as Kafka (timeframe_live_data)
+    participant Chooser as StrategyChooserConsumer
+    participant StratKafka as Kafka (strategy_live_data)
+    participant Strategy as Strategy Engine (MSB)
+    participant PlaceOrder as placeorder Gateway
+    participant Broker as Upstox REST API / BackTestApp
+    participant OrderKafka as Kafka (order_details)
+    participant OrderStorer as order-storer-consumer
+    participant Mongo as MongoDB Replica Set
+
+    Note over Vendor, WSGateway: 1. Vendor Ingestion & Protobuf Decoding
+    Vendor->>WSGateway: Binary Protobuf Feed
+    WSGateway->>WSGateway: Decode using MarketDataFeed.proto
+    WSGateway->>Splitter: Publish raw batch to incoming-ws-msg
+
+    Note over Splitter, RawKafka: 2. Symbol Splitting & Distribution
+    Splitter->>Splitter: Split batch into individual symbol ticks
+    par Kafka Keyed Distribution
+        Splitter->>RawKafka: Publish tick (Key: symbol)
+    and Redis Live Stream
+        Splitter->>RedisPub: Publish to Redis Pub/Sub live:symbol
+    end
+
+    Note over RawKafka, TimeframeService: 3. Centralized Multi-Timeframe Construction
+    RawKafka->>TimeframeService: Ingest tick (Key: symbol)
+    TimeframeService->>TimeframeService: Validate exchange timestamp & session boundaries
+    TimeframeService->>TimeframeService: Update 1m, 3m, 5m, 15m OHLCV & volume deltas
+    alt Timeframe Bucket Rollover
+        TimeframeService->>TimeframeService: Finalize & emit closedCandle
+    else Intra-Bar Tick
+        TimeframeService->>TimeframeService: Update formingCandle
+    end
+    TimeframeService->>TFKafka: Publish atomic multi-timeframe snapshot (Key: symbol)
+
+    Note over TFKafka, Chooser: 4. Dynamic Multi-Tenant Slicing
+    TFKafka->>Chooser: Consume timeframe snapshot
+    Chooser->>RedisCache: Query active tenant deployments for symbol
+    Chooser->>Chooser: Dynamically slice snapshot (retain only deployment's configured timeframes)
+    Chooser->>StratKafka: Forward sliced snapshot (Key: symbol or symbol:deployment_id)
+
+    Note over StratKafka, Strategy: 5. Real-Time Risk vs Closed Candle Evaluation
+    StratKafka->>Strategy: Consume sliced snapshot
+    par Real-Time Position Risk Check
+        Strategy->>Strategy: Evaluate Target & Stop-Loss on tick ltp (EVERY TICK)
+        opt Target or Stop-Loss Hit
+            Strategy->>PlaceOrder: Dispatch immediate exit order
+        end
+    and Breakout & Signal Evaluation
+        opt closedCandle is Present (Bucket Rollover)
+            Strategy->>Strategy: Evaluate Market Structure Break (MSB) swings
+            opt Valid Breakout Entry Setup
+                Strategy->>PlaceOrder: Dispatch new entry order
+            end
+        end
+    end
+
+    Note over PlaceOrder, OrderStorer: 6. Execution, Auditing & Ledger Settlement
+    PlaceOrder->>Broker: Submit trade (Live Upstox API or BackTestApp ledger)
+    Broker-->>PlaceOrder: Order confirmation & fill details
+    PlaceOrder->>OrderKafka: Publish order execution payload
+    OrderKafka->>OrderStorer: Consume order_details
+    OrderStorer->>Mongo: Persist trade audit into MongoDB order_details & ledger
 ```
 
-## Integrate with your tools
+---
 
-- [ ] [Set up project integrations](http://gitlab.local/root/moneymaker/-/settings/integrations)
+## 3. Data Flow Specification
 
-## Collaborate with your team
+### 3.1 Live Trading Pipeline
+1. **Feed Ingestion:** `connect-upstox-web-socket` connects to `wss://api.upstox.com/v3/feed/market-data-feed`, receives binary Protobuf packets, decodes them with `MarketDataFeed.proto`, and forwards raw batches to `incoming-ws-msg`.
+2. **Symbol Partitioning:** `wsdatasplitter-consumer` unpacks batches into individual symbol ticks and routes each to `splited-live-data` partitioned by `symbol`.
+3. **Timeframe Aggregation:** `timeframe-constructor` ingests ticks, validates session bounds (Asia/Kolkata 09:15–15:30 IST), manages isolated in-memory OHLC state across `1m`, `3m`, `5m`, and `15m`, and produces combined atomic snapshots to `timeframe_live_data`.
+4. **Dynamic Deployment Slicing:** `strategy-chooser-consumer` loads active tenant deployments from Redis, filters deployments by `data_mode` (`tick` vs `timeframe`), slices the snapshot so each deployment receives **only its declared timeframes**, and emits to strategy-specific topics (`msb_live_data`, etc.).
+5. **Decoupled Execution:** The strategy engine checks Target/Stop-Loss on every `ltp` and evaluates breakout signals only on `closedCandle`.
+6. **Execution Gateway:** `placeorder` routes to Upstox API for live accounts or `BackTestApp` for paper/backtest accounts and logs execution to `order_details`.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+### 3.2 Chronological Backtest Pipeline
+1. **Deterministic Feed:** `backtest-streamer` reads historical data files or MongoDB collections chronologically and delivers ticks to `backtest-client`.
+2. **Backtest Bus:** `backtest-client` forwards ticks to `backtest-stream-data` partitioned by `symbol`.
+3. **Backtest Timeframe Aggregation:** `timeframe-constructor` consumes `backtest-stream-data`, aggregates timeframes with zero lookahead bias, and produces snapshots to `timeframe_backtest_data`.
+4. **Isolated Deployment Routing:** `strategy-chooser-consumer` consumes `timeframe_backtest_data`, attaches deployment metadata, and routes using partition key `${symbol}:${deployment_id}` so concurrent backtests on the same symbol execute without interleaving.
+5. **Simulated Settlement:** `BackTestApp` internal matching engine simulates fills, commissions, slippage, and position tracking.
 
-## Test and Deploy
+### 3.3 Atomic Multi-Timeframe Snapshot Schema
+Published by `timeframe-constructor` to `timeframe_live_data` and `timeframe_backtest_data`:
 
-Use the built-in continuous integration in GitLab.
+```json
+{
+  "eventId": "NIFTY-1793594160000-8472",
+  "symbol": "NSE_INDEX|Nifty 50",
+  "eventTimestamp": 1793594160000,
+  "snapshotVersion": 1,
+  "ltp": 26012.50,
+  "volume": 12450,
+  "timeframes": {
+    "1m": {
+      "timeframe": "1m",
+      "startTime": 1793594100000,
+      "endTime": 1793594160000,
+      "formingCandle": {
+        "open": 26000.00,
+        "high": 26015.00,
+        "low": 25998.50,
+        "close": 26012.50,
+        "volume": 12450,
+        "isClosed": false,
+        "updatedAt": 1793594160000
+      },
+      "closedCandle": {
+        "open": 25985.00,
+        "high": 26005.00,
+        "low": 25980.00,
+        "close": 26000.00,
+        "volume": 45200,
+        "isClosed": true,
+        "updatedAt": 1793594100000
+      }
+    },
+    "5m": {
+      "timeframe": "5m",
+      "startTime": 1793593800000,
+      "endTime": 1793594100000,
+      "formingCandle": {
+        "open": 25950.00,
+        "high": 26020.00,
+        "low": 25945.00,
+        "close": 26012.50,
+        "volume": 182300,
+        "isClosed": false,
+        "updatedAt": 1793594160000
+      },
+      "closedCandle": null
+    }
+  }
+}
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+### 3.4 Dynamic Deployment Slicing Matrix
+When `StrategyChooserConsumer` receives the combined snapshot above, it inspects active deployments in Redis:
 
-***
+| Tenant Deployment | Configured `timeframes` | Configured `data_mode` | Sliced Payload Delivered to Strategy Topic |
+| :--- | :--- | :--- | :--- |
+| **Deployment A** (1m Scalp) | `["1m"]` | `timeframe` | Sliced snapshot containing **only** `"1m"` |
+| **Deployment B** (Multi-TF Trend) | `["1m", "5m"]` | `timeframe` | Snapshot containing **both** `"1m"` and `"5m"` |
+| **Deployment C** (Pure Tick Orderflow) | `[]` | `tick` | Raw tick from `splited-live-data` (timeframe snapshot skipped) |
+| **Deployment D** (15m Swing) | `["15m"]` | `timeframe` | Sliced snapshot containing **only** `"15m"` |
 
-# Editing this README
+---
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## 4. Microservices Inventory & Topology
 
-## Suggestions for a good README
+| Microservice | Directory / Path | Replicas | Role & Responsibility |
+| :--- | :--- | :--- | :--- |
+| **`upstock-login`** | `microservices/upstock-login/` | 1 | Upstox OAuth 2.0 gateway, token exchange, token refresh, MongoDB & Redis token persistence. |
+| **`connect-upstox-web-socket`** | `microservices/connect-upstox-web-socket/` | 1 | Persistent binary Protobuf WebSocket connection to Upstox, publishes raw batches to Kafka. |
+| **`appinit`** | `microservices/appinit/` | 1 | System lifecycle bootstrap, scheduled cron jobs (morning token refresh, contract caching). |
+| **`wsdatasplitterconsumer`** | `kafka/services/wsDataSplitterConsumer/` | 3 | Splits vendor batches into individual symbol ticks; publishes to Kafka and Redis Pub/Sub. |
+| **`timeframe-constructor`** | `kafka/services/timeframeConstructor/` | 1–3 | Centralized OHLCV aggregation for `1m`, `3m`, `5m`, `15m`, emitting synchronized multi-TF snapshots. |
+| **`strategy-chooser-consumer`** | `kafka/services/StrategyChooserConsumer/` | 3 | Dynamic deployment matching, snapshot slicing, and routing to strategy topics. |
+| **`msb-strategy`** | `kafka/services/Strategies/MSB/` | 3 | Market Structure Break strategy engine (tick-level risk exit + closed candle entry). |
+| **`msb-pts-strategy`** | `kafka/services/Strategies/msb_pts/` | 3 | Points-based Target & Stop-Loss MSB strategy engine. |
+| **`liquidity-sweep-strategy`**| `kafka/services/Strategies/LiquiditySweep/` | 3 | Liquidity sweep and absorption reversal strategy engine. |
+| **`placeorder`** | `microservices/placeorder/` | 1 | Order execution gateway (Upstox REST API for live, BackTestApp for paper/backtest). |
+| **`position-tracker-consumer`**| `kafka/services/positionTrackerConsumer/` | 1 | Real-time mark-to-market (MTM) and price excursion (`max_up`, `max_down`) monitoring. |
+| **`deployment-symbol-resolver`**| `kafka/services/deploymentSymbolResolverConsumer/` | 1 | Dynamic option strike resolver (ITM/ATM/OTM call/put strikes based on underlying index LTP). |
+| **`price-storer-consumer`** | `kafka/services/storerConsumers/priceStorerConsumer.js` | 3 | Persists raw tick historical records into MongoDB `stock_database`. |
+| **`order-storer-consumer`** | `kafka/services/storerConsumers/orderStorerConsumer.js` | 3 | Persists completed order logs into MongoDB `order_details`. |
+| **`stream-to-client`** | `kafka/services/streamToClient/` | 1 | Bridges Redis Pub/Sub market data to browser clients over WebSockets. |
+| **`backtest-streamer`** | `microservices/backtestStreamer/` | 1 | Historical tick streamer reading recorded data files or MongoDB collections. |
+| **`backtest-client`** | `microservices/backtestClient/` | 1 | Forwards backtest tick data to Kafka `backtest-stream-data`. |
+| **`get-ohlc`** | `microservices/get-ohlc/` | 1 | On-demand REST endpoint for historical and intraday candle retrieval. |
+| **`get-ltp`** | `microservices/get-ltp/` | 1 | Fast cached LTP query endpoint. |
+| **`get-fullmarketquote`** | `microservices/get-fullmarketquote/` | 1 | Full market depth and quote retrieval service. |
+| **`get-option-contracts`** | `microservices/get-option-contracts/` | 1 | Option strike chains and contract master definitions. |
+| **`get-funds-and-margin`** | `microservices/get-funds-and-margin/` | 1 | Real-time margin and capital availability query service. |
+| **`get-orderbook`** | `microservices/get-orderbook/` | 1 | Broker order book status and trade reconciler. |
+| **`exporttofile`** | `microservices/exporttofile/` | 1 | Exports historical trade logs and ledger entries to CSV/JSON files. |
+| **`BackTestApp`** | `BackTest/BackTestApp/` | 1 | Central backend API for Users, Deployments, Strategies, Accounts, Trades, and RBAC. |
+| **`BackTestUI`** | `BackTest/BackTestUI/` | 1 | Responsive React/Vite dashboard for deployment control and real-time visualization. |
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+---
 
-## Name
-Choose a self-explaining name for your project.
+## 5. Kafka Topology & Concurrency Guarantees
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+All core market data topics use **50 partitions** with strict symbol-level partitioning keys to achieve both high parallel throughput and guaranteed in-order delivery per instrument:
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+| Kafka Topic | Partitions | Key Strategy | Primary Producers | Primary Consumers |
+| :--- | :--- | :--- | :--- | :--- |
+| **`incoming-ws-msg`** | 50 | Static / Uplink | `connect-upstox-web-socket` | `wsdatasplitterconsumer` |
+| **`splited-live-data`** | 50 | `symbol` | `wsdatasplitterconsumer` | `timeframe-constructor`, `strategy-chooser-consumer`, `position-tracker`, `price-storer` |
+| **`backtest-stream-data`**| 50 | `symbol` | `backtest-client` | `timeframe-constructor`, `strategy-chooser-consumer` |
+| **`timeframe_live_data`** | 50 | `symbol` | `timeframe-constructor` | `strategy-chooser-consumer` |
+| **`timeframe_backtest_data`**| 50 | `symbol` | `timeframe-constructor` | `strategy-chooser-consumer` |
+| **`msb_live_data`** | 50 | `symbol` | `strategy-chooser-consumer` | `msb-strategy` (Live) |
+| **`msb_backtest_data`** | 50 | `${symbol}:${deployment_id}` | `strategy-chooser-consumer` | `msb-strategy` (Backtest) |
+| **`msb_pts_live_data`** | 50 | `symbol` | `strategy-chooser-consumer` | `msb-pts-strategy` (Live) |
+| **`liquidity_sweep_live_data`**| 50 | `symbol` | `strategy-chooser-consumer` | `liquidity-sweep-strategy` |
+| **`order_details`** | 50 | `order_id` / `symbol` | `placeorder` | `order-storer-consumer` |
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+---
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+## 6. Development, Testing & CI/CD Pipeline
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+### 6.1 Running Unit Tests Locally
+All microservices maintain exhaustive unit test suites covering both regular execution paths and edge cases. In accordance with platform standards, tests import **genuine production code** without local test doubles or duplicate logic:
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```bash
+# Run unit tests across all containerized microservices
+./scripts/run-all-unit-tests.sh
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+# Run specific service unit tests
+cd kafka/services/timeframeConstructor && node --test
+cd kafka/services/StrategyChooserConsumer && node --test
+cd kafka/services/Strategies/MSB && node --test
+cd BackTest/BackTestApp && npm test
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### 6.2 CI/CD Automation
+The GitHub Actions workflow (`.github/workflows/deploy.yml`) enforces end-to-end verification on every push:
+1. **Build & Push:** Builds Docker images for all microservices in parallel and pushes branch-tagged images to Docker Hub (`prabuselvamnatarajan/<service>:<branch>`).
+2. **Unit Test Matrix:** Spins up an independent matrix runner for each image and executes containerized unit tests via `scripts/run-image-unit-tests.sh`.
+3. **End-to-End Tests:** Spins up a clean runner, boots an ephemeral k3s Kubernetes cluster, deploys the full stack, verifies health checks, and executes Playwright E2E browser tests.
+4. **Automated Production Deploy:** On `main` branch pushes where all tests pass, the pipeline executes zero-downtime deployment to AWS Kubernetes.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+---
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## 7. Tech Stack Summary
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- **Runtime & Languages:** Node.js v26.13.0 (Native test runner, ES Modules & CommonJS)
+- **Messaging & Event Streaming:** Apache Kafka (Kafkajs, 50 Partitions, Consumer Groups)
+- **State & In-Memory Caching:** Redis 7 (Pub/Sub, multi-tenant deployment registry, timeframe checkpointing)
+- **Database & Storage:** MongoDB 7 Replica Set (ACID transactions, Mongoose ODM)
+- **Frontend & Visualization:** React 19, Vite, Tailwind CSS, Lightweight Charts, Lucide Icons
+- **Broker Integrations:** Upstox API v3 (Protobuf binary WebSocket market feed, REST order execution)
+- **Containerization & Orchestration:** Docker, Docker Compose, Kubernetes (k3s, Kustomize)
