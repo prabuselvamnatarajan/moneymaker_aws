@@ -90,7 +90,7 @@ export async function getDeploymentStateEpoch(deploymentId) {
 
 /**
  * Fail softly if this Kafka message was enriched before a timeframe reset.
- * Missing message epoch (legacy routing) is healed by adopting the Redis epoch.
+ * Missing message epoch is healed by adopting the Redis epoch.
  * Missing Redis epoch is recreated via SETNX to 1 (never from the message).
  */
 export async function assertFreshStateEpoch(strategy_details = {}) {
