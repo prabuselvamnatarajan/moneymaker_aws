@@ -1,10 +1,10 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
 
 /** Always trailing slash so relative apiPath() resolves under /backtestapp/ */
-export const API_BASE = (process.env.API_BASE_URL || 'http://localhost/backtestapp').replace(
-  /\/?$/,
-  '/'
-);
+export const API_BASE = (
+  process.env.API_BASE_URL ||
+  (process.env.CI ? 'http://localhost/backtestapp' : 'https://algo.mrcobra.link/backtestapp')
+).replace(/\/?$/, '/');
 export const SERVICE_TOKEN =
   process.env.BACKTEST_SERVICE_TOKEN || 'backtest-internal-service-token';
 
@@ -145,21 +145,31 @@ export function serviceHeaders(extra: Record<string, string> = {}): Record<strin
 /** Wrapped request helpers with Bearer token */
 export function apiRequest(request: APIRequestContext, token?: string) {
   const headers = (more: Record<string, string> = {}) => authHeaders(token, more);
+  const withRetry = async (fn: () => Promise<APIResponse>) => {
+    let res = await fn();
+    if ([502, 503, 504].includes(res.status())) {
+      await new Promise((r) => setTimeout(r, 400));
+      res = await fn();
+    }
+    return res;
+  };
   return {
     get: (path: string, opts: { params?: Record<string, string | number | boolean> } = {}) =>
-      request.get(apiUrl(path), { headers: headers(), params: opts.params }),
+      withRetry(() => request.get(apiUrl(path), { headers: headers(), params: opts.params })),
     post: (path: string, opts: { data?: unknown; headers?: Record<string, string> } = {}) =>
-      request.post(apiUrl(path), { headers: headers(opts.headers), data: opts.data }),
+      withRetry(() => request.post(apiUrl(path), { headers: headers(opts.headers), data: opts.data })),
     put: (path: string, opts: { data?: unknown } = {}) =>
-      request.put(apiUrl(path), { headers: headers(), data: opts.data }),
+      withRetry(() => request.put(apiUrl(path), { headers: headers(), data: opts.data })),
     patch: (path: string, opts: { data?: unknown } = {}) =>
-      request.patch(apiUrl(path), { headers: headers(), data: opts.data }),
-    delete: (path: string) => request.delete(apiUrl(path), { headers: headers() }),
+      withRetry(() => request.patch(apiUrl(path), { headers: headers(), data: opts.data })),
+    delete: (path: string) => withRetry(() => request.delete(apiUrl(path), { headers: headers() })),
     fetch: (path: string, opts: Parameters<APIRequestContext['fetch']>[1] = {}) =>
-      request.fetch(apiUrl(path), {
-        ...opts,
-        headers: { ...headers(), ...(opts.headers as Record<string, string>) },
-      }),
+      withRetry(() =>
+        request.fetch(apiUrl(path), {
+          ...opts,
+          headers: { ...headers(), ...(opts.headers as Record<string, string>) },
+        })
+      ),
   };
 }
 

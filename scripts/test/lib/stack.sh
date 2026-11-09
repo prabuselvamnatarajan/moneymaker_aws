@@ -69,7 +69,7 @@ wait_for_url() {
 
   log_info "Waiting for $_url (max ${_max}x${_delay}s)"
   while [ "$_i" -lt "$_max" ]; do
-    if curl -sf --max-time 5 "$_url" >/dev/null 2>&1; then
+    if curl -k -sf --max-time 5 "$_url" >/dev/null 2>&1; then
       log_info "Ready: $_url"
       return 0
     fi
@@ -84,7 +84,7 @@ wait_for_url() {
 _probe_backtest_health() {
   _url="$1"
   _tmp="$(mktemp 2>/dev/null || echo /tmp/mm-health.$$)"
-  _code=$(curl -sS -o "$_tmp" -w "%{http_code}" --max-time 5 "$_url" 2>/dev/null || echo "000")
+  _code=$(curl -k -sS -o "$_tmp" -w "%{http_code}" --max-time 5 "$_url" 2>/dev/null || echo "000")
   _body=$(cat "$_tmp" 2>/dev/null || true)
   rm -f "$_tmp" 2>/dev/null || true
   case "$_body" in

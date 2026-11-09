@@ -20,6 +20,20 @@ if [ -z "${ROOT:-}" ]; then
   fi
 fi
 
+# Ensure Node.js and npm are on PATH if nvm or default locations exist
+if ! command -v node >/dev/null 2>&1; then
+  if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
+    . "${NVM_DIR:-$HOME/.nvm}/nvm.sh" 2>/dev/null || true
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    for _nvm_dir in "${HOME}/.nvm/versions/node"/*; do
+      if [ -x "$_nvm_dir/bin/node" ]; then
+        export PATH="$_nvm_dir/bin:$PATH"
+      fi
+    done
+  fi
+fi
+
 E2E_DIR="${E2E_DIR:-$ROOT/e2e}"
 TEST_SCRIPTS_DIR="${TEST_SCRIPTS_DIR:-$ROOT/scripts/test}"
 SUITES_REGISTRY="${SUITES_REGISTRY:-$TEST_SCRIPTS_DIR/suites.registry}"
@@ -31,6 +45,8 @@ SUITES_REGISTRY="${SUITES_REGISTRY:-$TEST_SCRIPTS_DIR/suites.registry}"
 if [ -z "${API_BASE_URL:-}" ]; then
   if [ "${CI:-}" = "true" ]; then
     _API_BASE="http://127.0.0.1/backtestapp"
+  elif curl -k -sf --max-time 2 https://algo.mrcobra.link/backtestapp/health >/dev/null 2>&1; then
+    _API_BASE="https://algo.mrcobra.link/backtestapp"
   else
     _API_BASE="http://localhost/backtestapp"
   fi
@@ -44,6 +60,8 @@ esac
 if [ -z "${UI_BASE_URL:-}" ]; then
   if [ "${CI:-}" = "true" ]; then
     _UI_BASE="http://127.0.0.1/backtest-ui/"
+  elif curl -k -sf --max-time 2 https://algo.mrcobra.link/backtest-ui/ >/dev/null 2>&1; then
+    _UI_BASE="https://algo.mrcobra.link/backtest-ui/"
   else
     _UI_BASE="http://localhost/backtest-ui/"
   fi

@@ -656,8 +656,8 @@ test.describe('Password management', () => {
 
   test('TC-AUTH-030: forgotPassword returns generic success regardless of email existence', async ({ request }) => {
     const { email } = await signupFresh(request);
-    const real = await request.post(apiPath('/auth/forgot-password'), { data: { email } });
-    const fake = await request.post(apiPath('/auth/forgot-password'), {
+    const real = await apiRequest(request).post('/auth/forgot-password', { data: { email } });
+    const fake = await apiRequest(request).post('/auth/forgot-password', {
       data: { email: `fake-${uniqueSuffix()}@e2e.test.com` },
     });
     await expectStatus(real, 200);
