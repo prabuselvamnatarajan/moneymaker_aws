@@ -380,5 +380,16 @@ describe('UpstoxLogin - Credential Validation & Security', () => {
             assert.equal(targetUserId, '6501234567890abcdef12345');
             assert.equal(targetBrokerId, null);
         });
+
+        it('supports admin managing broker integrations: preserves brokerId in state', () => {
+            const adminUserId = '6af0a43be242aa88d6ed47a3';
+            const targetBrokerId = '6af0a43be242aa88d6ed47b3';
+
+            const stateValue = `${adminUserId}:${targetBrokerId}`;
+            const parts = stateValue.split(':');
+
+            assert.equal(parts[0], adminUserId);
+            assert.equal(parts[1], targetBrokerId);
+        });
     });
 });

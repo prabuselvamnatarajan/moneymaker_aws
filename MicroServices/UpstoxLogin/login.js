@@ -127,6 +127,33 @@ async function withMongoClient(callback) {
     }
 }
 
+async function isAdminUser(userId) {
+    return withMongoClient(async (db) => {
+        const adminRole = await db.collection('roles').findOne({ name: 'admin' });
+        if (!adminRole) {
+            return false;
+        }
+
+        const adminRoleIds = new Set([adminRole._id.toString(), String(adminRole._id)]);
+
+        let user;
+        try {
+            user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+        } catch {
+            user = await db.collection('users').findOne({ _id: userId });
+        }
+
+        if (!user || !Array.isArray(user.roles)) {
+            return false;
+        }
+
+        return user.roles.some((role) => {
+            const roleIdStr = typeof role === 'object' && role !== null ? String(role._id || role) : String(role);
+            return adminRoleIds.has(roleIdStr);
+        });
+    });
+}
+
 async function getUpstoxBrokerFromDb(userId, { requireSecret = false, brokerId = null } = {}) {
     const cleanUserId = requireUserId(userId);
 
@@ -135,17 +162,18 @@ async function getUpstoxBrokerFromDb(userId, { requireSecret = false, brokerId =
         userIds.push(new ObjectId(cleanUserId));
     }
 
+    const isAdmin = await isAdminUser(cleanUserId);
+
     let broker = null;
     if (brokerId && ObjectId.isValid(brokerId)) {
-        broker = await withMongoClient(async (db) =>
-            db.collection('brokers').findOne({
-                _id: new ObjectId(brokerId),
-                user_id: { $in: userIds },
-                external_broker_id: 'upstox',
-            })
-        );
+        broker = await withMongoClient(async (db) => {
+            const query = isAdmin
+                ? { _id: new ObjectId(brokerId), external_broker_id: 'upstox' }
+                : { _id: new ObjectId(brokerId), user_id: { $in: userIds }, external_broker_id: 'upstox' };
+            return db.collection('brokers').findOne(query);
+        });
         if (!broker) {
-            throw new Error(`Upstox broker configuration with ID ${brokerId} not found or does not belong to user: ${cleanUserId}`);
+            throw new Error(`Upstox broker configuration with ID ${brokerId} not found${isAdmin ? '' : ' or does not belong to user: ' + cleanUserId}`);
         }
     }
 
@@ -189,37 +217,6 @@ async function getRedisString() {
         redisString = new RedisStringClass(redisClientInstance.getClient());
     }
     return redisString;
-}
-
-async function isAdminUser(userId) {
-    return withMongoClient(async (db) => {
-        const adminRole = await db.collection('roles').findOne({ name: 'admin' });
-        if (!adminRole) {
-            throw new Error('Admin role not found in MongoDB while resolving Upstox token scope.');
-        }
-
-        const adminRoleIds = new Set([adminRole._id.toString(), String(adminRole._id)]);
-
-        let user;
-        try {
-            user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
-        } catch {
-            user = await db.collection('users').findOne({ _id: userId });
-        }
-
-        if (!user) {
-            throw new Error(`User ${userId} not found in MongoDB while resolving Upstox token scope.`);
-        }
-
-        if (!Array.isArray(user.roles)) {
-            return false;
-        }
-
-        return user.roles.some((role) => {
-            const roleIdStr = typeof role === 'object' && role !== null ? String(role._id || role) : String(role);
-            return adminRoleIds.has(roleIdStr);
-        });
-    });
 }
 
 function buildAuthDialogUrl(credentials, userId, brokerId = null) {
@@ -304,8 +301,16 @@ async function get_new_access_token(code, userId, brokerId = null) {
     }
 
     await persistAccessTokenInMongo(cleanUserId, access_token, broker?._id || brokerId);
-    await setAccessTokenInRedis(access_token, cleanUserId);
-    await publishBrokerUpdate(cleanUserId);
+
+    const targetUserId = broker?.user_id ? String(broker.user_id) : cleanUserId;
+    await setAccessTokenInRedis(access_token, targetUserId);
+    if (targetUserId !== cleanUserId) {
+        await setAccessTokenInRedis(access_token, cleanUserId);
+    }
+    await publishBrokerUpdate(targetUserId);
+    if (targetUserId !== cleanUserId) {
+        await publishBrokerUpdate(cleanUserId);
+    }
 
     return access_token;
 }
@@ -317,13 +322,11 @@ async function persistAccessTokenInMongo(userId, accessToken, brokerId = null) {
         userIds.push(new ObjectId(cleanUserId));
     }
 
-    const filter = {
-        user_id: { $in: userIds },
-        external_broker_id: 'upstox',
-    };
-    if (brokerId && ObjectId.isValid(brokerId)) {
-        filter._id = new ObjectId(brokerId);
-    }
+    const isAdmin = await isAdminUser(cleanUserId);
+
+    const filter = (brokerId && ObjectId.isValid(brokerId))
+        ? (isAdmin ? { _id: new ObjectId(brokerId), external_broker_id: 'upstox' } : { _id: new ObjectId(brokerId), user_id: { $in: userIds }, external_broker_id: 'upstox' })
+        : { user_id: { $in: userIds }, external_broker_id: 'upstox' };
 
     const updateFields = {
         access_token: accessToken,
@@ -382,4 +385,5 @@ export {
     formatBrokerUpdate,
     isDummyCredential,
     getUpstoxBrokerFromDb,
+    isAdminUser,
 };

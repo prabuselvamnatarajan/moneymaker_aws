@@ -288,7 +288,10 @@ export default function BrokersListView() {
     }
   };
 
-  const getOAuthUrl = () => getUpstoxOAuthStartUrl(currentUserId, selectedBroker?._id);
+  const getOAuthUrl = () => {
+    const targetUserId = selectedBroker?.user_id || currentUserId;
+    return getUpstoxOAuthStartUrl(targetUserId, selectedBroker?._id);
+  };
 
   const getBrokerAuthStatus = (broker: Broker): 'authorized' | 'expired' | 'disconnected' => {
     if (broker.is_internal) return 'authorized';

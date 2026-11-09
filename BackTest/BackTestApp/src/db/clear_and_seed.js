@@ -138,7 +138,7 @@ export const clearAndSeedDB = async () => {
     const defaultUpstoxRedirectUri = "http://localhost/logedin";
 
     const upstoxBrokerAdmin = new Broker({
-      name: "Upstox",
+      name: "Upstox Admin",
       is_internal: false,
       user_id: adminUser._id.toString(),
       external_broker_id: "upstox",
@@ -152,7 +152,7 @@ export const clearAndSeedDB = async () => {
     await upstoxBrokerAdmin.save();
 
     const upstoxBrokerStandard = new Broker({
-      name: "Upstox",
+      name: "Upstox Standard",
       is_internal: false,
       user_id: standardUser._id.toString(),
       external_broker_id: "upstox",
