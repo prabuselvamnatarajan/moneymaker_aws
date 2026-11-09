@@ -10,6 +10,11 @@
 
 ## Future Workitems & Technical Debt Backlog
 
+See [FUTURE_WORKITEMS.md](file:///home/prabu/.gemini/antigravity-cli/worktrees/MoneyMaker%20GitLab%20AWS/tick_timeframe_code_flow/FUTURE_WORKITEMS.md) for full descriptions, affected files, and target solutions.
+
+> [!NOTE]
+> **Maintenance Instruction**: When any technical debt or workitem is fixed, remove its corresponding entry from [FUTURE_WORKITEMS.md](file:///home/prabu/.gemini/antigravity-cli/worktrees/MoneyMaker%20GitLab%20AWS/tick_timeframe_code_flow/FUTURE_WORKITEMS.md) immediately. Once all debts are resolved, delete `FUTURE_WORKITEMS.md`.
+
 The following workitems represent planned technical debt cleanup and modernizations permitted by the Zero Active Customers mandate:
 
 1. **Unified Trade Ingestion (`placeOrders` -> `/trades`)**:
