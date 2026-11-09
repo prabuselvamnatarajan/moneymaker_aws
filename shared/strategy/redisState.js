@@ -2,7 +2,7 @@ import { RedisClient, RedisJson } from '/app/redis_utils/redis_operations/index.
 import { logger } from '/app/utils/logUtils.js';
 
 const redisUrl = process.env.REDIS_URL;
-const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
+let redisClientInstance = null;
 let redisJson;
 let connectPromise = null;
 
@@ -32,6 +32,9 @@ async function ensureRedisJson() {
         if (!connectPromise) {
             connectPromise = (async () => {
                 try {
+                    if (!redisClientInstance) {
+                        redisClientInstance = new RedisClient({ url: redisUrl });
+                    }
                     await redisClientInstance.connect();
                     redisJson = new RedisJson(redisClientInstance.getClient());
                 } catch (err) {

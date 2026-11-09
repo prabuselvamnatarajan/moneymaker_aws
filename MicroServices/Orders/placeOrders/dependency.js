@@ -87,12 +87,45 @@ async function storeOrderDetails(symbol, order_details) {
     await producer.disconnect();
 }
 
+function resolveExecutionMode(strategyDetails) {
+    const strategy_details = strategyDetails || {};
+    const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
+    const isInternalBroker = Boolean(strategy_details.is_internal_broker);
+    const isBacktest = strategy_details.strategy_mode === 'BACKTEST' || (strategy_details.isTest === true && strategy_details.strategy_mode !== 'LIVE');
+    return {
+        isLive,
+        isInternalBroker,
+        isBacktest,
+        shouldCallExternalBroker: isLive && !isInternalBroker
+    };
+}
+
 function buildBrokerOrderPayload(orderFields) {
     const payload = { ...orderFields };
     if (payload.order_type === 'MARKET') {
         payload.price = 0;
     }
     return payload;
+}
+
+function buildTradePayload(body, resolvedLtp = null) {
+    const strategy_details = body.strategy_details || {};
+    let price = body.price;
+    if (price === 0 || price === '0' || price === undefined || price === null) {
+        if (resolvedLtp !== null && resolvedLtp !== undefined) {
+            price = resolvedLtp;
+        } else if (body.resolvedLtp !== undefined && body.resolvedLtp !== null) {
+            price = body.resolvedLtp;
+        }
+    }
+    const clientOrderId = body.client_order_id || strategy_details.client_order_id;
+    return {
+        type_of_order: body.transaction_type,
+        price,
+        quantity: body.quantity,
+        ...strategy_details,
+        ...(clientOrderId ? { client_order_id: clientOrderId } : {}),
+    };
 }
 
 async function placeOrders(access_token, body) {
@@ -130,23 +163,17 @@ async function triggerBackTestApp(body) {
         let { strategy_details = {} } = body;
 
         let price = body.price;
+        let resolvedLtp = null;
         // Resolve missing/zero price via LTP in all modes so live MARKET orders
         // still record a usable execution price for deployment analysis.
         if (price === 0 || price === '0' || price === undefined || price === null) {
             const ltpInfo = await fetchLTP(body.instrument_token, strategy_details.user_id);
             if (ltpInfo && ltpInfo.ltp) {
-                price = ltpInfo.ltp;
+                resolvedLtp = ltpInfo.ltp;
             }
         }
 
-        const clientOrderId = body.client_order_id || strategy_details.client_order_id;
-        let testAPIBody = {
-            "type_of_order": body.transaction_type,
-            "price": price,
-            "quantity": body.quantity,
-            ...(clientOrderId ? { client_order_id: clientOrderId } : {}),
-            ...strategy_details
-        }
+        const testAPIBody = buildTradePayload(body, resolvedLtp);
         console.log('Triggering Test API Call Body:', testAPIBody);
         console.log('URL:', url);
         const headers = {
@@ -209,7 +236,9 @@ async function getLiveAccountBalance(userId) {
 
 
 export {
+  resolveExecutionMode,
   buildBrokerOrderPayload,
+  buildTradePayload,
   placeOrders,
   storeOrderDetails,
   triggerBackTestApp,

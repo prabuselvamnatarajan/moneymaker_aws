@@ -6,26 +6,16 @@ import {
     resetAuthorisedClient,
     invalidateUserAccessToken,
 } from './redis_utils/AuthoriseUpstoxClient.js';
+import {
+    validateContractsRequest,
+    extractUpstoxErrorMessage,
+    handleApiCallbackError,
+} from './requestHelper.js';
 
 const app = express();
 const port = process.env.PORT || 80;
 
 app.use(cors());
-
-
-function extractUpstoxErrorMessage(error) {
-    try {
-        const text = error?.response?.text || error?.text;
-        if (text) {
-            const parsed = JSON.parse(text);
-            const first = parsed?.errors?.[0];
-            if (first?.message) return first.message;
-        }
-    } catch {
-        // ignore parse errors
-    }
-    return error?.message || 'Upstox API request failed';
-}
 
 function sendAuthError(res, e) {
     const status = e.statusCode || 500;
@@ -40,16 +30,11 @@ function sendAuthError(res, e) {
 
 app.get('/', async (req, res) => {
     try {
-        const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
-        if (!userId) {
-            return res.status(400).send('Bad Request: userId is required');
+        const validation = validateContractsRequest(req.query);
+        if (validation.error) {
+            return res.status(validation.status).send(validation.error);
         }
-        const symbol = typeof req.query.symbol === 'string' ? req.query.symbol.trim() : '';
-        if (!symbol) {
-            return res.status(400).send('Bad Request: symbol is required');
-        }
-        const expiry = typeof req.query.expiry === 'string' ? req.query.expiry.trim() : '';
-        const options = expiry ? { expiryDate: expiry } : null;
+        const { userId, symbol, options } = validation;
 
         const UpstoxClient = await getAuthorisedClient(userId);
         const apiInstance = new UpstoxClient.OptionsApi();
@@ -58,14 +43,11 @@ app.get('/', async (req, res) => {
             if (error) {
                 console.error('Failed to get Option Contracts:', error);
                 resetAuthorisedClient();
-                const status = error.status || error.statusCode;
-                if (status === 401 || status === 403) {
+                const handled = handleApiCallbackError(error);
+                if (handled.invalidateToken) {
                     await invalidateUserAccessToken(userId).catch(() => {});
-                    return res.status(401).send(
-                        'Unauthorized: Invalid or expired Upstox access token — re-authenticate via Brokers page.'
-                    );
                 }
-                return res.status(500).send(`Internal Server Error: ${extractUpstoxErrorMessage(error)}`);
+                return res.status(handled.statusCode).send(handled.body);
             } else {
                 console.log('API called successfully. Returned data: ' + JSON.stringify(data));
                 res.send(data);
@@ -80,3 +62,4 @@ app.get('/', async (req, res) => {
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
+

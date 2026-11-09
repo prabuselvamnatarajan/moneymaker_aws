@@ -1,21 +1,87 @@
-import { RedisClient, RedisJson } from '../redis_utils/redis_operations/index.js';
-import winston from 'winston';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const redisOpsCandidates = [
+    path.resolve(__dirname, '../redis_operations/index.js'),
+    path.resolve(__dirname, '../redis_utils/redis_operations/index.js'),
+    '/app/redis_operations/index.js',
+    '/app/redis_utils/redis_operations/index.js',
+];
+const redisOpsPath = redisOpsCandidates.find(p => existsSync(p));
+let RedisClient, RedisJson;
+if (redisOpsPath) {
+    try {
+        const mod = await import(pathToFileURL(redisOpsPath).href);
+        RedisClient = mod.RedisClient;
+        RedisJson = mod.RedisJson;
+    } catch {
+        // Fallback if redis package not available in local env
+    }
+}
+if (!RedisClient) {
+    RedisClient = class {
+        constructor() {}
+        connect() { return Promise.resolve(); }
+        getClient() { return null; }
+    };
+}
+if (!RedisJson) {
+    RedisJson = class {
+        constructor() {}
+        getJson() { return Promise.resolve(null); }
+        setJson() { return Promise.resolve(); }
+    };
+}
+
+let winston;
+try {
+    winston = (await import('winston')).default;
+} catch {
+    winston = {
+        format: {
+            combine: () => {},
+            timestamp: () => {},
+            json: () => {},
+            colorize: () => {},
+            printf: () => {},
+        },
+        transports: {
+            Console: class {},
+        },
+        createLogger: () => ({
+            info: console.log,
+            warn: console.warn,
+            error: console.error,
+            debug: () => {},
+        }),
+    };
+}
 
 const serviceName = process.env.SERVICE_NAME || 'all_service';
 const serviceMode = process.env.SERVICE_MODE || 'live';
 const redisUrl = process.env.REDIS_URL;
-const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
+let redisClientInstance = null;
 let redisJson;
 
 const DEFAULT_LOG_LEVEL = 'info';
 const LOG_REFRESH_MS = Number(process.env.LOG_CONFIG_REFRESH_MS || 5000);
 
-let logger;
+let logger = {
+    info: console.log,
+    warn: console.warn,
+    error: console.error,
+    debug: () => {},
+};
 let isLoggerInitialized = false;
 let refreshIntervalId;
 
 async function ensureRedisJson() {
     if (redisJson) return;
+    if (!redisClientInstance) {
+        redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
+    }
     await redisClientInstance.connect();
     redisJson = new RedisJson(redisClientInstance.getClient());
 }

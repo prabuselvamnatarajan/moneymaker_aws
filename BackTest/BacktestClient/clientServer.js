@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const WebSocket = require('ws');
 const { Kafka, Partitioners } = require('kafkajs');
+const { sanitize, validateStreamQuery, appendMetadataToTick } = require('./streamHelper.js');
 
 const app = express();
 const PORT = process.env.CLIENT_PORT || 3000;
@@ -30,33 +31,19 @@ const producer = kafka.producer({
     createPartitioner: Partitioners.LegacyPartitioner
 });
 
-function sanitize(str) {
-    return String(str).replace(/[^a-zA-Z0-9-_]/g, '_');
-}
-
 (async () => {
     await producer.connect();
 })();
 
 app.get('/', (req, res) => {
-    const { symbolName, date, time_ms, deployment_id, run_id } = req.query;
-    if (!symbolName || !date) {
-        return res.status(400).send('Missing symbolName or date');
+    const validated = validateStreamQuery(req.query);
+    if (validated.error) {
+        return res.status(validated.status).send(validated.error);
     }
+    const { symbolName, date, timeMsNum, deployment_id, run_id, partitionKey } = validated.value;
 
-    // Default time_ms to 0 if not provided
-    let timeMsNum = 0;
-    if (time_ms !== undefined) {
-        timeMsNum = Number(time_ms);
-        if (isNaN(timeMsNum) || timeMsNum < 0) {
-            return res.status(400).send('Invalid time_ms: must be a number >= 0');
-        }
-    }
-
-    // Sanitize topic parts
     // Use topic from env variable
     const topic = KAFKA_TOPIC;
-    const partitionKey = `backtest-${sanitize(symbolName)}-${sanitize(date)}-${sanitize(timeMsNum)}`;
 
     // Log the WebSocket URL and payload for debugging
     console.log(`Starting WebSocket client for symbol: ${symbolName}, date: ${date}, time_ms: ${timeMsNum}, deployment_id: ${deployment_id}, run_id: ${run_id} at WS_URL: ${WS_URL}`);
@@ -95,19 +82,7 @@ app.get('/', (req, res) => {
     }
 
     ws.on('message', (data) => {
-        let msgStr = data.toString();
-        if (deployment_id) {
-            try {
-                const parsed = JSON.parse(msgStr);
-                parsed.deployment_id = deployment_id;
-                if (run_id) {
-                    parsed.run_id = run_id;
-                }
-                msgStr = JSON.stringify(parsed);
-            } catch (err) {
-                console.error('Failed to parse WebSocket message to append deployment_id:', err.message);
-            }
-        }
+        const msgStr = appendMetadataToTick(data, deployment_id, run_id);
         queue.push(msgStr);
         processQueue().catch(err => console.error('Error in processQueue:', err));
     });

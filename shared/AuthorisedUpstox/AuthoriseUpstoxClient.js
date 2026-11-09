@@ -1,12 +1,69 @@
-import { RedisClient, RedisString } from './redis_operations/index.js';
-import UpstoxClient from "upstox-js-sdk";
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const redisUrl = process.env.REDIS_URL;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+let redisOpsLoaded = false;
+let RedisClient, RedisString;
+let redisClientInstance = null;
+let redisString = null;
+let authorisedClient = null;
+
 const DEFAULT_REDIS_KEY = 'redis_upstox_access_token';
 
-const redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
-let redisString;
-let authorisedClient;
+async function ensureRedisOps() {
+    if (redisOpsLoaded) return;
+    const redisOpsCandidates = [
+        path.resolve(__dirname, '../redis_operations/index.js'),
+        path.resolve(__dirname, './redis_operations/index.js'),
+        path.resolve(process.cwd(), 'shared/redis_operations/index.js'),
+        '/app/redis_operations/index.js',
+        '/app/redis_utils/redis_operations/index.js',
+    ];
+    const redisOpsPath = redisOpsCandidates.find(p => existsSync(p));
+    if (redisOpsPath) {
+        try {
+            const mod = await import(pathToFileURL(redisOpsPath).href);
+            RedisClient = mod.RedisClient;
+            RedisString = mod.RedisString;
+        } catch {
+            // Redis package may not be installed in current environment
+        }
+    }
+    if (!RedisClient) {
+        RedisClient = class {
+            constructor() {}
+            connect() { return Promise.resolve(); }
+            getClient() { return { del: () => Promise.resolve(), get: () => Promise.resolve(null), set: () => Promise.resolve() }; }
+        };
+    }
+    if (!RedisString) {
+        RedisString = class {
+            constructor() {}
+            getString() { return Promise.resolve(null); }
+            setString() { return Promise.resolve(); }
+        };
+    }
+    redisOpsLoaded = true;
+}
+
+function getRedisClientInstance() {
+    if (!redisClientInstance) {
+        const redisUrl = process.env.REDIS_URL;
+        redisClientInstance = new RedisClient(redisUrl ? { url: redisUrl } : {});
+    }
+    return redisClientInstance;
+}
+
+async function getUpstoxClient() {
+    try {
+        const mod = await import('upstox-js-sdk');
+        return mod.default || mod;
+    } catch (err) {
+        throw new Error(`Failed to load upstox-js-sdk: ${err.message}`);
+    }
+}
 
 function httpError(message, statusCode) {
     const err = new Error(message);
@@ -38,8 +95,11 @@ function isUpstoxTokenExpired(token, skewSeconds = 60) {
 
 async function deleteExpiredToken(redisKey) {
     try {
-        const client = redisClientInstance.getClient();
-        await client.del(redisKey);
+        await ensureRedisOps();
+        const client = getRedisClientInstance().getClient();
+        if (client && typeof client.del === 'function') {
+            await client.del(redisKey);
+        }
         console.warn(`[AuthoriseUpstox] Deleted expired access token from Redis key ${redisKey}`);
     } catch (error) {
         console.error(`[AuthoriseUpstox] Failed to delete expired token from key ${redisKey}:`, error.message);
@@ -48,8 +108,10 @@ async function deleteExpiredToken(redisKey) {
 
 async function ensureRedisString() {
     if (!redisString) {
-        await redisClientInstance.connect();
-        redisString = new RedisString(redisClientInstance.getClient());
+        await ensureRedisOps();
+        const clientInstance = getRedisClientInstance();
+        await clientInstance.connect();
+        redisString = new RedisString(clientInstance.getClient());
     }
 }
 
@@ -67,9 +129,10 @@ async function getAuthorisedClient(userId = '') {
                 401
             );
         }
-        const defaultClient = UpstoxClient.ApiClient.instance;
+        const Upstox = await getUpstoxClient();
+        const defaultClient = Upstox.ApiClient.instance;
         defaultClient.authentications['OAUTH2'].accessToken = access_token;
-        authorisedClient = UpstoxClient;
+        authorisedClient = Upstox;
     } catch (error) {
         if (error.statusCode) throw error;
         console.error(`Error Creating Authorised Client with AccessToken :`, error.message);
@@ -349,6 +412,7 @@ async function invalidateOrgAccessToken() {
 }
 
 export {
+    isUpstoxTokenExpired,
     getAuthorisedClient,
     resetAuthorisedClient,
     getAccessTokenFromRedis,

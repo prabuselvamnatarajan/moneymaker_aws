@@ -5,7 +5,7 @@
   "main": "MSB.js",
   "type": "module",
   "scripts": {
-    "test": "NODE_ENV=test node --import ./__tests__/register-loader.mjs --test __tests__/MSB.test.js __tests__/candleBuilder.test.js __tests__/orderLockIntegration.test.js",
+    "test": "NODE_ENV=test node --import ./__tests__/register-loader.mjs --test __tests__/MSB.test.js __tests__/candleBuilder.test.js __tests__/orderLockIntegration.test.js __tests__/symbolExtraction.test.js",
     "start": "node MSB.js"
   },
   "author": "",

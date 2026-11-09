@@ -5,7 +5,7 @@
   "main": "positionTrackerConsumer.js",
   "type": "module",
   "scripts": {
-    "test": "node --test __tests__/excursionMath.test.js",
+    "test": "node --test",
     "start": "node positionTrackerConsumer.js"
   },
   "author": "",

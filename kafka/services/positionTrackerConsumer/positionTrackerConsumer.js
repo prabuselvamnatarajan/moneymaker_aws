@@ -11,6 +11,14 @@ import {
   extractTickTimeMs,
   tickTargetsPosition,
 } from './excursionMath.js';
+import {
+  openSymbolKey,
+  liveKey,
+  throttleKey,
+  checkThrottleExpired,
+  topicAllowsMode,
+  buildCacheFromDoc,
+} from './cacheHelpers.js';
 
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const TARGET_TOPICS = (process.env.TARGET_TOPIC || 'splited-live-data,backtest-stream-data')
@@ -35,35 +43,14 @@ const mongoClient = new MongoClient(MONGO_URI);
 let redisClient;
 let positionsCollection;
 
-function openSymbolKey(symbol) {
-  return `position:open:${String(symbol || '').toUpperCase()}`;
-}
-
-function liveKey(positionId) {
-  return `position:live:${positionId}`;
-}
-
-function throttleKey(positionId) {
-  return `position:throttle:unrealised:${positionId}`;
-}
-
 async function isThrottleExpired(positionMongoId) {
   const raw = await redisClient.get(throttleKey(positionMongoId)).catch(() => null);
-  const lastWrite = raw ? parseInt(raw, 10) : 0;
-  return Date.now() - lastWrite >= UNREALISED_WRITE_THROTTLE_MS;
+  return checkThrottleExpired(raw, UNREALISED_WRITE_THROTTLE_MS, Date.now());
 }
 
 async function markThrottleWritten(positionMongoId) {
   const ttlSec = Math.max(10, Math.ceil(UNREALISED_WRITE_THROTTLE_MS / 1000) * 2);
   await redisClient.set(throttleKey(positionMongoId), String(Date.now()), { EX: ttlSec }).catch(() => {});
-}
-
-function topicAllowsMode(topic, strategyMode) {
-  const mode = String(strategyMode || '').toUpperCase();
-  const isBacktestTopic = topic === BACKTEST_TOPIC;
-  if (isBacktestTopic) return mode === 'BACKTEST';
-  // Live market feed updates LIVE and PAPER only
-  return mode === 'LIVE' || mode === 'PAPER';
 }
 
 async function setJson(key, value) {
@@ -94,26 +81,6 @@ async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5
     }
   }
   throw new Error(`Failed to connect to ${name} after maximum retries.`);
-}
-
-function buildCacheFromDoc(doc) {
-  return {
-    positionMongoId: doc._id.toString(),
-    positionId: doc.position_id || doc._id.toString(),
-    symbol: String(doc.symbol || '').toUpperCase(),
-    entryPrice: doc.average_entry_price || 0,
-    direction: doc.direction,
-    openSize: doc.open_size || 0,
-    maxUp: doc.max_up || 0,
-    maxDown: doc.max_down || 0,
-    maxUpPct: doc.max_up_pct || 0,
-    maxDownPct: doc.max_down_pct || 0,
-    unrealisedPnl: doc.unrealised_pnl || 0,
-    lastLtp: doc.last_ltp || 0,
-    lastTickAt: doc.last_tick_at ? new Date(doc.last_tick_at).getTime() : 0,
-    strategyMode: doc.strategy_mode || null,
-    deploymentId: doc.deployment_id?.toString?.() || doc.deployment_id || null,
-  };
 }
 
 async function evictPositionFromRedis(positionMongoId, symbolHint, docSymbol) {

@@ -1,21 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { isUpstoxTokenExpired } from '../AuthoriseUpstoxClient.js';
 
-// Helper function equivalent to isUpstoxTokenExpired in AuthoriseUpstoxClient.js
-function isUpstoxTokenExpired(token, skewSeconds = 60) {
-    if (!token || typeof token !== 'string') return true;
-    try {
-        const parts = token.split('.');
-        if (parts.length < 2) return true;
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-        if (!payload.exp) return true;
-        return Date.now() / 1000 >= payload.exp - skewSeconds;
-    } catch {
-        return true;
-    }
-}
-
-test('isUpstoxTokenExpired accurately evaluates JWT exp claim', () => {
+test('isUpstoxTokenExpired accurately evaluates JWT exp claim (Real Codebase)', () => {
     assert.equal(isUpstoxTokenExpired(null), true);
     assert.equal(isUpstoxTokenExpired('invalid.jwt'), true);
 

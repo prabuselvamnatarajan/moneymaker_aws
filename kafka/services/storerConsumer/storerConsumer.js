@@ -3,7 +3,7 @@ import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
-import { mongoCollectionNameForSymbol, buildStoreDocument } from './storeDocument.js';
+import { mongoCollectionNameForSymbol, buildStoreDocument, parseKafkaMessage } from './storeDocument.js';
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -57,9 +57,8 @@ async function createConsumer() {
     await consumer.run({
         eachMessage: async ({ message }) => {
             try {
-                const symbol = message.key.toString();
+                const { symbol, data } = parseKafkaMessage(message);
                 logger.info(`Received message for symbol ${symbol}`);
-                const data = JSON.parse(message.value.toString());
                 await retry(async () => {
                     await storeInMongoDB(symbol, data);
                 }, {

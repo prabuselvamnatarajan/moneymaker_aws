@@ -7,7 +7,7 @@ const port = process.env.PORT || 80;
 app.use(cors());
 app.use(express.json());
 
-import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance, buildBrokerOrderPayload } from './dependency.js';
+import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance, buildBrokerOrderPayload, resolveExecutionMode } from './dependency.js';
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js';
@@ -31,9 +31,7 @@ app.post('/', async (req, res) => {
         let result = null;
         let orderResponse = null;
 
-        const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
-        const isInternalBroker = strategy_details.is_internal_broker === true;
-        const isBacktest = strategy_details.strategy_mode === 'BACKTEST' || (strategy_details.isTest === true && strategy_details.strategy_mode !== 'LIVE');
+        const { isLive, isInternalBroker, isBacktest } = resolveExecutionMode(strategy_details);
 
         if (isLive && !isInternalBroker) {
             // Throws 401 if token missing/expired — no silent fallback.

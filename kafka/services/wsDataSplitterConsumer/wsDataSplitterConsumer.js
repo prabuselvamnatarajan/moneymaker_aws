@@ -1,7 +1,7 @@
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
-import { calculateLatency } from './utils/latencyUtil.js';
+import { getCalculateLatency, splitAndTransformBatch, connectWithRetry } from './batchSplitter.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 
@@ -23,50 +23,33 @@ const redisPubSub = new RedisPubSub({ url: REDIS_URL });
 
 registerFatalErrorHandlers();
 
-async function connectWithRetry(target, name = 'Client', retries = 30, delay = 5000) {
-    for (let i = 0; i < retries; i++) {
-        try {
-            await target.connect();
-            logger.info(`Successfully connected to ${name}.`);
-            return;
-        } catch (err) {
-            logger.warn(`Connection attempt ${i + 1}/${retries} to ${name} failed: ${err.message}. Retrying in ${delay}ms...`);
-            await new Promise(res => setTimeout(res, delay));
-        }
-    }
-    throw new Error(`Failed to connect to ${name} after maximum retries.`);
-}
-
 async function processAndProduceMessages(data) {
     const producer = kafka.producer();
 
     try {
-        await connectWithRetry(producer, 'Kafka Producer');
+        await connectWithRetry(producer, 'Kafka Producer', 30, 5000, logger);
+        const calculateLatency = await getCalculateLatency();
+        const { kafkaMessages, redisPublishes } = splitAndTransformBatch(data, LIVE_PREFIX, calculateLatency);
 
-        for (const [key, value] of Object.entries(data)) {
-            value.latency = {
-                beforeSplit: calculateLatency(key, value)
-            };
-            const topic = "splited-live-data";
-            value.symbol_name = key; // adding symbol_name to value
-            logger.info(`Processing ${key} data:`, value);
-            logger.info(`Topic : ${topic}`);
+        for (let i = 0; i < kafkaMessages.length; i++) {
+            const km = kafkaMessages[i];
+            const rp = redisPublishes[i];
 
-            let redisPublishChannel = `${LIVE_PREFIX}:${key.replace(/'/g, "")}`;
+            logger.info(`Processing ${km.key} data:`, km.parsed);
+            logger.info(`Topic : ${km.topic}`);
 
             await retry(async () => {
-                let msg = JSON.stringify(value);
                 await producer.send({
-                    topic,
-                    messages: [{ key, value: msg }],
+                    topic: km.topic,
+                    messages: [{ key: km.key, value: km.value }],
                 });
-                logger.info(`redisPublishChannel : ${redisPublishChannel} with message: ${msg}`);
-                await redisPubSub.publish(redisPublishChannel, msg);
+                logger.info(`redisPublishChannel : ${rp.channel} with message: ${rp.message}`);
+                await redisPubSub.publish(rp.channel, rp.message);
             }, {
                 retries: 5,
                 minTimeout: 1000,
                 onRetry: (error, attempt) => {
-                    logger.warn(`Retry attempt ${attempt} for topic ${topic} due to error: ${error.message}`);
+                    logger.warn(`Retry attempt ${attempt} for topic ${km.topic} due to error: ${error.message}`);
                 }
             });
         }
@@ -82,7 +65,7 @@ async function createConsumer() {
     registerKafkaCrashHandler(consumer);
 
     try {
-        await connectWithRetry(consumer, 'Kafka Consumer');
+        await connectWithRetry(consumer, 'Kafka Consumer', 30, 5000, logger);
         await consumer.subscribe({ topic: 'incoming-ws-msg', fromBeginning: false });
 
         await consumer.run({
@@ -103,11 +86,15 @@ async function createConsumer() {
 async function startServer() {
     try {
         await initLogger();
-        await connectWithRetry(redisPubSub, 'Redis PubSub');
+        await connectWithRetry(redisPubSub, 'Redis PubSub', 30, 5000, logger);
         await createConsumer();
     } catch (error) {
         handleFatalError(error, 'server startup');
     }
 }
 
-startServer();
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+    startServer();
+}
+
+export { processAndProduceMessages, createConsumer, startServer };

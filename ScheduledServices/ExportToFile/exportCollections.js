@@ -3,6 +3,13 @@ const { MongoClient } = require('mongodb');
 const fs = require('fs');
 const path = require('path');
 const { DateTime } = require('luxon');
+const {
+  IST,
+  sanitizeCollectionName,
+  resolveTargetDbAndTimeField,
+  calculateTimeWindow,
+  sanitizeUserSymbols,
+} = require('./exportUtils');
 
 const uri = process.env.MONGO_URI;
 const dbName = process.env.DB_NAME;
@@ -26,7 +33,7 @@ async function exportCollection(collectionName) {
     const exportPath = path.join(EXPORTED_DATA_DIR, dateFolder);
     fs.mkdirSync(exportPath, { recursive: true });
 
-    const sanitizedCollectionName = collectionName.replace(/[^a-zA-Z0-9-_]/g, '_');
+    const sanitizedCollectionName = sanitizeCollectionName(collectionName);
     const filePath = path.join(exportPath, `${sanitizedCollectionName}.json`);
 
     if (collectionName === 'usersymbols') {
@@ -34,20 +41,11 @@ async function exportCollection(collectionName) {
       const db = client.db(targetDbName);
       const collection = db.collection(collectionName);
       const activeSymbols = await collection.find({ is_active: true }).toArray();
-      const seen = new Set();
-      const cleanSymbols = [];
-      for (const sym of activeSymbols) {
-        if (sym.instrument_token && !seen.has(sym.instrument_token)) {
-          seen.add(sym.instrument_token);
-          const { _id, user_id, ...cleanSym } = sym;
-          cleanSymbols.push(cleanSym);
-        }
-      }
+      const cleanSymbols = sanitizeUserSymbols(activeSymbols);
 
       // Export the active symbols' stock data from stock_database
       const stockDb = client.db('stock_database');
-      const start = todayIST.set({ hour: 9, minute: 0, second: 0, millisecond: 0 }).toUTC().toJSDate();
-      const end = todayIST.set({ hour: 15, minute: 40, second: 0, millisecond: 0 }).toUTC().toJSDate();
+      const { start, end } = calculateTimeWindow('stock_database', todayIST);
 
       for (const sym of cleanSymbols) {
         const symName = sym.symbol;
@@ -92,23 +90,16 @@ async function exportCollection(collectionName) {
       console.log(`Exported ${cleanSymbols.length} documents from ${collectionName} to ${filePath}`);
 
     } else {
-      if (collectionName === 'trades') {
-        targetDbName = 'BacktestApp';
-        timeField = 'created_at';
-      } else if (collectionName === 'ledgers') {
-        targetDbName = 'BacktestApp';
-        timeField = 'created_on';
-      } else {
-        if (collectionName.includes(':') || collectionName.includes('|')) {
+      const resolved = resolveTargetDbAndTimeField(collectionName, targetDbName);
+      targetDbName = resolved.targetDbName;
+      timeField = resolved.timeField;
+
+      if (targetDbName === dbName && !collectionName.includes(':') && !collectionName.includes('|')) {
+        const stockDb = client.db('stock_database');
+        const collections = await stockDb.listCollections({ name: collectionName }).toArray();
+        if (collections.length > 0) {
           targetDbName = 'stock_database';
           timeField = 'timestamp';
-        } else {
-          const stockDb = client.db('stock_database');
-          const collections = await stockDb.listCollections({ name: collectionName }).toArray();
-          if (collections.length > 0) {
-            targetDbName = 'stock_database';
-            timeField = 'timestamp';
-          }
         }
       }
 
@@ -116,14 +107,7 @@ async function exportCollection(collectionName) {
       const collection = db.collection(collectionName);
 
       // Get date range in IST
-      let start, end;
-      if (targetDbName === 'stock_database') {
-        start = todayIST.set({ hour: 9, minute: 0, second: 0, millisecond: 0 }).toUTC().toJSDate();
-        end = todayIST.set({ hour: 15, minute: 40, second: 0, millisecond: 0 }).toUTC().toJSDate();
-      } else {
-        start = todayIST.startOf('day').toUTC().toJSDate();
-        end = todayIST.endOf('day').toUTC().toJSDate();
-      }
+      const { start, end } = calculateTimeWindow(targetDbName, todayIST);
 
       const query = { [timeField]: { $gte: start, $lte: end } };
       

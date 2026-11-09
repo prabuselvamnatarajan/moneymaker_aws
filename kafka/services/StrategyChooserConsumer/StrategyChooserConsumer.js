@@ -1,6 +1,13 @@
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
 import getStrategiesForSymbol from './redis_utils/getStrategiesForSymbol.js';
+import {
+  resolveTopicName,
+  extractSymbol,
+  buildMessagePayload,
+  resolvePartitionKey,
+  filterBacktestStrategies,
+} from './topicRoutingHelper.js';
 import { initLogger, logger } from '/app/utils/logUtils.js';
 import { handleFatalError, registerFatalErrorHandlers, registerKafkaCrashHandler } from '/app/utils/kafkaErrorHandler.js';
 
@@ -101,7 +108,7 @@ async function createConsumer() {
             try {
                 const rawKey = key ? key.toString() : '';
                 const data = JSON.parse(value.toString());
-                const symbol = String(data.symbol || data.name || data.symbolName || rawKey).toUpperCase();
+                const symbol = extractSymbol(data, rawKey);
                 const isBackTest = topic === BACKTEST_TOPIC;
                 logger.info(`Received message for symbol ${symbol} on topic ${topic} (isBackTest: ${isBackTest})`);
                 const strategies = await getStrategiesForSymbol(isBackTest, symbol);
@@ -113,36 +120,16 @@ async function createConsumer() {
                         logger.warn(`Discarding backtest message for symbol ${symbol}: missing deployment_id`);
                         return;
                     }
-                    filteredStrategies = strategies.filter(strategy => {
-                        const stratDepId = String(strategy.deployment_id || strategy._id || '');
-                        if (stratDepId !== String(data.deployment_id)) return false;
-                        if (data.run_id && strategy.backtest_run_id && String(data.run_id) !== String(strategy.backtest_run_id)) {
-                            logger.info(`Discarding stale backtest message for deployment ${data.deployment_id}. Msg run_id: ${data.run_id}, Active run_id: ${strategy.backtest_run_id}`);
-                            return false;
-                        }
-                        return true;
-                    });
+                    filteredStrategies = filterBacktestStrategies(strategies, data);
                     logger.info(`Filtered strategies for symbol ${symbol} to deployment ${data.deployment_id}. Count: ${filteredStrategies.length}`);
                 }
 
                 await Promise.all(filteredStrategies.map(async (strategy) => {
                     const { name: strategyName, isTest = true } = strategy;
                     const isTestMode = isTest || isBackTest;
-                    const topicName = isTestMode
-                        ? `${strategyName}_backtest_data`
-                        : `${strategyName}_live_data`;
-                    
-                    // Clone data to avoid concurrent in-place mutation race conditions
-                    const strategyData = { ...data };
-                    strategyData.strategy_details = { ...strategy };
-                    if (isTestMode) {
-                        strategyData.strategy_details.isTest = true;
-                    } else {
-                        strategyData.strategy_details.isTest = false;
-                    }
-                    const partitionKey = isTestMode && strategy.deployment_id
-                        ? `${symbol}:${strategy.deployment_id}`
-                        : symbol;
+                    const topicName = resolveTopicName(strategyName, isTestMode);
+                    const strategyData = buildMessagePayload(data, strategy, isTestMode);
+                    const partitionKey = resolvePartitionKey(symbol, strategy, isTestMode);
                     await retry(async () => {
                         await producer.send({
                             topic: topicName,

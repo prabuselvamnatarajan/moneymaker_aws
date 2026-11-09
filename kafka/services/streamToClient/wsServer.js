@@ -4,6 +4,7 @@ import RedisPubSub from "./redis_utils/redis_operations/RedisPubSub.js";
 import dotenv from "dotenv";
 import { initLogger, logger } from '/app/utils/logUtils.js';
 import { fanoutRedisMessage } from './fanout.js';
+import { resolveChannel, createSubscriptionManager } from './subscriptionManager.js';
 
 dotenv.config();
 
@@ -15,76 +16,46 @@ const BACKTEST_PREFIX = process.env.BACKTEST_PREFIX || "backtest";
 let wss;
 let redisPubSub;
 
-// Local memory (SAFE for scaling)
-// socketId -> ws
-const sockets = new Map();
-
-// socketId -> Set<channel>
-const socketSubscriptions = new Map();
-
-// channel -> Set<socketId>
-const channelSubscriptions = new Map();
-
-// Single unified message handler for all channels
+// Message handler for fanout
 function handleRedisMessage(channel, message) {
-  fanoutRedisMessage(channelSubscriptions, sockets, channel, message);
+  fanoutRedisMessage(subManager.channelSubscriptions, subManager.sockets, channel, message);
 }
 
-async function ensureChannel(channel) {
-  if (!channelSubscriptions.has(channel)) {
-    channelSubscriptions.set(channel, new Set());
+const subManager = createSubscriptionManager({
+  onChannelNeeded: async (channel) => {
     try {
-      // Subscribe with the message handler for this channel
       await redisPubSub.subscribe(channel, handleRedisMessage);
     } catch (err) {
       logger.error(`Failed to subscribe to ${channel}:`, err);
     }
-  }
-}
-
-async function removeChannelIfUnused(channel) {
-  if (channelSubscriptions.get(channel)?.size === 0) {
-    channelSubscriptions.delete(channel);
+  },
+  onChannelUnused: async (channel) => {
     try {
       await redisPubSub.unsubscribe(channel);
     } catch (err) {
       logger.error(`Failed to unsubscribe from ${channel}:`, err);
     }
-  }
-}
+  },
+});
 
 function attachConnectionHandlers(server) {
   server.on("connection", (ws) => {
     const socketId = uuid();
-    sockets.set(socketId, ws);
-    socketSubscriptions.set(socketId, new Set());
+    subManager.addClient(socketId, ws);
 
     ws.on("message", async (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
-
-        if (!msg.action || !msg.mode || !msg.symbol) {
-            logger.warn("Invalid message format:", msg);
-            return;
+        const channel = resolveChannel(msg, LIVE_PREFIX, BACKTEST_PREFIX);
+        if (!channel) {
+          logger.warn("Invalid message format:", msg);
+          return;
         }
-
-        let mode = BACKTEST_PREFIX;
-        if (msg.mode === 'live') {
-          mode = LIVE_PREFIX;
-        }
-
-        const channel = `${mode}:${msg.symbol}`;
 
         if (msg.action === "subscribe") {
-          await ensureChannel(channel);
-          channelSubscriptions.get(channel).add(socketId);
-          socketSubscriptions.get(socketId).add(channel);
-        }
-
-        if (msg.action === "unsubscribe") {
-          channelSubscriptions.get(channel)?.delete(socketId);
-          socketSubscriptions.get(socketId)?.delete(channel);
-          await removeChannelIfUnused(channel);
+          await subManager.subscribe(socketId, channel);
+        } else if (msg.action === "unsubscribe") {
+          await subManager.unsubscribe(socketId, channel);
         }
       } catch (err) {
         logger.error("Error processing message:", err);
@@ -92,13 +63,7 @@ function attachConnectionHandlers(server) {
     });
 
     ws.on("close", async () => {
-      const channels = socketSubscriptions.get(socketId) || [];
-      for (const ch of channels) {
-        channelSubscriptions.get(ch)?.delete(socketId);
-        await removeChannelIfUnused(ch);
-      }
-      socketSubscriptions.delete(socketId);
-      sockets.delete(socketId);
+      await subManager.removeClient(socketId);
     });
   });
 }

@@ -1,3 +1,11 @@
+export function validateOrderBookRequest(query) {
+    const userId = typeof query?.userId === 'string' ? query.userId.trim() : '';
+    if (!userId) {
+        return { error: 'Bad Request: userId is required', status: 400 };
+    }
+    return { value: { userId }, status: 200, userId, apiVersion: '2.0' };
+}
+
 export function extractUpstoxErrorMessage(error) {
     try {
         const text = error?.response?.text || error?.text;
@@ -10,4 +18,20 @@ export function extractUpstoxErrorMessage(error) {
         // ignore parse errors
     }
     return error?.message || 'Upstox API request failed';
+}
+
+export function handleApiCallbackError(error) {
+    const status = error?.status || error?.statusCode;
+    if (status === 401 || status === 403) {
+        return {
+            statusCode: 401,
+            body: 'Unauthorized: Invalid or expired Upstox access token — re-authenticate via Brokers page.',
+            invalidateToken: true,
+        };
+    }
+    return {
+        statusCode: 500,
+        body: `Internal Server Error: ${extractUpstoxErrorMessage(error)}`,
+        invalidateToken: false,
+    };
 }
