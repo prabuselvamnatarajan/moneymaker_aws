@@ -146,4 +146,53 @@ describe('StrategyChooserConsumer Routing & Multi-Deployment Isolation (Real Cod
     assert.equal(payloadD2.timeframes['5m'], undefined); // Sliced out!
     assert.equal(payloadD2.strategy_details.deployment_id, 'dep_222');
   });
+
+  it('fails loud when filterSnapshotForDeployment receives invalid snapshot or deployment', () => {
+    assert.throws(() => filterSnapshotForDeployment(null, {}), /Invalid snapshot/);
+    assert.throws(() => filterSnapshotForDeployment({}, {}), /Invalid snapshot/);
+    assert.throws(
+      () => filterSnapshotForDeployment({ timeframes: {} }, null),
+      /deployment is required/
+    );
+  });
+
+  it('defaults to 1m when deployment has no timeframe or timeframes configured', () => {
+    const fullSnapshot = {
+      symbol: 'NIFTY',
+      timeframes: {
+        '1m': { open: 100, close: 100 },
+        '5m': { open: 100, close: 100 },
+      },
+    };
+    const deploymentNoTf = {
+      deployment_id: 'dep_default',
+      name: 'msb',
+    };
+    const sliced = filterSnapshotForDeployment(fullSnapshot, deploymentNoTf);
+    assert.ok(sliced.timeframes['1m']);
+    assert.equal(sliced.timeframes['5m'], undefined);
+  });
+
+  it('normalizes case and aliases in deployment.timeframes', () => {
+    const fullSnapshot = {
+      symbol: 'NIFTY',
+      timeframes: {
+        '1m': { open: 100, close: 100 },
+        '5m': { open: 100, close: 100 },
+      },
+    };
+    const deploymentAliases = {
+      deployment_id: 'dep_aliases',
+      timeframes: ['1Minute', '5M'],
+    };
+    const sliced = filterSnapshotForDeployment(fullSnapshot, deploymentAliases);
+    assert.ok(sliced.timeframes['1m']);
+    assert.ok(sliced.timeframes['5m']);
+  });
+
+  it('safely handles non-array strategies input in filterStrategiesForMessage', () => {
+    assert.deepEqual(filterStrategiesForMessage(null, false, {}), []);
+    assert.deepEqual(filterStrategiesForMessage(undefined, true, {}), []);
+    assert.deepEqual(filterStrategiesForMessage('not-array', false, {}), []);
+  });
 });

@@ -319,4 +319,51 @@ describe('MSB buy/sell consistency', () => {
         assert.equal(store.orders.length, 1, 'must trigger exactly 1 BUY order');
         assert.equal(store.orders[0].transaction_type, 'BUY');
     });
+
+    it('processes snapshot with nested formingCandle structure seamlessly', async () => {
+        const details = strategyDetails({ timeframe: '1m' });
+
+        let state = await strategy.executeStrategy(
+            null,
+            candle({ high: 100, low: 95, ltp: 98 }),
+            SYMBOL,
+            details
+        );
+
+        // Snapshot with nested formingCandle
+        const nestedSnapshot = {
+            symbol: SYMBOL,
+            eventTimestamp: 1720236065000,
+            snapshotVersion: 3,
+            ltp: 106,
+            timeframes: {
+                '1m': {
+                    timeframe: '1m',
+                    startTime: 1720236060000,
+                    endTime: 1720236120000,
+                    formingCandle: {
+                        open: 106,
+                        high: 106,
+                        low: 106,
+                        close: 106,
+                        volume: 10,
+                        isClosed: false,
+                    },
+                    closedCandle: {
+                        open: 98,
+                        high: 106,
+                        low: 97,
+                        close: 106,
+                        volume: 400,
+                        isClosed: true,
+                    },
+                },
+            },
+        };
+
+        state = await strategy.executeStrategy(state, nestedSnapshot, SYMBOL, details);
+        assert.equal(state.isUp, true, 'must trigger UP on breakout using nested formingCandle snapshot');
+        assert.equal(store.orders.length, 1, 'must trigger BUY order');
+        assert.equal(store.orders[0].transaction_type, 'BUY');
+    });
 });

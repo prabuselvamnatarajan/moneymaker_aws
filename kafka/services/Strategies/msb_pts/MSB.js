@@ -29,13 +29,14 @@ function resolveCandles(message, timeframe, existingCandleState) {
     if (message?.timeframes && typeof message.timeframes === 'object') {
         const tfData = message.timeframes[timeframe] || Object.values(message.timeframes)[0];
         if (tfData) {
+            const forming = tfData.formingCandle || tfData;
             const candle = {
-                open: tfData.open,
-                high: tfData.high,
-                low: tfData.low,
-                close: tfData.close,
-                ltp: message.ltp ?? tfData.close,
-                volume: tfData.volume ?? 0,
+                open: forming.open ?? tfData.open,
+                high: forming.high ?? tfData.high,
+                low: forming.low ?? tfData.low,
+                close: forming.close ?? tfData.close,
+                ltp: message.ltp ?? forming.close ?? tfData.close,
+                volume: forming.volume ?? tfData.volume ?? 0,
                 timestamp: tfData.endTime ? new Date(tfData.endTime).toISOString() : (message.eventTimestamp ? new Date(message.eventTimestamp).toISOString() : message.timestamp),
                 isClosed: false,
                 candleState: tfData,

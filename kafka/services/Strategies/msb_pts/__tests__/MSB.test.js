@@ -206,4 +206,58 @@ describe('msb_pts buy/sell consistency', () => {
         assert.equal(state.position, null, 'Position must be cleared');
         assert.equal(state.closedByTargetOrSl, true);
     });
+
+    it('evaluates target hit immediately on snapshot with nested formingCandle structure', async () => {
+        const details = strategyDetails({
+            timeframe: '5m',
+            target_pts: 10,
+            sl_pts: 10,
+            target_type: 'POINTS',
+            advance_trade_decision: true,
+        });
+
+        let state = {
+            isUp: true,
+            prevHigh: { high: 105, low: 95 },
+            prevLow: { high: 105, low: 95 },
+            position: {
+                direction: 'LONG',
+                entryPrice: 100,
+                quantity: 10,
+                entryTime: new Date().toISOString(),
+            },
+            lastBuyPrice: 100,
+            closedByTargetOrSl: false,
+        };
+        resetStore({ balance: 100000, bought: { [holdingsKey()]: 10 } });
+
+        const nestedTargetSnapshot = {
+            symbol: SYMBOL,
+            eventTimestamp: 1720236005000,
+            snapshotVersion: 2,
+            ltp: 112,
+            timeframes: {
+                '5m': {
+                    timeframe: '5m',
+                    startTime: 1720236000000,
+                    endTime: 1720236300000,
+                    formingCandle: {
+                        open: 100,
+                        high: 112,
+                        low: 99,
+                        close: 112,
+                        volume: 250,
+                        isClosed: false,
+                    },
+                    closedCandle: null,
+                },
+            },
+        };
+
+        state = await strategy.executeStrategy(state, nestedTargetSnapshot, SYMBOL, details);
+        assert.equal(store.orders.length, 1, 'Target SELL must execute immediately with nested formingCandle');
+        assert.equal(store.orders[0].transaction_type, 'SELL');
+        assert.equal(state.position, null);
+        assert.equal(state.closedByTargetOrSl, true);
+    });
 });
