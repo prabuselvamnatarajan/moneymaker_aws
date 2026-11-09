@@ -26,6 +26,7 @@ ROOT="$(CDPATH= cd "$SCRIPT_DIR/../.." && pwd)"
 TARGET_HOST="${TARGET_HOST:-algo.mrcobra.link}"
 RUN_MANIFEST=1
 RUN_LIVE=1
+LIVE_ONLY=0
 FAILED=0
 
 usage() {
@@ -61,6 +62,7 @@ while [ $# -gt 0 ]; do
     --live-only)
       RUN_MANIFEST=0
       RUN_LIVE=1
+      LIVE_ONLY=1
       shift
       ;;
     --host)
@@ -132,6 +134,9 @@ if [ "$RUN_LIVE" -eq 1 ]; then
   log_info "=== Running Live Endpoint Reachability Tests ==="
 
   # Test 3: K8s cluster service checks (if kubectl is reachable)
+  ME_TYPE=""
+  RI_TYPE=""
+  ME_EXT=""
   if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
     NS="${K8S_NAMESPACE:-moneymaker}"
     ME_TYPE=$(kubectl -n "$NS" get svc mongo-express -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
@@ -179,13 +184,21 @@ if [ "$RUN_LIVE" -eq 1 ]; then
     fi
   }
 
+  # Check whether live reachability is expected to be accessible
+  HAS_TUNNEL=0
+  if [ "$ME_TYPE" = "LoadBalancer" ] && [ -n "$ME_EXT" ]; then
+    HAS_TUNNEL=1
+  fi
+
   # Test 4: Mongo Express on port 8081 (localhost)
   if probe_http "127.0.0.1" "8081" "/" "" "401"; then
     test_pass "TC-DB-006a: mongo-express reachable at 127.0.0.1:8081 (HTTP 401 Unauthorized basic-auth challenge)"
   elif probe_http "127.0.0.1" "8081" "/" "admin:pass" "200"; then
     test_pass "TC-DB-006a: mongo-express reachable at 127.0.0.1:8081 (HTTP 200 OK with admin:pass)"
-  else
+  elif [ "$LIVE_ONLY" = "1" ] || [ "$HAS_TUNNEL" = "1" ]; then
     test_fail "TC-DB-006a: mongo-express NOT reachable at 127.0.0.1:8081 (check if minikube tunnel or port-forward is active)"
+  else
+    test_warn "TC-DB-006a: mongo-express not reachable at 127.0.0.1:8081 (services are type '${ME_TYPE:-ClusterIP}' without LoadBalancer external IP; requires 'minikube tunnel' or 'kubectl port-forward')"
   fi
 
   # Test 5: Mongo Express on port 8081 (TARGET_HOST)
@@ -193,22 +206,28 @@ if [ "$RUN_LIVE" -eq 1 ]; then
     test_pass "TC-DB-006b: mongo-express reachable at ${TARGET_HOST}:8081 (HTTP 401 basic-auth challenge)"
   elif probe_http "$TARGET_HOST" "8081" "/" "admin:pass" "200"; then
     test_pass "TC-DB-006b: mongo-express reachable at ${TARGET_HOST}:8081 (HTTP 200 with admin:pass)"
-  else
+  elif [ "$LIVE_ONLY" = "1" ] || [ "$HAS_TUNNEL" = "1" ]; then
     test_fail "TC-DB-006b: mongo-express NOT reachable at ${TARGET_HOST}:8081 (ensure ${TARGET_HOST} resolves to 127.0.0.1 in /etc/hosts)"
+  else
+    test_warn "TC-DB-006b: mongo-express not reachable at ${TARGET_HOST}:8081 (requires active tunnel or port-forward)"
   fi
 
   # Test 6: RedisInsight on port 8001 (localhost)
   if probe_http "127.0.0.1" "8001" "/" "" "200"; then
     test_pass "TC-DB-008a: redisinsight reachable at 127.0.0.1:8001 (HTTP 200 OK)"
-  else
+  elif [ "$LIVE_ONLY" = "1" ] || [ "$HAS_TUNNEL" = "1" ]; then
     test_fail "TC-DB-008a: redisinsight NOT reachable at 127.0.0.1:8001 (check if minikube tunnel or port-forward is active)"
+  else
+    test_warn "TC-DB-008a: redisinsight not reachable at 127.0.0.1:8001 (services are type '${RI_TYPE:-ClusterIP}' without LoadBalancer external IP; requires 'minikube tunnel' or 'kubectl port-forward')"
   fi
 
   # Test 7: RedisInsight on port 8001 (TARGET_HOST)
   if probe_http "$TARGET_HOST" "8001" "/" "" "200"; then
     test_pass "TC-DB-008b: redisinsight reachable at ${TARGET_HOST}:8001 (HTTP 200 OK)"
-  else
+  elif [ "$LIVE_ONLY" = "1" ] || [ "$HAS_TUNNEL" = "1" ]; then
     test_fail "TC-DB-008b: redisinsight NOT reachable at ${TARGET_HOST}:8001 (ensure ${TARGET_HOST} resolves to 127.0.0.1 in /etc/hosts)"
+  else
+    test_warn "TC-DB-008b: redisinsight not reachable at ${TARGET_HOST}:8001 (requires active tunnel or port-forward)"
   fi
 fi
 
