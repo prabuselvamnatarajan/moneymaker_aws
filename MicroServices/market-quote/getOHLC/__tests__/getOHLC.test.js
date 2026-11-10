@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
     validateOhlcRequest,
     extractUpstoxErrorMessage,
@@ -7,6 +9,12 @@ import {
 } from '../requestHelper.js';
 
 describe('MicroServices/market-quote/getOHLC Unit Tests (Real Codebase)', () => {
+    it('server.js has valid syntax and parses without error', () => {
+        const serverPath = fileURLToPath(new URL('../server.js', import.meta.url));
+        assert.doesNotThrow(() => {
+            execFileSync(process.execPath, ['--check', serverPath], { stdio: 'pipe' });
+        });
+    });
 
     it('rejects request with missing or empty userId (400)', () => {
         assert.equal(validateOhlcRequest({}).status, 400);

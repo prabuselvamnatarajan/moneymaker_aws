@@ -57,15 +57,6 @@ app.get('/', async (req, res) => {
         resetAuthorisedClient();
         sendAuthError(res, e);
     }
-}); else {
-                console.log('API called successfully. Returned data: ' + JSON.stringify(data));
-                res.send(data);
-            }
-        });
-    } catch (e) {
-        resetAuthorisedClient();
-        sendAuthError(res, e);
-    }
 });
 
 app.listen(port, () => {

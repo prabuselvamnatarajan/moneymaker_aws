@@ -18,9 +18,6 @@ const dbName = process.env.DB_NAME;
 const SHARED_DIR = process.env.SHARED_DIR || process.env.EXPORT_VOLUME_PATH || '/shared';
 const EXPORTED_DATA_DIR = process.env.EXPORTED_DATA_DIR || path.join(SHARED_DIR, 'exportedData');
 
-// IST timezone
-const IST = 'Asia/Kolkata';
-
 async function exportCollection(collectionName) {
   const client = new MongoClient(uri);
   try {
@@ -55,7 +52,7 @@ async function exportCollection(collectionName) {
           const symCollection = stockDb.collection(symName);
           // Ensure index on timestamp exists to optimize query execution and avoid collection scans
           await symCollection.createIndex({ timestamp: 1 });
-          
+
           const sanitizedSymName = symName.replace(/[^a-zA-Z0-9-_]/g, '_');
           const symFilePath = path.join(exportPath, `${sanitizedSymName}.json`);
 
@@ -110,14 +107,14 @@ async function exportCollection(collectionName) {
       const { start, end } = calculateTimeWindow(targetDbName, todayIST);
 
       const query = { [timeField]: { $gte: start, $lte: end } };
-      
+
       // Optimize stock database collection queries by ensuring index
       if (targetDbName === 'stock_database') {
         await collection.createIndex({ [timeField]: 1 });
       }
 
       const cursor = collection.find(query);
-      
+
       // Use streaming to write cursor output directly to file
       const writeStream = fs.createWriteStream(filePath);
       writeStream.write('[');
