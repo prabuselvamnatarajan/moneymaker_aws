@@ -44,9 +44,10 @@ log_k8s_workload_state() {
   fi
   log_info "Kubernetes state for $_ns/$_workload:"
   kubectl -n "$_ns" get "$_workload" -o wide 2>/dev/null || log_warn "Could not get $_workload"
+  _app=$(printf '%s' "$_workload" | sed 's#.*/##')
+  kubectl -n "$_ns" get pods -l "app=${_app}" -o wide 2>/dev/null || true
   kubectl -n "$_ns" describe "$_workload" 2>/dev/null | tail -40 || true
   # Prefer Deployment/StatefulSet name for logs via label app=
-  _app=$(printf '%s' "$_workload" | sed 's#.*/##')
   kubectl -n "$_ns" logs -l "app=${_app}" --tail=20 2>/dev/null || true
 }
 

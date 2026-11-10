@@ -79,7 +79,7 @@ spec:
           args:
             - |
               set -e
-              for h in mongo1:27017 mongo2:27017 mongo3:27017 redis:6379 zookeeper:2181 kafka-broker-1:9092 kafka-broker-2:9092 kafka-broker-3:9092; do
+              for h in mongo1:27017 mongo2:27017 mongo3:27017 redis:6379; do
                 host="${h%%:*}"; port="${h##*:}"
                 echo "Waiting for $host:$port..."
                 until nc -z "$host" "$port"; do sleep 2; done
@@ -163,21 +163,29 @@ spec:
               memory: 256Mi
             limits:
               memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 2
-            periodSeconds: 2
-            timeoutSeconds: 2
-            failureThreshold: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 15
-            periodSeconds: 10
-            timeoutSeconds: 3
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
             failureThreshold: 3
           lifecycle:
             preStop:

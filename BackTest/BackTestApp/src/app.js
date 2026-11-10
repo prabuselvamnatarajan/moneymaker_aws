@@ -1,5 +1,6 @@
 import express from "express";
 import bodyParser from "body-parser";
+import mongoose from "mongoose";
 
 // Route imports
 import tradeRoutes from "./routes/tradeRoute.js";
@@ -17,6 +18,14 @@ import brokerRoutes from "./routes/brokerRoute.js";
 import externalBrokerRoutes from "./routes/externalBrokerRoute.js";
 import volumeRoutes from "./routes/volumeRoute.js";
 import dockerRoutes from "./routes/dockerRoute.js";
+
+let isReady = false;
+
+export const setAppReady = (ready = true) => {
+  isReady = Boolean(ready);
+};
+
+export const getAppReady = () => isReady;
 
 const app = express();
 app.set('trust proxy', true);
@@ -37,7 +46,28 @@ app.use(bodyParser.urlencoded({ limit: "500mb", extended: true }));
 
 // Health check
 app.get("/health", (req, res) => {
+  const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+  if (!isReady && !dbConnected) {
+    return res.status(503).json({
+      status: "initializing",
+      db: "connecting",
+      timestamp: new Date().toISOString(),
+    });
+  }
   res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Guard API routes while database/services are initializing
+app.use((req, res, next) => {
+  if (req.path === "/health") return next();
+  const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+  if (!isReady && !dbConnected) {
+    return res.status(503).json({
+      message: "BacktestApp is initializing dependencies, please try again shortly",
+      status: "initializing",
+    });
+  }
+  next();
 });
 
 // --- Mount routes at root level (REST API Design Plan) ---
