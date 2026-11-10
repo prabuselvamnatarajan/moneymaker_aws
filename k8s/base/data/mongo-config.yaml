@@ -10,6 +10,9 @@ data:
   mongod.conf: |
     storage:
       dbPath: /data/db
+      wiredTiger:
+        engineConfig:
+          cacheSizeGB: 0.25
     net:
       bindIp: 0.0.0.0
       port: 27017
@@ -21,6 +24,9 @@ data:
   mongod-bootstrap.conf: |
     storage:
       dbPath: /data/db
+      wiredTiger:
+        engineConfig:
+          cacheSizeGB: 0.25
     net:
       bindIp: 0.0.0.0
       port: 27017
@@ -29,18 +35,34 @@ data:
   # Bitnami-inspired bootstrap (see bitnami/charts mongodb setup.sh):
   # - primary (mongo1) initiates with ONLY itself, then rs.add secondaries
   # - treat "already initialized" as success and force-reconfig hostnames if needed
-    # - secondaries wait for /init-signal/done then start with auth+keyFile
-    # - if /init-signal/done exists but RS is not configured (stale signal after PVC
-    #   wipe), mongo1 clears the signal and re-bootstraps. Secondaries must not
-    #   delete that shared file; they wait until mongo1 replaces it.
+  # - secondaries wait for /init-signal/done then start with auth+keyFile
+  # - if /init-signal/done exists but RS is not configured (stale signal after PVC
+  #   wipe), mongo1 clears the signal and re-bootstraps. Secondaries must not
+  #   delete that shared file; they wait until mongo1 replaces it.
   init-mongo1.sh: |
     #!/bin/bash
     set -e
 
     echo "Preparing keyfile..."
-    cp /etc/mongo-keyfile /data/keyfile
+    cp -f /etc/mongo-keyfile /data/keyfile || { rm -f /data/keyfile && cp /etc/mongo-keyfile /data/keyfile; }
     chmod 400 /data/keyfile
     chown mongodb:mongodb /data/keyfile
+
+    stop_mongod_and_wait() {
+      echo "Stopping mongod..."
+      mongod --shutdown --dbpath /data/db || true
+      local waited=0
+      while pgrep -x mongod >/dev/null 2>&1 && [ "$waited" -lt 30 ]; do
+        sleep 1
+        waited=$((waited + 1))
+      done
+      if pgrep -x mongod >/dev/null 2>&1; then
+        echo "mongod did not exit cleanly after shutdown, sending SIGKILL..."
+        pkill -9 -x mongod || true
+        sleep 1
+      fi
+      rm -f /data/db/mongod.lock
+    }
 
     mongo_rs_configured() {
       mongosh --quiet --eval '
@@ -62,13 +84,11 @@ data:
       done
       if mongo_rs_configured; then
         echo "Replica set OK — starting with auth..."
-        mongod --shutdown --dbpath /data/db || true
-        sleep 1
+        stop_mongod_and_wait
         exec mongod --config /etc/mongod.conf
       fi
       echo "Stale init signal (no replica set config) — clearing and re-bootstrapping..."
-      mongod --shutdown --dbpath /data/db || true
-      sleep 1
+      stop_mongod_and_wait
       rm -f /init-signal/done
     fi
 
@@ -143,14 +163,18 @@ data:
       }
 
       function ensureMember(host) {
-        var st = rs.status();
-        var found = false;
-        st.members.forEach(function(m) { if (m.name === host) found = true; });
-        if (!found) {
-          print("rs.add(" + host + ")");
-          rs.add(host);
-        } else {
-          print(host + " already a member");
+        try {
+          var st = rs.status();
+          var found = false;
+          st.members.forEach(function(m) { if (m.name === host) found = true; });
+          if (!found) {
+            print("rs.add(" + host + ")");
+            rs.add(host);
+          } else {
+            print(host + " already a member");
+          }
+        } catch (e) {
+          print("Warning: rs.add failed for " + host + ": " + e);
         }
       }
 
@@ -170,10 +194,13 @@ data:
 
       for (var k = 0; k < 60; k++) {
         try {
-          if (db.hello().isWritablePrimary) break;
           var st2 = rs.status();
+          var has2 = st2.members.some(function(m) { return m.name === "mongo2:27017"; });
+          var has3 = st2.members.some(function(m) { return m.name === "mongo3:27017"; });
+          if (!has2) ensureMember("mongo2:27017");
+          if (!has3) ensureMember("mongo3:27017");
           var hasPrimary = st2.members.some(function(m) { return m.stateStr === "PRIMARY"; });
-          if (hasPrimary) break;
+          if (hasPrimary && has2 && has3) break;
         } catch (e) {}
         sleep(2000);
       }
@@ -196,8 +223,7 @@ data:
     '
 
     echo "Stopping bootstrap mongod..."
-    mongod --shutdown --dbpath /data/db || true
-    sleep 2
+    stop_mongod_and_wait
 
     echo "Writing signal for mongo2/mongo3..."
     touch /init-signal/done
@@ -209,9 +235,25 @@ data:
     set -e
 
     echo "Preparing keyfile..."
-    cp /etc/mongo-keyfile /data/keyfile
+    cp -f /etc/mongo-keyfile /data/keyfile || { rm -f /data/keyfile && cp /etc/mongo-keyfile /data/keyfile; }
     chmod 400 /data/keyfile
     chown mongodb:mongodb /data/keyfile
+
+    stop_mongod_and_wait() {
+      echo "Stopping mongod..."
+      mongod --shutdown --dbpath /data/db || true
+      local waited=0
+      while pgrep -x mongod >/dev/null 2>&1 && [ "$waited" -lt 30 ]; do
+        sleep 1
+        waited=$((waited + 1))
+      done
+      if pgrep -x mongod >/dev/null 2>&1; then
+        echo "mongod did not exit cleanly after shutdown, sending SIGKILL..."
+        pkill -9 -x mongod || true
+        sleep 1
+      fi
+      rm -f /data/db/mongod.lock
+    }
 
     mongo_rs_configured() {
       mongosh --quiet --eval '
@@ -233,13 +275,11 @@ data:
       done
       if mongo_rs_configured; then
         echo "Replica set OK — starting with auth..."
-        mongod --shutdown --dbpath /data/db || true
-        sleep 1
+        stop_mongod_and_wait
         exec mongod --config /etc/mongod.conf
       fi
       echo "Stale init signal (no replica set config) — waiting for mongo1 to replace it..."
-      mongod --shutdown --dbpath /data/db || true
-      sleep 1
+      stop_mongod_and_wait
       # Do not delete /init-signal/done here. mongo1, mongo2, and mongo3 share that
       # file; a secondary rm can wipe the signal mongo1 just wrote and leave the
       # other members waiting forever.
@@ -262,7 +302,6 @@ data:
     done
 
     echo "Signal received, restarting with auth + keyfile..."
-    mongod --shutdown --dbpath /data/db || true
-    sleep 2
+    stop_mongod_and_wait
 
     exec mongod --config /etc/mongod.conf

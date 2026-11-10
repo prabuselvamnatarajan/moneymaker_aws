@@ -2,9 +2,25 @@
 set -e
 
 echo "Preparing keyfile..."
-cp /etc/mongo-keyfile /data/keyfile
+cp -f /etc/mongo-keyfile /data/keyfile || { rm -f /data/keyfile && cp /etc/mongo-keyfile /data/keyfile; }
 chmod 400 /data/keyfile
 chown mongodb:mongodb /data/keyfile
+
+stop_mongod_and_wait() {
+  echo "Stopping mongod..."
+  mongod --shutdown --dbpath /data/db || true
+  local waited=0
+  while pgrep -x mongod >/dev/null 2>&1 && [ "$waited" -lt 30 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if pgrep -x mongod >/dev/null 2>&1; then
+    echo "mongod did not exit cleanly after shutdown, sending SIGKILL..."
+    pkill -9 -x mongod || true
+    sleep 1
+  fi
+  rm -f /data/db/mongod.lock
+}
 
 # Returns 0 when this node has a valid replica-set config (setName present).
 mongo_rs_configured() {
@@ -28,27 +44,30 @@ if [ -f /init-signal/done ]; then
   done
   if mongo_rs_configured; then
     echo "Replica set OK — starting with auth..."
-    mongod --shutdown --dbpath /data/db || true
-    sleep 1
+    stop_mongod_and_wait
     exec mongod --config /etc/mongod.conf
   fi
   echo "Stale init signal (no replica set config) — clearing and waiting for re-bootstrap..."
-  mongod --shutdown --dbpath /data/db || true
-  sleep 1
-  rm -f /init-signal/done
+  stop_mongod_and_wait
+  stale_mtime="$(stat -c %Y /init-signal/done 2>/dev/null || true)"
 fi
 
 echo "Starting MongoDB WITHOUT auth for bootstrap (secondary)..."
 mongod --config /etc/mongod-bootstrap.conf --fork --logpath /tmp/mongod.log
 
 echo "Waiting for bootstrap signal from mongo1..."
-until [ -f /init-signal/done ]; do
+while true; do
+  if [ -f /init-signal/done ]; then
+    now_mtime="$(stat -c %Y /init-signal/done 2>/dev/null || true)"
+    if [ -z "${stale_mtime:-}" ] || [ "$now_mtime" != "$stale_mtime" ]; then
+      break
+    fi
+  fi
   echo "  ...waiting for signal..."
   sleep 2
 done
 
 echo "Signal received, restarting with auth + keyfile..."
-mongod --shutdown --dbpath /data/db || true
-sleep 2
+stop_mongod_and_wait
 
 exec mongod --config /etc/mongod.conf

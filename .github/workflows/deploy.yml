@@ -224,6 +224,19 @@ jobs:
           kubectl -n moneymaker describe deployment/backtest-app 2>&1 | tail -80 || true
           kubectl -n moneymaker describe deployment/reverse-proxy 2>&1 | tail -80 || true
           kubectl -n moneymaker describe statefulset/mongo1 2>&1 | tail -40 || true
+          echo "===== describe mongo pods ====="
+          kubectl -n moneymaker describe pod/mongo1-0 2>&1 | tail -50 || true
+          kubectl -n moneymaker describe pod/mongo2-0 2>&1 | tail -50 || true
+          kubectl -n moneymaker describe pod/mongo3-0 2>&1 | tail -50 || true
+          echo "===== mongo1 logs ====="
+          kubectl -n moneymaker logs pod/mongo1-0 --tail=80 2>&1 || true
+          kubectl -n moneymaker logs pod/mongo1-0 --previous --tail=80 2>&1 || true
+          echo "===== mongo2 logs ====="
+          kubectl -n moneymaker logs pod/mongo2-0 --tail=80 2>&1 || true
+          kubectl -n moneymaker logs pod/mongo2-0 --previous --tail=80 2>&1 || true
+          echo "===== mongo3 logs ====="
+          kubectl -n moneymaker logs pod/mongo3-0 --tail=80 2>&1 || true
+          kubectl -n moneymaker logs pod/mongo3-0 --previous --tail=80 2>&1 || true
           echo "===== reverse-proxy logs ====="
           kubectl -n moneymaker logs -l app=reverse-proxy --tail=80 2>&1 || true
           echo "===== backtest-app logs ====="

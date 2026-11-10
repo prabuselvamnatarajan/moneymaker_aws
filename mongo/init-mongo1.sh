@@ -2,9 +2,25 @@
 set -e
 
 echo "Preparing keyfile..."
-cp /etc/mongo-keyfile /data/keyfile
+cp -f /etc/mongo-keyfile /data/keyfile || { rm -f /data/keyfile && cp /etc/mongo-keyfile /data/keyfile; }
 chmod 400 /data/keyfile
 chown mongodb:mongodb /data/keyfile
+
+stop_mongod_and_wait() {
+  echo "Stopping mongod..."
+  mongod --shutdown --dbpath /data/db || true
+  local waited=0
+  while pgrep -x mongod >/dev/null 2>&1 && [ "$waited" -lt 30 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if pgrep -x mongod >/dev/null 2>&1; then
+    echo "mongod did not exit cleanly after shutdown, sending SIGKILL..."
+    pkill -9 -x mongod || true
+    sleep 1
+  fi
+  rm -f /data/db/mongod.lock
+}
 
 # Returns 0 when this node has a valid replica-set config (setName present).
 mongo_rs_configured() {
@@ -29,13 +45,11 @@ if [ -f /init-signal/done ]; then
   done
   if mongo_rs_configured; then
     echo "Replica set OK — starting with auth..."
-    mongod --shutdown --dbpath /data/db || true
-    sleep 1
+    stop_mongod_and_wait
     exec mongod --config /etc/mongod.conf
   fi
   echo "Stale init signal (no replica set config) — clearing and re-bootstrapping..."
-  mongod --shutdown --dbpath /data/db || true
-  sleep 1
+  stop_mongod_and_wait
   rm -f /init-signal/done
 fi
 
@@ -113,11 +127,15 @@ mongosh --quiet --eval '
   }
 
   function ensureMember(host) {
-    var st = rs.status();
-    var found = false;
-    st.members.forEach(function(m) { if (m.name === host) found = true; });
-    if (!found) { print("rs.add(" + host + ")"); rs.add(host); }
-    else { print(host + " already a member"); }
+    try {
+      var st = rs.status();
+      var found = false;
+      st.members.forEach(function(m) { if (m.name === host) found = true; });
+      if (!found) { print("rs.add(" + host + ")"); rs.add(host); }
+      else { print(host + " already a member"); }
+    } catch (e) {
+      print("Warning: rs.add failed for " + host + ": " + e);
+    }
   }
 
   if (db.hello().isWritablePrimary) {
@@ -125,6 +143,19 @@ mongosh --quiet --eval '
     ensureMember("mongo3:27017");
   } else {
     forceDesiredConfig();
+  }
+
+  for (var k = 0; k < 60; k++) {
+    try {
+      var st2 = rs.status();
+      var has2 = st2.members.some(function(m) { return m.name === "mongo2:27017"; });
+      var has3 = st2.members.some(function(m) { return m.name === "mongo3:27017"; });
+      if (!has2) ensureMember("mongo2:27017");
+      if (!has3) ensureMember("mongo3:27017");
+      var hasPrimary = st2.members.some(function(m) { return m.stateStr === "PRIMARY"; });
+      if (hasPrimary && has2 && has3) break;
+    } catch (e) {}
+    sleep(2000);
   }
 
   printjson(rs.status().members.map(function(m) { return { n: m.name, s: m.stateStr }; }));
@@ -145,8 +176,7 @@ mongosh admin --quiet --eval '
 '
 
 echo "Stopping bootstrap mongod..."
-mongod --shutdown --dbpath /data/db || true
-sleep 2
+stop_mongod_and_wait
 
 # Only signal secondaries after we have a writable primary (best-effort check on last run).
 echo "Writing signal for mongo2/mongo3..."

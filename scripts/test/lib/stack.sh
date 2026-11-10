@@ -120,6 +120,9 @@ wait_for_backtest_app() {
       log_info "Still waiting for BackTestApp ($_i/${_max})... last_http=${LAST_HEALTH_CODE} body=${LAST_HEALTH_BODY}"
       log_k8s_workload_state "deployment/backtest-app"
       log_k8s_workload_state "deployment/reverse-proxy"
+      if command -v kubectl >/dev/null 2>&1; then
+        kubectl -n "$_ns" get pods -l app.kubernetes.io/component=mongo -o wide 2>/dev/null || true
+      fi
       # Bypass Ingress: curl from a throwaway pod on the cluster network
       if command -v kubectl >/dev/null 2>&1; then
         kubectl -n "$_ns" run "mm-health-probe-$$" --rm -i --restart=Never --image=curlimages/curl:8.5.0 -- \
