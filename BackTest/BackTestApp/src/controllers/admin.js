@@ -35,10 +35,12 @@ export const createUser = async (req, res, next) => {
       return res.status(400).json({ message: "Username, name, email, and password are required" });
     }
 
-    const emailExists = await User.findOne({ email: email.toLowerCase() });
+    // ⚡ Bolt: Added .lean() to existence checks (avoids full Mongoose document instantiation)
+    const emailExists = await User.findOne({ email: email.toLowerCase() }).lean();
     if (emailExists) return res.status(409).json({ message: "Email is already taken" });
 
-    const usernameExists = await User.findOne({ username });
+    // ⚡ Bolt: Added .lean() to existence checks (avoids full Mongoose document instantiation)
+    const usernameExists = await User.findOne({ username }).lean();
     if (usernameExists) return res.status(409).json({ message: "Username is already taken" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -49,7 +51,8 @@ export const createUser = async (req, res, next) => {
       userRoles = roles;
     } else {
       const Role = mongoose.model("Role");
-      const defaultRole = await Role.findOne({ name: "user" });
+      // ⚡ Bolt: Added .lean() as we only need the plain object to read _id
+      const defaultRole = await Role.findOne({ name: "user" }).lean();
       userRoles = defaultRole ? [defaultRole._id] : [];
     }
 
@@ -95,13 +98,15 @@ export const updateUser = async (req, res, next) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (email && email.toLowerCase() !== user.email.toLowerCase()) {
-      const emailExists = await User.findOne({ email: email.toLowerCase() });
+      // ⚡ Bolt: Added .lean() for read-only existence check to save memory
+      const emailExists = await User.findOne({ email: email.toLowerCase() }).lean();
       if (emailExists) return res.status(409).json({ message: "Email is already taken" });
       user.email = email.toLowerCase();
     }
 
     if (username && username !== user.username) {
-      const usernameExists = await User.findOne({ username });
+      // ⚡ Bolt: Added .lean() for read-only existence check to save memory
+      const usernameExists = await User.findOne({ username }).lean();
       if (usernameExists) return res.status(409).json({ message: "Username is already taken" });
       user.username = username;
     }
