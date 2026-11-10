@@ -3,6 +3,12 @@ import mongoose from "mongoose";
 const MONGO_URI = process.env.MONGO_URI;
 export const MONGO_DB = process.env.MONGO_DB || "BacktestApp";
 
+export const DEFAULT_MONGO_OPTIONS = {
+  serverSelectionTimeoutMS: 5000,
+  connectTimeoutMS: 5000,
+  socketTimeoutMS: 20000,
+};
+
 export const buildMongoUri = (rawUri = process.env.MONGO_URI) => {
   const mongoDb = process.env.MONGO_DB || MONGO_DB;
   // MONGO_URI will not contain a database part — always append `MONGO_DB`.
@@ -13,11 +19,18 @@ export const buildMongoUri = (rawUri = process.env.MONGO_URI) => {
   return query ? `${uriWithDb}?${query}` : uriWithDb;
 };
 
-export const connectDB = async ({ retries = 30, delayMs = 2000, exitOnError = true, uri: overrideUri } = {}) => {
+export const connectDB = async ({
+  retries = 30,
+  delayMs = 2000,
+  exitOnError = true,
+  uri: overrideUri,
+  options: overrideOptions,
+} = {}) => {
   const uri = overrideUri || buildMongoUri();
+  const options = { ...DEFAULT_MONGO_OPTIONS, ...overrideOptions };
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      await mongoose.connect(uri);
+      await mongoose.connect(uri, options);
       console.log("✅ MongoDB connected successfully");
       console.log(`Using MongoDB URI: ${uri}`);
       return mongoose.connection;

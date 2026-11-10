@@ -47,19 +47,37 @@ app.use(bodyParser.urlencoded({ limit: "500mb", extended: true }));
 // Health check
 app.get("/health", (req, res) => {
   const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
-  if (!isReady && !dbConnected) {
+  const ready = isReady || dbConnected;
+  res.status(200).json({
+    status: ready ? "ok" : "initializing",
+    ready: isReady,
+    db: dbConnected ? "connected" : "connecting",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/health/ready", (req, res) => {
+  const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
+  const ready = isReady || dbConnected;
+  if (!ready) {
     return res.status(503).json({
       status: "initializing",
+      ready: false,
       db: "connecting",
       timestamp: new Date().toISOString(),
     });
   }
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: "ok",
+    ready: isReady,
+    db: "connected",
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Guard API routes while database/services are initializing
 app.use((req, res, next) => {
-  if (req.path === "/health") return next();
+  if (req.path === "/health" || req.path === "/health/ready") return next();
   const dbConnected = mongoose.connection && mongoose.connection.readyState === 1;
   if (!isReady && !dbConnected) {
     return res.status(503).json({

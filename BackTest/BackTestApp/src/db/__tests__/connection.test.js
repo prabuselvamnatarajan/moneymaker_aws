@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
-import { buildMongoUri, connectDB, MONGO_DB } from "../connection.js";
+import { buildMongoUri, connectDB, DEFAULT_MONGO_OPTIONS, MONGO_DB } from "../connection.js";
 
 test("BackTestApp MongoDB Connection & Retry Logic", async (t) => {
   await t.test("buildMongoUri correctly parses and constructs replica set URI", () => {
@@ -74,6 +74,32 @@ test("BackTestApp MongoDB Connection & Retry Logic", async (t) => {
       const conn = await connectDB({ retries: 3, delayMs: 10, exitOnError: false });
       assert.strictEqual(attempts, 2);
       assert.strictEqual(conn, mongoose.connection);
+    } finally {
+      mongoose.connect = originalConnect;
+    }
+  });
+
+  await t.test("connectDB applies DEFAULT_MONGO_OPTIONS and allows overrides", async () => {
+    const originalConnect = mongoose.connect;
+    let capturedUri;
+    let capturedOptions;
+    try {
+      mongoose.connect = async (uri, opts) => {
+        capturedUri = uri;
+        capturedOptions = opts;
+        return mongoose.connection;
+      };
+
+      await connectDB({
+        retries: 1,
+        exitOnError: false,
+        options: { serverSelectionTimeoutMS: 2500, customOption: "test" },
+      });
+
+      assert.strictEqual(capturedOptions.serverSelectionTimeoutMS, 2500);
+      assert.strictEqual(capturedOptions.connectTimeoutMS, DEFAULT_MONGO_OPTIONS.connectTimeoutMS);
+      assert.strictEqual(capturedOptions.socketTimeoutMS, DEFAULT_MONGO_OPTIONS.socketTimeoutMS);
+      assert.strictEqual(capturedOptions.customOption, "test");
     } finally {
       mongoose.connect = originalConnect;
     }

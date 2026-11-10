@@ -29,12 +29,23 @@ test("BackTestApp /health & Readiness Initialization Guard Integration Tests", a
     assert.strictEqual(getAppReady(), true);
   });
 
-  await t.test("GET /health returns 503 while dependencies are initializing", async () => {
+  await t.test("GET /health returns 200 initializing while dependencies are initializing", async () => {
     setAppReady(false);
     const res = await fetch(`${baseUrl}/health`);
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.status, "initializing");
+    assert.strictEqual(body.ready, false);
+    assert.ok(body.timestamp);
+  });
+
+  await t.test("GET /health/ready returns 503 while dependencies are initializing", async () => {
+    setAppReady(false);
+    const res = await fetch(`${baseUrl}/health/ready`);
     assert.strictEqual(res.status, 503);
     const body = await res.json();
     assert.strictEqual(body.status, "initializing");
+    assert.strictEqual(body.ready, false);
     assert.ok(body.timestamp);
   });
 
@@ -57,6 +68,17 @@ test("BackTestApp /health & Readiness Initialization Guard Integration Tests", a
     assert.strictEqual(res.status, 200);
     const body = await res.json();
     assert.strictEqual(body.status, "ok");
+    assert.strictEqual(body.ready, true);
+    assert.ok(body.timestamp);
+  });
+
+  await t.test("GET /health/ready returns 200 ok once app is marked ready", async () => {
+    setAppReady(true);
+    const res = await fetch(`${baseUrl}/health/ready`);
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.status, "ok");
+    assert.strictEqual(body.ready, true);
     assert.ok(body.timestamp);
   });
 });

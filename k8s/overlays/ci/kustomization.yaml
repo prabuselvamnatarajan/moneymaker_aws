@@ -220,6 +220,35 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 0
+  # Scale down Kafka and Zookeeper StatefulSets in CI (E2E only tests BackTestApp and BackTestUI)
+  - target:
+      kind: StatefulSet
+      name: zookeeper
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  - target:
+      kind: StatefulSet
+      name: kafka-broker-1
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  - target:
+      kind: StatefulSet
+      name: kafka-broker-2
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  - target:
+      kind: StatefulSet
+      name: kafka-broker-3
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
   # Skip appinit Job in CI (compose sets replicas: 0)
   - target:
       kind: Job
