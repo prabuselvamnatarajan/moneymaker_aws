@@ -16,7 +16,7 @@ jobs:
   build:
     name: Build and push images
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 90
     concurrency:
       group: cicd-build-${{ github.workflow }}-${{ github.ref }}
@@ -59,6 +59,30 @@ jobs:
           chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh kill-moneymaker.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
 
+      - name: Reset Docker credential store
+        run: |
+          # Self-hosted runners may have a credsStore (desktop, secretservice, pass)
+          # that overrides the auths written by docker/login-action.
+          # Remove it so the plain JSON token is used for push.
+          cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+          if [ -f "$cfg" ]; then
+            python3 -c "
+          import json, pathlib, sys
+          p = pathlib.Path('$cfg')
+          d = json.loads(p.read_text()) if p.exists() else {}
+          changed = False
+          for key in ('credsStore', 'credHelpers'):
+              if key in d:
+                  del d[key]
+                  changed = True
+          if changed:
+              p.write_text(json.dumps(d, indent=2) + '\n')
+              print(f'Removed credential helpers from {p}')
+          else:
+              print(f'No credential helpers found in {p}')
+          "
+          fi
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -82,7 +106,7 @@ jobs:
     name: Unit tests (${{ matrix.image }})
     needs: build
     if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -114,7 +138,7 @@ jobs:
     name: End-to-end tests
     needs: build
     if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 120
     concurrency:
       group: cicd-e2e-${{ github.workflow }}-${{ github.ref }}
@@ -152,6 +176,27 @@ jobs:
           chmod +x scripts/pull-images.sh scripts/deploy-k8s.sh
           chmod +x build-all.sh run_all_test_cases.sh clear-and-seed.sh kill-moneymaker.sh
           find scripts -type f -name '*.sh' -exec chmod +x {} +
+
+      - name: Reset Docker credential store
+        run: |
+          cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+          if [ -f "$cfg" ]; then
+            python3 -c "
+          import json, pathlib, sys
+          p = pathlib.Path('$cfg')
+          d = json.loads(p.read_text()) if p.exists() else {}
+          changed = False
+          for key in ('credsStore', 'credHelpers'):
+              if key in d:
+                  del d[key]
+                  changed = True
+          if changed:
+              p.write_text(json.dumps(d, indent=2) + '\n')
+              print(f'Removed credential helpers from {p}')
+          else:
+              print(f'No credential helpers found in {p}')
+          "
+          fi
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -264,7 +309,7 @@ jobs:
     name: Deploy to AWS
     needs: [unit, e2e]
     if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 60
     concurrency:
       group: deploy-main

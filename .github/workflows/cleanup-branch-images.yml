@@ -9,7 +9,7 @@ jobs:
   cleanup:
     name: Delete Docker Hub branch tags
     if: github.event.ref_type == 'branch' && github.event.ref != 'main'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
     steps:
       - name: Checkout

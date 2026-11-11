@@ -177,6 +177,14 @@ ensure_cluster() {
     else
       curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION=v1.31.2+k3s1 sh -
     fi
+  else
+    # k3s is installed but cluster-info failed — restart the service.
+    log "k3s is installed but the API is unreachable; restarting k3s service..."
+    if [ "$(id -u)" -eq 0 ]; then
+      systemctl restart k3s 2>/dev/null || service k3s restart 2>/dev/null || true
+    else
+      sudo systemctl restart k3s 2>/dev/null || sudo service k3s restart 2>/dev/null || true
+    fi
   fi
 
   # Wait for k3s.yaml to be created by the service
@@ -212,7 +220,15 @@ ensure_cluster() {
     _i=$((_i + 1))
     sleep 2
   done
-  log "ERROR: k3s API did not become ready"
+  # Dump diagnostics before failing
+  log "ERROR: k3s API did not become ready after 120s"
+  if [ "$(id -u)" -eq 0 ]; then
+    systemctl status k3s 2>&1 | tail -20 || true
+    journalctl -u k3s --no-pager -n 30 2>&1 || true
+  else
+    sudo systemctl status k3s 2>&1 | tail -20 || true
+    sudo journalctl -u k3s --no-pager -n 30 2>&1 || true
+  fi
   exit 1
 }
 
