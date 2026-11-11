@@ -94,7 +94,7 @@ export async function openProfile(page: Page): Promise<void> {
 }
 
 export async function setSidebarTimezone(page: Page, mode: 'UTC' | 'Local'): Promise<void> {
-  await page.locator('#sidebar-container').getByRole('button', { name: mode === 'UTC' ? 'UTC' : 'LOC' }).click();
+  await page.locator('#sidebar-container').getByRole('button', { name: mode === 'UTC' ? 'UTC' : 'LOC', exact: true }).click();
 }
 
 export async function navigateToStrategies(page: Page): Promise<void> {
