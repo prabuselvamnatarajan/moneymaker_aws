@@ -808,7 +808,7 @@ export default function SymbolsListView({
                   className="w-full bg-slate-955 border border-slate-800 rounded-md p-2.5 text-xs text-slate-100 focus:outline-hidden focus:border-indigo-500 font-mono"
                 >
                   <option value="">Select active asset...</option>
-                  {tableSymbols
+                  {(tableSymbols.length > 0 ? tableSymbols : symbols)
                     .filter(s => s.isActive && (s.instrumentClass === 'INDEX' || s.instrumentClass === 'EQUITY'))
                     .map(sym => (
                       <option key={sym.id || sym.ticker} value={sym.ticker}>

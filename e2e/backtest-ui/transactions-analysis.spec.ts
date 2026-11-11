@@ -74,7 +74,9 @@ test.describe('Transactions and analysis views', () => {
     await navigateTo(page, 'transactions');
 
     await page.locator('#toggle-advance-filters-btn').click();
+    await page.locator(`#filter-acc-${account._id}`).waitFor({ timeout: 15_000 });
     await page.locator(`#filter-acc-${account._id}`).click();
+    await page.locator(`#filter-strat-${deployment._id}`).waitFor({ timeout: 15_000 });
     await page.locator(`#filter-strat-${deployment._id}`).click();
     await page.locator('#advanced-filters-panel label').filter({ hasText: 'BUY' }).locator('input[type="checkbox"]').check();
 

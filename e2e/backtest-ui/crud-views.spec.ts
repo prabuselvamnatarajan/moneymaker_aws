@@ -263,7 +263,9 @@ test.describe('CRUD list views', () => {
     const bulkModal = page.locator('.fixed.inset-0').filter({ hasText: 'Add Bulk Option Symbols' });
     await bulkModal.getByRole('heading', { name: 'Add Bulk Option Symbols' }).waitFor({ timeout: 15_000 });
 
-    await bulkModal.locator('select').first().selectOption('NIFTY');
+    const underlyingSelect = bulkModal.locator('select').first();
+    await expect(underlyingSelect.locator('option[value="NIFTY"]')).toBeAttached({ timeout: 15_000 });
+    await underlyingSelect.selectOption('NIFTY');
     await bulkModal.locator('input[type="date"]').fill('2026-12-25');
     await bulkModal.locator('select').nth(1).selectOption('OTM');
     await bulkModal.locator('select').nth(2).selectOption('Both');

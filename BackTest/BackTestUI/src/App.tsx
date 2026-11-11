@@ -264,9 +264,17 @@ export default function App() {
 
     return () => {
       isDisposed = true;
-      clearTimeout(reconnectTimeout);
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-        ws.close();
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+      if (ws) {
+        ws.onclose = null;
+        ws.onerror = null;
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+        ws = null;
       }
     };
   }, [isAuthenticated]);
