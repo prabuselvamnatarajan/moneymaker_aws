@@ -5,7 +5,7 @@ export function generateTotp(secret: string): string {
 }
 
 export function generateTotpAt(secret: string, epochMs: number): string {
-  return authenticator.generate(secret, { epoch: Math.floor(epochMs / 1000) });
+  return authenticator.clone({ epoch: Math.floor(epochMs / 1000) }).generate(secret);
 }
 
 export function verifyTotp(token: string, secret: string): boolean {

@@ -197,7 +197,7 @@ async function getPredefinedPaperAccount(
 ): Promise<{ _id: string; account_name: string; current_balance: number }> {
   const res = await apiRequest(request, token).get('/accounts');
   await expectStatus(res, 200);
-  const body = await jsonBody<{ items: Array<{ _id: string; account_name: string; account_type: string; current_balance: number }> }>(res);
+  const body = await jsonBody<{ items: Array<{ _id: string; account_name: string; account_type: string; current_balance: number; description?: string }> }>(res);
   const paper =
     body.items.find((a) => a.account_type === 'PAPER' && a.account_name === 'paper') ||
     body.items.find((a) => a.account_type === 'PAPER' && a.account_name === 'Test 1') ||
