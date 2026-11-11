@@ -168,8 +168,12 @@ test.describe('CRUD list views', () => {
     await page
       .locator('textarea[placeholder*="Describe trade rules"]')
       .fill('E2E strategy template description');
+    const createResPromise = page.waitForResponse(
+      (r) => r.url().includes('/backtestapp/strategies') && r.request().method() === 'POST' && r.ok(),
+      { timeout: 30_000 }
+    );
     await page.getByRole('button', { name: 'Create Template' }).click();
-    await createPromise;
+    await Promise.all([createPromise, createResPromise]);
 
     const templateCard = page
       .getByRole('heading', { level: 3, name: templateName })
