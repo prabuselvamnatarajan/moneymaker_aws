@@ -176,7 +176,8 @@ export const resetPassword = async (req, res, next) => {
 
 export const getSessions = async (req, res, next) => {
   try {
-    const sessions = await Session.find({ user: req.auth.userId, active: true }).sort({ startedAt: -1 });
+    // ⚡ Bolt Optimization: Use .lean() to bypass Mongoose Document instantiation overhead for read-only payload
+    const sessions = await Session.find({ user: req.auth.userId, active: true }).sort({ startedAt: -1 }).lean();
     const formattedSessions = sessions.map(s => ({
       id: s._id.toString(),
       device: s.device,
@@ -225,7 +226,8 @@ export const revokeOtherSessions = async (req, res, next) => {
 
 export const getApiKeys = async (req, res, next) => {
   try {
-    const keys = await PersonalAccessToken.find({ user: req.auth.userId, active: true }).sort({ createdAt: -1 });
+    // ⚡ Bolt Optimization: Use .lean() to bypass Mongoose Document instantiation overhead for read-only payload
+    const keys = await PersonalAccessToken.find({ user: req.auth.userId, active: true }).sort({ createdAt: -1 }).lean();
     const formattedKeys = keys.map(k => ({
       id: k._id.toString(),
       name: k.name,
