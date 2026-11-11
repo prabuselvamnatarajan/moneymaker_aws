@@ -80,7 +80,7 @@ async function isUserAdmin(userId) {
     const adminRole = await Role.findOne({ name: "admin" }).lean();
     if (!adminRole) return false;
     const adminRoleIdStr = adminRole._id.toString();
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).lean();
     if (!user || !Array.isArray(user.roles)) return false;
     return user.roles.some((r) => {
       const roleIdStr = typeof r === "object" && r !== null ? String(r._id || r) : String(r);
