@@ -50,6 +50,8 @@ data:
 
     stop_mongod_and_wait() {
       echo "Stopping mongod..."
+      mongosh --quiet --eval "try { db.getSiblingDB('admin').shutdownServer({force: true}); } catch (e) {}" >/dev/null 2>&1 || true
+      mongosh admin -u root -p example --quiet --eval "try { db.shutdownServer({force: true}); } catch (e) {}" >/dev/null 2>&1 || true
       mongod --shutdown --dbpath /data/db || true
       local waited=0
       while pgrep -x mongod >/dev/null 2>&1 && [ "$waited" -lt 30 ]; do
@@ -241,6 +243,8 @@ data:
 
     stop_mongod_and_wait() {
       echo "Stopping mongod..."
+      mongosh --quiet --eval "try { db.getSiblingDB('admin').shutdownServer({force: true}); } catch (e) {}" >/dev/null 2>&1 || true
+      mongosh admin -u root -p example --quiet --eval "try { db.shutdownServer({force: true}); } catch (e) {}" >/dev/null 2>&1 || true
       mongod --shutdown --dbpath /data/db || true
       local waited=0
       while pgrep -x mongod >/dev/null 2>&1 && [ "$waited" -lt 30 ]; do

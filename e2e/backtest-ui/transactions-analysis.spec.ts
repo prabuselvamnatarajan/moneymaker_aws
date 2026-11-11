@@ -270,7 +270,7 @@ test.describe('Transactions and analysis views', () => {
     await loginViaUI(page);
     await navigateTo(page, 'live-candlestick');
 
-    const dateSelect = page.locator('select').filter({ has: page.locator('option') }).nth(1);
+    const dateSelect = page.locator('select').filter({ hasText: '2026-06-24' }).first();
     await expect(dateSelect.locator('option')).toHaveCount(3, { timeout: 15_000 });
     await expect(dateSelect.locator('option').first()).toHaveText('2026-06-24');
   });
