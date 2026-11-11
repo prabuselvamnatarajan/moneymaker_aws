@@ -26,7 +26,8 @@ export const updateMeController = async (req, res, next) => {
     }
 
     if (email && email.toLowerCase() !== user.email.toLowerCase()) {
-      const emailExists = await User.findOne({ email: email.toLowerCase() });
+      // ⚡ Bolt: Added .lean() for read-only existence check to save memory
+      const emailExists = await User.findOne({ email: email.toLowerCase() }).lean();
       if (emailExists) {
         return res.status(409).json({ message: "Email is already taken" });
       }
@@ -34,7 +35,8 @@ export const updateMeController = async (req, res, next) => {
     }
 
     if (username && username !== user.username) {
-      const usernameExists = await User.findOne({ username });
+      // ⚡ Bolt: Added .lean() for read-only existence check to save memory
+      const usernameExists = await User.findOne({ username }).lean();
       if (usernameExists) {
         return res.status(409).json({ message: "Username is already taken" });
       }

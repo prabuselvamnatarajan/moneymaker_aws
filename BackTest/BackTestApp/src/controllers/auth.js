@@ -115,7 +115,7 @@ export const forgotPassword = async (req, res, next) => {
     }
 
     const User = mongoose.model("User");
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: email.toLowerCase() }); // Intentionally NOT lean, as user document might need .save() down the line (although current code doesn't call it, it's safer for auth flows)
 
     const genericMessage =
       "If an account exists with that email, password reset instructions have been sent.";
@@ -176,7 +176,8 @@ export const resetPassword = async (req, res, next) => {
 
 export const getSessions = async (req, res, next) => {
   try {
-    const sessions = await Session.find({ user: req.auth.userId, active: true }).sort({ startedAt: -1 });
+    // ⚡ Bolt: Added .lean() to read-only query mapped for response
+    const sessions = await Session.find({ user: req.auth.userId, active: true }).sort({ startedAt: -1 }).lean();
     const formattedSessions = sessions.map(s => ({
       id: s._id.toString(),
       device: s.device,
@@ -225,7 +226,8 @@ export const revokeOtherSessions = async (req, res, next) => {
 
 export const getApiKeys = async (req, res, next) => {
   try {
-    const keys = await PersonalAccessToken.find({ user: req.auth.userId, active: true }).sort({ createdAt: -1 });
+    // ⚡ Bolt: Added .lean() to read-only query mapped for response
+    const keys = await PersonalAccessToken.find({ user: req.auth.userId, active: true }).sort({ createdAt: -1 }).lean();
     const formattedKeys = keys.map(k => ({
       id: k._id.toString(),
       name: k.name,
