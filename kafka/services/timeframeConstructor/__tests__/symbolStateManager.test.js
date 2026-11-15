@@ -118,4 +118,65 @@ describe('SymbolStateManager - Production Code Tests', () => {
     assert.equal(manager.has('INFY'), false);
     assert.equal(manager.getActiveSymbols().length, 0);
   });
+
+  it('processes ticks statelessly without retaining any in-memory state', () => {
+    const manager = new SymbolStateManager();
+
+    // First tick with empty state
+    const tick1 = {
+      symbol: 'SBIN',
+      ltp: 850,
+      timestampMs: 1720236005000,
+      ltq: 100,
+      vtt: 1000,
+    };
+
+    const res1 = manager.processTick(tick1, {}, ['1m', '5m']);
+    assert.ok(res1.updatedState['1m']);
+    assert.ok(res1.updatedState['5m']);
+    assert.equal(res1.snapshotData.ltp, 850);
+    assert.equal(res1.updatedState['1m'].currentCandle.close, 850);
+
+    // Verify manager holds ZERO state in memory
+    assert.equal(manager.has('SBIN'), false);
+    assert.equal(manager.getActiveSymbols().length, 0);
+
+    // Second tick passing the updatedState from the first tick
+    const tick2 = {
+      symbol: 'SBIN',
+      ltp: 855,
+      timestampMs: 1720236015000,
+      ltq: 50,
+      vtt: 1050,
+    };
+
+    const res2 = manager.processTick(tick2, res1.updatedState, ['1m', '5m']);
+    assert.equal(res2.updatedState['1m'].currentCandle.close, 855);
+    assert.equal(res2.updatedState['1m'].currentCandle.high, 855);
+    assert.equal(res2.updatedState['1m'].currentCandle.volume, 150);
+
+    // Still ZERO state stored in memory
+    assert.equal(manager.has('SBIN'), false);
+  });
+
+  it('computes only the timeframes combined from active strategies (e.g. 5m alone)', () => {
+    const manager = new SymbolStateManager();
+
+    const tick = {
+      symbol: 'RELIANCE',
+      ltp: 2900,
+      timestampMs: 1720236000000,
+      ltq: 20,
+    };
+
+    // Strategies only need 5m for RELIANCE
+    const res = manager.processTick(tick, {}, ['5m']);
+    assert.ok(res.updatedState['5m']);
+    assert.equal(res.updatedState['1m'], undefined);
+    assert.equal(res.updatedState['3m'], undefined);
+    assert.equal(res.updatedState['15m'], undefined);
+
+    assert.ok(res.snapshotData.timeframes['5m']);
+    assert.equal(res.snapshotData.timeframes['1m'], undefined);
+  });
 });

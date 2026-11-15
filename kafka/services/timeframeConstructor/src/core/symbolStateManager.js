@@ -4,6 +4,70 @@ import { normalizeTimeframe } from './timeBoundary.js';
 export const DEFAULT_TIMEFRAMES = ['1m', '3m', '5m', '15m'];
 
 /**
+ * Pure stateless tick processor for timeframe construction.
+ * Computes updated intermediate state and snapshot timeframes given a tick,
+ * without retaining any in-memory state.
+ *
+ * @param {Object} tick - Normalized tick { symbol, ltp, timestampMs, ltq, vtt }
+ * @param {Object} [existingState={}] - Current intermediate state from Redis { [tf]: { currentCandle, previousCandle, lastVtt } }
+ * @param {string[]|null} [requiredTimeframes=null] - Dynamic timeframes required for this symbol
+ * @returns {{
+ *   updatedState: Object,
+ *   snapshotData: Object
+ * }}
+ */
+export function processStatelessTick(tick, existingState = {}, requiredTimeframes = null) {
+  let timeframes;
+  if (Array.isArray(requiredTimeframes) && requiredTimeframes.length > 0) {
+    timeframes = requiredTimeframes.map(normalizeTimeframe);
+  } else if (existingState && Object.keys(existingState).length > 0) {
+    timeframes = Object.keys(existingState).map(normalizeTimeframe);
+  } else {
+    timeframes = DEFAULT_TIMEFRAMES.map(normalizeTimeframe);
+  }
+
+  const updatedState = {};
+  const tfResults = {};
+
+  for (const tf of timeframes) {
+    const aggregator = new CandleAggregator(tf);
+    if (existingState && existingState[tf]) {
+      aggregator.fromJSON(existingState[tf]);
+    }
+    const result = aggregator.update(tick);
+    updatedState[tf] = aggregator.toJSON();
+
+    tfResults[tf] = {
+      startTime: result.candle.startTime,
+      endTime: result.candle.endTime,
+      open: result.candle.open,
+      high: result.candle.high,
+      low: result.candle.low,
+      close: result.candle.close,
+      volume: result.candle.volume,
+      isClosed: result.candle.isClosed,
+      closedCandle: result.closedCandle,
+    };
+  }
+
+  const prevVersion = Number(existingState?._version) || 0;
+  const snapshotVersion = prevVersion + 1;
+  updatedState._version = snapshotVersion;
+
+  return {
+    updatedState,
+    snapshotData: {
+      symbol: tick.symbol,
+      eventTimestamp: tick.timestampMs,
+      snapshotVersion,
+      ltp: tick.ltp,
+      volume: tick.ltq || 0,
+      timeframes: tfResults,
+    },
+  };
+}
+
+/**
  * Encapsulates the multi-timeframe state for a single symbol.
  */
 export class SymbolTimeframeState {
@@ -115,8 +179,8 @@ export class SymbolTimeframeState {
 }
 
 /**
- * In-memory manager for all watched symbols.
- * Guarantees that each symbol's state is completely isolated.
+ * In-memory manager for watched symbols.
+ * Supports both stateless execution (via processStatelessTick) and isolated local state.
  */
 export class SymbolStateManager {
   /**
@@ -150,12 +214,18 @@ export class SymbolStateManager {
 
   /**
    * Process a tick for a symbol.
+   * If existingState is supplied, executes statelessly without retaining memory state.
    *
    * @param {Object} tick - { symbol, ltp, timestampMs, ltq, vtt }
+   * @param {Object|null} [existingState=null]
+   * @param {string[]|null} [requiredTimeframes=null]
    * @returns {Object}
    */
-  processTick(tick) {
-    const state = this.getOrCreate(tick.symbol);
+  processTick(tick, existingState = null, requiredTimeframes = null) {
+    if (existingState !== null) {
+      return processStatelessTick(tick, existingState, requiredTimeframes || this.defaultTimeframes);
+    }
+    const state = this.getOrCreate(tick.symbol, requiredTimeframes);
     return state.processTick(tick);
   }
 

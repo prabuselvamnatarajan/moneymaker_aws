@@ -78,9 +78,13 @@ export async function startServer() {
   try {
     redisClient = createClient({ url: REDIS_URL });
     await redisClient.connect();
-    console.log('[TimeframeConstructor] Connected to Redis');
+    console.log('[TimeframeConstructor] Connected to Redis (Stateless Mode Enabled)');
   } catch (err) {
-    console.warn(`[TimeframeConstructor] Redis connection warning (persistence disabled): ${err.message}`);
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[TimeframeConstructor] Fatal: Redis connection required for stateless processing in production: ${err.message}`);
+      process.exit(1);
+    }
+    console.warn(`[TimeframeConstructor] Redis connection warning (stateless mode disabled, local fallback): ${err.message}`);
   }
 
   await connectWithRetry(producer, 'Kafka Producer');

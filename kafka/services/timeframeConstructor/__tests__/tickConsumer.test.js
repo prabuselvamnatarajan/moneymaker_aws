@@ -136,4 +136,97 @@ describe('TickConsumer - Production Code Tests', () => {
 
     assert.equal(published.length, 0);
   });
+
+  it('processes ticks completely statelessly with PersistenceService, reading and writing intermediate states to Redis on each tick', async () => {
+    const published = [];
+    const mockProducer = {
+      async send({ topic, messages }) {
+        published.push({ topic, messages });
+      },
+    };
+
+    const redisStore = new Map();
+    const mockRedis = {
+      async get(key) {
+        return redisStore.get(key) || null;
+      },
+      async set(key, value) {
+        redisStore.set(key, value);
+      },
+      async setEx(key, ttl, value) {
+        redisStore.set(key, value);
+      },
+    };
+
+    const { PersistenceService } = await import('../src/storage/persistenceService.js');
+    const persistence = new PersistenceService(mockRedis);
+
+    // Seed deployment timeframe requirements for HDFCBANK: only 3m and 15m
+    await persistence.saveTimeframeRequirements('HDFCBANK', ['3m', '15m']);
+
+    const stateManager = new SymbolStateManager();
+    const tfProducer = new TimeframeProducer(mockProducer);
+    const tickConsumer = new TickConsumer({
+      symbolStateManager: stateManager,
+      timeframeProducer: tfProducer,
+      persistenceService: persistence,
+      outputLiveTopic: 'timeframe_live_data',
+    });
+
+    const tick1 = {
+      topic: 'splited-live-data',
+      message: {
+        key: Buffer.from('HDFCBANK'),
+        value: Buffer.from(
+          JSON.stringify({
+            symbol: 'HDFCBANK',
+            ltp: 1650,
+            timestamp: '2024-07-06T03:20:00.000Z',
+            ltq: 10,
+          })
+        ),
+      },
+    };
+
+    const snapshot1 = await tickConsumer.handleMessage(tick1);
+    assert.notEqual(snapshot1, null);
+    assert.equal(snapshot1.symbol, 'HDFCBANK');
+    // Only 3m and 15m should be computed
+    assert.ok(snapshot1.timeframes['3m']);
+    assert.ok(snapshot1.timeframes['15m']);
+    assert.equal(snapshot1.timeframes['1m'], undefined);
+
+    // Verify intermediate state was written to Redis immediately
+    const intermediateRaw = redisStore.get('timeframe:state:HDFCBANK');
+    assert.notEqual(intermediateRaw, undefined);
+    const intermediate = JSON.parse(intermediateRaw);
+    assert.equal(intermediate['3m'].currentCandle.close, 1650);
+
+    // Verify application memory has NO symbol state retained
+    assert.equal(stateManager.has('HDFCBANK'), false);
+
+    // Send tick 2 - updates the state stored in Redis
+    const tick2 = {
+      topic: 'splited-live-data',
+      message: {
+        key: Buffer.from('HDFCBANK'),
+        value: Buffer.from(
+          JSON.stringify({
+            symbol: 'HDFCBANK',
+            ltp: 1655,
+            timestamp: '2024-07-06T03:20:10.000Z',
+            ltq: 20,
+          })
+        ),
+      },
+    };
+
+    const snapshot2 = await tickConsumer.handleMessage(tick2);
+    assert.equal(snapshot2.ltp, 1655);
+
+    const updatedRaw = JSON.parse(redisStore.get('timeframe:state:HDFCBANK'));
+    assert.equal(updatedRaw['3m'].currentCandle.close, 1655);
+    assert.equal(updatedRaw['3m'].currentCandle.high, 1655);
+    assert.equal(updatedRaw['3m'].currentCandle.volume, 30);
+  });
 });

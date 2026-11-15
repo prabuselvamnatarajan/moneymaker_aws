@@ -3,6 +3,8 @@ import { SnapshotGenerator } from '../core/snapshotGenerator.js';
 
 /**
  * Handles incoming tick batches from splited-live-data and backtest-stream-data.
+ * Stateless processing: intermediate timeframe states and dynamic timeframe requirements
+ * are stored in and retrieved directly from Redis on every tick.
  */
 export class TickConsumer {
   /**
@@ -60,10 +62,48 @@ export class TickConsumer {
 
     const isBackTest = topic === this.backtestInputTopic;
     const outputTopic = isBackTest ? this.outputBacktestTopic : this.outputLiveTopic;
+    const deploymentId = data?.deployment_id || null;
 
-    // Ingest tick into isolated symbol state
-    const processed = this.stateManager.processTick(tick);
-    const snapshot = SnapshotGenerator.generate(processed);
+    let snapshot;
+
+    if (this.persistenceService) {
+      // 1. Dynamic timeframe requirements: fetch from Redis (computed from active deployments)
+      const requiredTimeframes = await this.persistenceService.getTimeframeRequirements(
+        tick.symbol,
+        isBackTest,
+        deploymentId
+      );
+
+      // 2. Stateless intermediate state: load from Redis
+      const existingState = await this.persistenceService.getSymbolIntermediateState(
+        tick.symbol,
+        isBackTest,
+        deploymentId
+      );
+
+      // 3. Process tick statelessly using pure candle aggregation logic
+      const result = this.stateManager.processTick(
+        tick,
+        existingState,
+        requiredTimeframes
+      );
+      const updatedState = result.updatedState || result;
+      const snapshotData = result.snapshotData || result;
+
+      // 4. Immediately persist updated intermediate state back into Redis
+      await this.persistenceService.saveSymbolIntermediateState(
+        tick.symbol,
+        updatedState,
+        isBackTest,
+        deploymentId
+      );
+
+      snapshot = SnapshotGenerator.generate(snapshotData);
+    } else {
+      // Offline / in-memory fallback (e.g. unit tests without Redis)
+      const processed = this.stateManager.processTick(tick);
+      snapshot = SnapshotGenerator.generate(processed);
+    }
 
     // Forward backtest routing metadata if present
     if (isBackTest) {
@@ -71,19 +111,10 @@ export class TickConsumer {
       if (data.run_id) snapshot.run_id = data.run_id;
     }
 
-    // Produce multi-timeframe snapshot
+    // Produce multi-timeframe snapshot to Kafka
     await this.producer.publishSnapshot(outputTopic, snapshot);
 
     this.processedCount += 1;
-
-    // Periodic checkpointing to Redis every 500 ticks
-    if (this.persistenceService && this.processedCount % 500 === 0) {
-      const symState = this.stateManager.getOrCreate(tick.symbol);
-      this.persistenceService.saveSymbolState(symState).catch((err) => {
-        this.logger.warn?.(`Failed periodic checkpoint for ${tick.symbol}: ${err.message}`);
-      });
-    }
-
     return snapshot;
   }
 }
