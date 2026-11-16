@@ -52,7 +52,7 @@ app.get('/', (req, res) => {
 
     ws.on('open', () => {
         const payload = { symbolName, date };
-        if (time_ms !== undefined) {
+        if (timeMsNum !== undefined && timeMsNum !== null) {
             payload.time_ms = timeMsNum;
         }
         console.log('Sending payload to WebSocket:', payload);

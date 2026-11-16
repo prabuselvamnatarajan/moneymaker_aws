@@ -22,7 +22,7 @@ EXPOSE 3000
 ENV KAFKA_BROKERS=localhost:9092
 ENV REDIS_URL=redis://redis:6379
 ENV TARGET_GROUP_ID=strategy_chooser_group
-ENV TARGET_TOPIC=splited-live-data,backtest-stream-data
+ENV TARGET_TOPIC=splited-live-data,backtest-stream-data,timeframe_live_data,timeframe_backtest_data
 ENV BACKTEST_TOPIC=backtest-stream-data
 
 # Command to run the Kafka consumer
