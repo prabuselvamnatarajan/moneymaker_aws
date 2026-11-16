@@ -27,6 +27,10 @@ services:
     deploy:
       replicas: 0
 
+  timeframe-constructor:
+    deploy:
+      replicas: 0
+
   price-storer-consumer:
     deploy:
       replicas: 0

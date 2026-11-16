@@ -75,7 +75,7 @@ spec:
                   name: common-env
                   key: KAFKA_NUM_PARTITIONS
             - name: TARGET_TOPIC
-              value: 'splited-live-data,backtest-stream-data'
+              value: 'splited-live-data,backtest-stream-data,timeframe_live_data,timeframe_backtest_data'
             - name: BACKTEST_TOPIC
               value: 'backtest-stream-data'
             - name: TARGET_GROUP_ID

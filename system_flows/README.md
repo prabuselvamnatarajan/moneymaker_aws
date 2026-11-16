@@ -17,10 +17,14 @@ graph TD
     
     Streamer[BacktestStreamer] -->|Stream Files| BTClient[BacktestClient]
     BTClient -->|backtest-stream-data| Kafka
+
+    TFConstructor[timeframe-constructor] -->|Consume splited-live-data & backtest-stream-data| Kafka
+    TFConstructor -->|Checkpoint State| RedisTF[(Redis Timeframe State)]
+    TFConstructor -->|timeframe_live_data / timeframe_backtest_data Key: symbol| Kafka
     
-    Chooser[StrategyChooserConsumer - 3 Replicas] -->|Consume splited-live-data & backtest-stream-data| Kafka
+    Chooser[StrategyChooserConsumer - 3 Replicas] -->|Consume splited-live-data & timeframe_live_data| Kafka
     Chooser -->|activeStrategies query| RedisCache[(Redis Cache)]
-    Chooser -->|msb_live_data / msb_backtest_data| Kafka
+    Chooser -->|Sliced multi-TF snapshot: msb_live_data / msb_backtest_data| Kafka
 
     PosTracker[position-tracker-consumer] -->|Consume splited-live-data| Kafka
     PosTracker -->|Excursion & MTM| MongoDB[(MongoDB Replica Set)]

@@ -286,8 +286,10 @@ export class Strategy {
                     throw err;
                 }
 
-                // Default missing timeframe for rollout compatibility (legacy Redis routing)
-                const timeframe = strategy_details.timeframe || '1m';
+                // Resolve canonical timeframe from deployment configuration
+                const timeframe = (Array.isArray(strategy_details.timeframes) && strategy_details.timeframes[0])
+                    || strategy_details.timeframe
+                    || '1m';
                 strategy_details.timeframe = timeframe;
 
                 // Also keep instance fields for children/tests that set/read them directly.

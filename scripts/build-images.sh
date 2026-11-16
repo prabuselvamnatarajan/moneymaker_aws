@@ -235,6 +235,7 @@ register_full_jobs() {
   add_job microservice ./MicroServices/Users/FundsAndMargin get-funds-and-margin:latest auth
 
   add_job kafka ./kafka/services/wsDataSplitterConsumer wsdatasplitterconsumer:latest
+  add_job plain ./kafka/services/timeframeConstructor timeframe-constructor:latest
   add_job kafka ./kafka/services/storerConsumer storer-consumer:latest
   add_job kafka ./kafka/services/StrategyChooserConsumer strategy-chooser-consumer:latest
   add_job kafka ./kafka/services/positionTrackerConsumer position-tracker-consumer:latest

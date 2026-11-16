@@ -26,6 +26,7 @@ pairs = [
     ("get-option-contracts", "MicroServices/Option-Chain/option-contracts/package.json"),
     ("get-funds-and-margin", "MicroServices/Users/FundsAndMargin/package.json"),
     ("wsdatasplitterconsumer", "kafka/services/wsDataSplitterConsumer/package.json"),
+    ("timeframe-constructor", "kafka/services/timeframeConstructor/package.json"),
     ("storer-consumer", "kafka/services/storerConsumer/package.json"),
     ("strategy-chooser-consumer", "kafka/services/StrategyChooserConsumer/package.json"),
     ("position-tracker-consumer", "kafka/services/positionTrackerConsumer/package.json"),

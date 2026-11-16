@@ -22,7 +22,11 @@ import {
   isTickAllowed,
   buildSeedExcursion,
 } from "../trade.js";
-import { buildValidAccountIds } from "../deployment.js";
+import {
+  buildValidAccountIds,
+  computeSymbolTimeframeRequirements,
+  syncSymbolTimeframeRequirements,
+} from "../deployment.js";
 import { applyExcursion } from "../../utils/positionMath.js";
 
 // ---------------------------------------------------------------------------
@@ -396,5 +400,81 @@ describe("Bug 13: backtest close-time locks and tick filtering", () => {
     assert.equal(checkIsCloseOrReduction("SHORT", "BUY"), true, "SHORT position exited with BUY is a close/reduction");
     assert.equal(checkIsCloseOrReduction("LONG", "BUY"), false, "Adding to LONG position is not a close/reduction");
     assert.equal(checkIsCloseOrReduction("SHORT", "SELL"), false, "Adding to SHORT position is not a close/reduction");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dynamic Symbol Timeframe Requirements Computation & Redis Sync
+// ---------------------------------------------------------------------------
+describe("Dynamic Symbol Timeframe Requirements Computation & Redis Sync", () => {
+  it("computes combined unique timeframes per symbol across deployments", () => {
+    const newKeysData = {
+      "strategies:live:NIFTY": [
+        { name: "msb", timeframes: ["1m", "5m"], data_mode: "timeframe" },
+        { name: "trend", timeframes: ["15m"], data_mode: "timeframe" },
+      ],
+      "strategies:live:BANKNIFTY": [
+        { name: "scalp", timeframe: "3m", data_mode: "timeframe" },
+        { name: "tick_only", timeframe: "1m", data_mode: "tick" }, // Ignored for candle requirements
+      ],
+      "strategies:backtest:RELIANCE": [
+        { name: "msb_pts", timeframes: ["5m", "15m"], data_mode: "timeframe" },
+      ],
+    };
+
+    const res = computeSymbolTimeframeRequirements(newKeysData);
+
+    // Live NIFTY should have 1m, 5m, 15m
+    assert.deepEqual(res["timeframe:requirements:NIFTY"].sort(), ["15m", "1m", "5m"].sort());
+    assert.deepEqual(res["symbol:timeframes:NIFTY"].sort(), ["15m", "1m", "5m"].sort());
+
+    // Live BANKNIFTY should only have 3m (tick_only is skipped)
+    assert.deepEqual(res["timeframe:requirements:BANKNIFTY"], ["3m"]);
+    assert.deepEqual(res["symbol:timeframes:BANKNIFTY"], ["3m"]);
+
+    // Backtest RELIANCE should have backtest prefix
+    assert.deepEqual(res["timeframe:requirements:backtest:RELIANCE"].sort(), ["15m", "5m"].sort());
+    assert.deepEqual(res["symbol:timeframes:backtest:RELIANCE"].sort(), ["15m", "5m"].sort());
+  });
+
+  it("syncs timeframe requirements to Redis and deletes stale requirement keys", async () => {
+    const redisStore = new Map();
+    // Simulate stale requirement key from a previously deleted symbol
+    redisStore.set("timeframe:requirements:DELETED_SYM", '["1m"]');
+    redisStore.set("symbol:timeframes:DELETED_SYM", '["1m"]');
+
+    const mockClient = {
+      async set(key, val) {
+        redisStore.set(key, val);
+      },
+      async del(key) {
+        redisStore.delete(key);
+      },
+      async keys(pattern) {
+        const matches = [];
+        const regex = new RegExp("^" + pattern.replace("*", ".*") + "$");
+        for (const k of redisStore.keys()) {
+          if (regex.test(k)) matches.push(k);
+        }
+        return matches;
+      },
+    };
+
+    const newKeysData = {
+      "strategies:live:TCS": [
+        { name: "breakout", timeframes: ["5m", "15m"], data_mode: "timeframe" },
+      ],
+    };
+
+    await syncSymbolTimeframeRequirements(mockClient, newKeysData);
+
+    // Active symbol TCS requirements saved
+    assert.ok(redisStore.has("timeframe:requirements:TCS"));
+    assert.ok(redisStore.has("symbol:timeframes:TCS"));
+    assert.deepEqual(JSON.parse(redisStore.get("timeframe:requirements:TCS")), ["5m", "15m"]);
+
+    // Stale DELETED_SYM requirement keys should have been cleaned up
+    assert.equal(redisStore.has("timeframe:requirements:DELETED_SYM"), false);
+    assert.equal(redisStore.has("symbol:timeframes:DELETED_SYM"), false);
   });
 });

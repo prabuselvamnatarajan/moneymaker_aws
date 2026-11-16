@@ -58,6 +58,15 @@ const deploymentSchema = new mongoose.Schema({
     default: "1m",
     required: true,
   },
+  timeframes: {
+    type: [String],
+    default: undefined,
+  },
+  data_mode: {
+    type: String,
+    enum: ["tick", "timeframe", "hybrid"],
+    default: "timeframe",
+  },
   deployment_name: {
     type: String,
   },

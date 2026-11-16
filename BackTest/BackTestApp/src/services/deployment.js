@@ -22,7 +22,7 @@ import { purgePositionsFromRedis, readLiveCache } from "../utils/positionRedis.j
 import { sumOpenUnrealised, round2, resolveCloseExecutionTime } from "../utils/positionMath.js";
 import { completionKey as backtestCompletionKey } from "../utils/backtestCompletionUtil.js";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframe", "symbol_control"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframe", "timeframes", "data_mode", "symbol_control"];
 
 const ALLOWED_TIMEFRAMES = ["1m", "3m", "5m", "15m"];
 
@@ -1769,16 +1769,23 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
 
       const deploymentIdStr = dep._id.toString();
       const stateEpoch = await ensureDeploymentStateEpoch(client, deploymentIdStr);
-      // Legacy docs may lack timeframe — default to 1m so sync/smoke never aborts the whole Redis publish
-      const timeframe = dep.timeframe || "1m";
-      if (!dep.timeframe) {
+      // Resolve canonical timeframe from deployment configuration (defaulting to 1m)
+      const timeframe = dep.timeframe || (Array.isArray(dep.timeframes) && dep.timeframes[0]) || "1m";
+      if (!dep.timeframe && (!Array.isArray(dep.timeframes) || dep.timeframes.length === 0)) {
         console.warn(`[Sync] RUNNING deployment ${deploymentIdStr} missing timeframe; defaulting to 1m`);
       }
+
+      const timeframes = Array.isArray(dep.timeframes) && dep.timeframes.length > 0
+        ? dep.timeframes
+        : [timeframe];
+      const data_mode = dep.data_mode || "timeframe";
 
       newKeysData[key].push({
         name: dep.strategy_id.strategy_name,
         isTest: isTest,
         timeframe,
+        timeframes,
+        data_mode,
         state_epoch: stateEpoch,
         account_id: dep.account_id.account_id || dep.account_id._id.toString(),
         user_symbol_id: dep.user_symbol_id ? dep.user_symbol_id.toString() : undefined,
@@ -1868,6 +1875,9 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
       console.log(`Updated Redis key ${key} with ${activeStrategies.length} active strategies`);
     }
 
+    // Sync combined timeframe requirements per symbol to Redis for stateless timeframe-constructor
+    await syncSymbolTimeframeRequirements(client, newKeysData);
+
   } catch (error) {
     console.error("❌ Failed to sync deployments to Redis:", error.message);
     if (failLoud) {
@@ -1902,3 +1912,78 @@ export const getDeploymentCandles = async (userId, id, timeframe) => {
 
   return await getSymbolCandles(symbol, date, resolvedTf);
 };
+
+/**
+ * Compute the combined unique timeframe requirements per symbol across active deployments.
+ *
+ * @param {Object} newKeysData - Map of Redis key (`strategies:live:<symbol>` or `strategies:backtest:<symbol>`) to array of active strategy objects
+ * @returns {Object} Map of Redis timeframe requirement keys to array of canonical timeframes
+ */
+export function computeSymbolTimeframeRequirements(newKeysData = {}) {
+  const result = {};
+
+  for (const [key, activeStrategies] of Object.entries(newKeysData)) {
+    const isBacktest = key.startsWith("strategies:backtest:");
+    const parts = key.split(":");
+    const symbol = parts[2];
+    if (!symbol || !Array.isArray(activeStrategies)) continue;
+
+    const tfSet = new Set();
+    for (const strat of activeStrategies) {
+      if (strat.data_mode === "tick") continue; // Pure tick strategies do not need candle construction
+      if (Array.isArray(strat.timeframes) && strat.timeframes.length > 0) {
+        for (const tf of strat.timeframes) {
+          if (tf) tfSet.add(normalizeTimeframe(tf));
+        }
+      } else if (strat.timeframe) {
+        tfSet.add(normalizeTimeframe(strat.timeframe));
+      }
+    }
+
+    const tfs = Array.from(tfSet);
+    if (tfs.length > 0) {
+      const reqKey = isBacktest
+        ? `timeframe:requirements:backtest:${symbol}`
+        : `timeframe:requirements:${symbol}`;
+      const aliasKey = isBacktest
+        ? `symbol:timeframes:backtest:${symbol}`
+        : `symbol:timeframes:${symbol}`;
+      result[reqKey] = tfs;
+      result[aliasKey] = tfs;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Sync the combined timeframe requirements for all watched symbols to Redis.
+ * Prunes stale timeframe requirement keys for symbols with no active deployments.
+ *
+ * @param {Object} client - Connected Redis client
+ * @param {Object} newKeysData - Active strategies grouped by key
+ */
+export async function syncSymbolTimeframeRequirements(client, newKeysData = {}) {
+  if (!client) return;
+  const timeframeRequirements = computeSymbolTimeframeRequirements(newKeysData);
+  const activeKeys = new Set(Object.keys(timeframeRequirements));
+
+  for (const [key, tfs] of Object.entries(timeframeRequirements)) {
+    await client.set(key, JSON.stringify(tfs));
+    console.log(`[Sync] Synced timeframe requirements for ${key}: ${JSON.stringify(tfs)}`);
+  }
+
+  // Prune stale timeframe requirement keys
+  try {
+    const existingReqKeys = await client.keys("timeframe:requirements:*");
+    const existingAliasKeys = await client.keys("symbol:timeframes:*");
+    for (const key of [...existingReqKeys, ...existingAliasKeys]) {
+      if (!activeKeys.has(key)) {
+        await client.del(key);
+        console.log(`[Sync] Deleted stale timeframe requirements key: ${key}`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[Sync] Warning cleaning stale timeframe requirement keys: ${err.message}`);
+  }
+}
