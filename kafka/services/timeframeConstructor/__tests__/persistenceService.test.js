@@ -182,4 +182,38 @@ describe('PersistenceService - Production Code Tests', () => {
     assert.equal(parsed['1m'].currentCandle.open, 24000);
     assert.equal(parsed['5m'].currentCandle.open, 24000);
   });
+
+  it('retrieves timeframe requirements and state from RedisJSON format', async () => {
+    const jsonStore = new Map();
+    jsonStore.set('strategies:backtest:SBIN', {
+      activeStrategies: [
+        { name: 'msb_pts', timeframes: ['5m'], data_mode: 'timeframe' },
+        { name: 'scalper', timeframe: '15m', data_mode: 'timeframe' },
+      ],
+    });
+
+    const mockRedisClient = {
+      async type(key) {
+        return jsonStore.has(key) ? 'ReJSON-RL' : 'none';
+      },
+      json: {
+        async get(key) {
+          return jsonStore.get(key) || null;
+        },
+      },
+      async sendCommand([cmd, key]) {
+        if (cmd === 'JSON.GET') {
+          return JSON.stringify(jsonStore.get(key) || null);
+        }
+        return null;
+      },
+      async get(key) {
+        return null;
+      },
+    };
+
+    const persistence = new PersistenceService(mockRedisClient);
+    const tfs = await persistence.getTimeframeRequirements('SBIN', true);
+    assert.deepEqual(tfs?.sort(), ['15m', '5m'].sort());
+  });
 });
