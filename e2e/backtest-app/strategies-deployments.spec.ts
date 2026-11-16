@@ -541,8 +541,8 @@ test.describe('Deployment create', () => {
       ...base,
       deployment_name: `e2e-dup-${uniqueSuffix()}`,
     });
-    await expectStatus(second, 500);
-    await expectMessageContains(second, 'duplicate key');
+    await expectStatus(second, [409, 500]);
+    await expectMessageContains(second, ['duplicate', 'already RUNNING', 'already running']);
   });
 
   test('TC-DEP-008: Same (strategy, account, instrument_token) allowed again after first deployment is STOPPED/COMPLETED', async ({

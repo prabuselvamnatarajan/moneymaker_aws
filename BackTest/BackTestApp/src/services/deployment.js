@@ -1035,9 +1035,9 @@ export const createDeployment = async (userId, deploymentData) => {
     });
     if (existingActive) {
       const dupErr = new Error(
-        `E11000 duplicate key error collection: deployments index: strategy_id_1_account_id_1_instrument_token_1_current_status_1 dup key: { strategy_id: ObjectId('${prepared.strategy_id}'), account_id: ObjectId('${prepared.account_id}'), instrument_token: "${prepared.instrument_token}", current_status: "${prepared.current_status}" }`
+        `An active deployment for this strategy, account, and symbol is already ${existingActive.current_status}. Please stop or complete the existing deployment before creating a new one.`
       );
-      dupErr.statusCode = 500;
+      dupErr.statusCode = 409;
       throw dupErr;
     }
   }
@@ -1048,8 +1048,10 @@ export const createDeployment = async (userId, deploymentData) => {
     result = await deployment.save();
   } catch (err) {
     if (err.code === 11000) {
-      const dupErr = new Error(err.message);
-      dupErr.statusCode = 500;
+      const dupErr = new Error(
+        `An active deployment for this strategy, account, and symbol is already running or scheduled. Please stop or complete the existing deployment before creating a new one.`
+      );
+      dupErr.statusCode = 409;
       throw dupErr;
     }
     throw err;
@@ -1312,6 +1314,23 @@ export const transitionDeployment = async (userId, id, action, options = {}) => 
   // Open backtest positions are flattened after the status flip is published, so
   // an in-flight tick cannot make the strategy open a fresh position mid-flatten.
   const shouldFlattenBacktest = action === "stop" && deployment.strategy_mode === "BACKTEST";
+
+  if (transition.to === "RUNNING") {
+    const existingActive = await Deployment.findOne({
+      _id: { $ne: deployment._id },
+      strategy_id: deployment.strategy_id,
+      account_id: deployment.account_id,
+      instrument_token: deployment.instrument_token,
+      current_status: { $in: ["RUNNING", "SCHEDULED"] },
+    });
+    if (existingActive) {
+      const dupErr = new Error(
+        `Cannot ${action} deployment: another deployment for this strategy, account, and symbol is already ${existingActive.current_status}. Stop it first.`
+      );
+      dupErr.statusCode = 409;
+      throw dupErr;
+    }
+  }
 
   deployment.current_status = transition.to;
 
