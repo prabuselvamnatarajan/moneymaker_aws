@@ -112,6 +112,7 @@ backtestclient:latest
 backtestapp:latest
 backtestui:latest
 exporttofile:latest
+timeframe-constructor:latest
 stream-to-client:latest
 msb-strategy:latest
 msb-pts-strategy:latest
