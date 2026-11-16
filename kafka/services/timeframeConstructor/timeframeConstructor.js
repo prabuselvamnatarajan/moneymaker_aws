@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Kafka } from 'kafkajs';
 import { createClient } from 'redis';
 import { SymbolStateManager } from './src/core/symbolStateManager.js';
@@ -70,9 +72,39 @@ async function ensureTopicPartitions(topics, numPartitions = 50) {
   }
 }
 
+export function handleFatalError(error, context = 'service') {
+  console.error(`[TimeframeConstructor] Fatal error in ${context}:`, error);
+  if (process.env.NODE_ENV !== 'test') {
+    process.exit(1);
+  }
+  throw error;
+}
+
+export function registerFatalErrorHandlers() {
+  process.on('uncaughtException', (error) => {
+    handleFatalError(error, 'uncaught exception');
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    handleFatalError(reason, 'unhandled rejection');
+  });
+}
+
+export function registerKafkaCrashHandler(consumer) {
+  if (consumer && consumer.events && consumer.events.CRASH) {
+    consumer.on(consumer.events.CRASH, (event) => {
+      handleFatalError(event.payload.error, 'Kafka consumer crash');
+    });
+  }
+}
+
 export async function startServer() {
+  registerFatalErrorHandlers();
+
   const consumer = kafka.consumer({ groupId: CONSUMER_GROUP_ID, sessionTimeout: 30000 });
   const producer = kafka.producer();
+
+  registerKafkaCrashHandler(consumer);
 
   let redisClient = null;
   try {
@@ -117,7 +149,8 @@ export async function startServer() {
       try {
         await tickConsumer.handleMessage(payload);
       } catch (err) {
-        console.error(`[TimeframeConstructor] Error handling message on ${payload.topic}:`, err);
+        console.error(`[TimeframeConstructor] Fatal error handling message on ${payload.topic}:`, err);
+        handleFatalError(err, `message handling on ${payload.topic}`);
       }
     },
   });
@@ -134,7 +167,12 @@ export async function startServer() {
   process.on('SIGTERM', shutdown);
 }
 
-if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test_env') {
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) &&
+  process.env.NODE_ENV !== 'test' &&
+  process.env.NODE_ENV !== 'test_env'
+) {
   startServer().catch((err) => {
     console.error('[TimeframeConstructor] Fatal startup error:', err);
     process.exit(1);

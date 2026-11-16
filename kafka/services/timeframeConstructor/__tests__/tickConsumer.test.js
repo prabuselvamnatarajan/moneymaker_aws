@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { TickConsumer } from '../src/consumers/tickConsumer.js';
 import { SymbolStateManager } from '../src/core/symbolStateManager.js';
-import { TimeframeProducer } from '../src/producers/timeframeProducer.js';
+import { TimeframeProducer, resolvePartitionKey } from '../src/producers/timeframeProducer.js';
+import { handleFatalError, registerKafkaCrashHandler } from '../timeframeConstructor.js';
 
 describe('TickConsumer - Production Code Tests', () => {
   it('processes incoming live tick message and produces combined timeframe snapshot', async () => {
@@ -95,7 +96,7 @@ describe('TickConsumer - Production Code Tests', () => {
 
     assert.equal(published.length, 1);
     assert.equal(published[0].topic, 'timeframe_backtest_data');
-    assert.equal(published[0].messages[0].key, 'BANKNIFTY');
+    assert.equal(published[0].messages[0].key, 'BANKNIFTY:dep_bt_999');
   });
 
   it('gracefully skips invalid or incomplete message payloads without throwing', async () => {
@@ -228,5 +229,55 @@ describe('TickConsumer - Production Code Tests', () => {
     assert.equal(updatedRaw['3m'].currentCandle.close, 1655);
     assert.equal(updatedRaw['3m'].currentCandle.high, 1655);
     assert.equal(updatedRaw['3m'].currentCandle.volume, 30);
+  });
+
+  it('resolves partition key: uses symbol:deployment_id for backtests and symbol for live', () => {
+    // Backtest snapshot with deployment_id
+    const btSnapshot = {
+      symbol: 'TCS',
+      deployment_id: 'dep_bt_456',
+      ltp: 3800,
+    };
+    assert.equal(resolvePartitionKey(btSnapshot), 'TCS:dep_bt_456');
+
+    // Live snapshot without deployment_id
+    const liveSnapshot = {
+      symbol: 'RELIANCE',
+      ltp: 2900,
+    };
+    assert.equal(resolvePartitionKey(liveSnapshot), 'RELIANCE');
+
+    // Fallback for empty/null snapshot
+    assert.equal(resolvePartitionKey(null), '');
+    assert.equal(resolvePartitionKey({}), '');
+  });
+
+  it('fails loud on fatal infrastructure errors via handleFatalError', () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+    try {
+      assert.throws(
+        () => {
+          handleFatalError(new Error('Simulated Redis crash'), 'unit test');
+        },
+        /Simulated Redis crash/
+      );
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+  });
+
+  it('registers Kafka crash handler without throwing', () => {
+    let crashHandlerRegistered = false;
+    const mockConsumer = {
+      events: { CRASH: 'consumer.crash' },
+      on(event, handler) {
+        if (event === 'consumer.crash' && typeof handler === 'function') {
+          crashHandlerRegistered = true;
+        }
+      },
+    };
+    registerKafkaCrashHandler(mockConsumer);
+    assert.equal(crashHandlerRegistered, true);
   });
 });
