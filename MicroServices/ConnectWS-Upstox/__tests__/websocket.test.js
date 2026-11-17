@@ -6,6 +6,7 @@ import {
     calculateBackoffDelay,
     unionSymbols,
     processSymbolUpdateEvent,
+    fetchAuthorizedWebSocketUrl,
 } from '../wsHelpers.js';
 
 describe('MicroServices/ConnectWS-Upstox Unit & Subscription Tests (Real Codebase)', () => {
@@ -112,5 +113,34 @@ describe('MicroServices/ConnectWS-Upstox Unit & Subscription Tests (Real Codebas
         assert.equal(unsubFrame.method, 'unsub');
         assert.equal(unsubFrame.data.mode, undefined);
         assert.deepEqual(unsubFrame.data.instrumentKeys, ['SYM_A']);
+    });
+
+    it('fetches authorized WebSocket redirect URI from Upstox authorize endpoint', async () => {
+        const mockHttpClient = {
+            async get(url, options) {
+                assert.ok(url.includes('market-data-feed/authorize'));
+                assert.equal(options.headers.Authorization, 'Bearer test_token');
+                return {
+                    data: {
+                        status: 'success',
+                        data: {
+                            authorized_redirect_uri: 'wss://api.upstox.com/v3/feed/market-data-feed/feeds?code=123',
+                        },
+                    },
+                };
+            },
+        };
+
+        const uri = await fetchAuthorizedWebSocketUrl('test_token', mockHttpClient);
+        assert.equal(uri, 'wss://api.upstox.com/v3/feed/market-data-feed/feeds?code=123');
+    });
+
+    it('fails fast when access token is missing in fetchAuthorizedWebSocketUrl', async () => {
+        await assert.rejects(
+            async () => {
+                await fetchAuthorizedWebSocketUrl(null);
+            },
+            /Access token is required/
+        );
     });
 });
