@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Strategy } from '/app/strategy/Strategy.js';
-import { buildTimeframeCandle } from './candleBuilder.js';
 import {
     getBoughtQuantityWithTagFromRedis,
     setBoughtQuantityWithTagToRedis,
@@ -10,19 +9,8 @@ import {
 } from '/app/redis_utils/account_utils.js';
 import { logger } from '/app/utils/logUtils.js';
 
-function isRawTick(message) {
-    return !!(
-        message?.ltpc
-        || message?.fullFeed
-        || message?.marketFF
-        || message?.indexFF
-        || message?.firstLevelWithGreeks
-    );
-}
-
 /**
- * Resolve candle + closedCandle for centralized timeframe snapshots, live ticks, or
- * prebuilt test fixtures.
+ * Resolve candle + closedCandle from centralized timeframe snapshots or prebuilt test fixtures.
  */
 function resolveCandles(message, timeframe, existingCandleState) {
     // 1. Centralized multi-timeframe snapshot from timeframeConstructor
@@ -44,14 +32,6 @@ function resolveCandles(message, timeframe, existingCandleState) {
             const closedCandle = tfData.closedCandle || null;
             return { candle, closedCandle, newCandleState: tfData };
         }
-    }
-
-    if (isRawTick(message)) {
-        const built = buildTimeframeCandle(message, timeframe, existingCandleState);
-        if (built.candle) {
-            built.candle.candleState = built.newCandleState;
-        }
-        return built;
     }
 
     let closedCandle;
