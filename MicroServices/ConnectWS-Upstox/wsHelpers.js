@@ -60,3 +60,45 @@ export function processSymbolUpdateEvent(message, options = {}) {
 
     return payload;
 }
+
+export async function fetchAuthorizedWebSocketUrl(accessToken, httpClient) {
+    if (!accessToken) {
+        throw new Error('Access token is required to authorize Upstox market data feed');
+    }
+
+    const client = httpClient || (await import('axios')).default;
+    const endpoints = [
+        'https://api.upstox.com/v3/feed/market-data-feed/authorize',
+        'https://api.upstox.com/v2/feed/market-data-feed/authorize',
+    ];
+
+    let lastError = null;
+    for (const endpoint of endpoints) {
+        try {
+            const response = await client.get(endpoint, {
+                headers: {
+                    Accept: 'application/json',
+                    Authorization: `Bearer ${accessToken}`,
+                },
+                timeout: 10000,
+            });
+
+            const data = response?.data?.data || response?.data;
+            const redirectUri = data?.authorized_redirect_uri || data?.authorizedRedirectUri;
+            if (redirectUri) {
+                return redirectUri;
+            }
+        } catch (err) {
+            lastError = err;
+            const status = err.response?.status;
+            if (status === 401) {
+                throw err;
+            }
+        }
+    }
+
+    if (lastError) {
+        throw lastError;
+    }
+    throw new Error('Upstox market-data-feed/authorize did not return an authorized redirect URI');
+}

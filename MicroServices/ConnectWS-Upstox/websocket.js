@@ -9,6 +9,7 @@ import {
   calculateBackoffDelay,
   unionSymbols,
   processSymbolUpdateEvent,
+  fetchAuthorizedWebSocketUrl,
 } from './wsHelpers.js';
 
 // Initialize global variables
@@ -252,7 +253,6 @@ async function initRedisSubscriber() {
 async function get_WS_URL({ access_token, symbol = [] }) {
   try {
     await initProtobuf();
-    const initUrl = 'wss://api.upstox.com/v3/feed/market-data-feed';
 
     if (activeWS && (activeWS.readyState === WebSocket.OPEN || activeWS.readyState === WebSocket.CONNECTING)) {
       console.log('[WS Upstox] Reusing established WebSocket connection. Subscribing to:', symbol);
@@ -260,7 +260,21 @@ async function get_WS_URL({ access_token, symbol = [] }) {
       return;
     }
 
-    const ws = new WebSocket(initUrl, {
+    console.log('[WS Upstox] Fetching authorized WebSocket redirect URI from Upstox...');
+    let wsUrl;
+    try {
+      wsUrl = await fetchAuthorizedWebSocketUrl(access_token);
+    } catch (authErr) {
+      const msg = authErr.message || String(authErr);
+      if (authErr.response?.status === 401 || msg.includes('401')) {
+        await handleUpstoxAuthFailure('Failed to authorize WebSocket feed: Upstox access token rejected (401).');
+        return;
+      }
+      console.warn('[WS Upstox] Failed to fetch authorized redirect URI, attempting direct wss connect fallback:', msg);
+      wsUrl = 'wss://api.upstox.com/v3/feed/market-data-feed';
+    }
+
+    const ws = new WebSocket(wsUrl, {
       headers: {
         "Accept": "*/*",
         Authorization: `Bearer ${access_token}`,

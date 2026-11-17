@@ -91,7 +91,7 @@ spec:
             - name: BACKTEST_APP_URL
               value: '/backtestapp'
             - name: BACKTEST_TRADE_URL
-              value: '/api/trade'
+              value: '/api/trades'
             - name: BACKTEST_SERVICE_TOKEN
               valueFrom:
                 secretKeyRef:

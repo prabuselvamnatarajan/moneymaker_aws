@@ -17,22 +17,14 @@ See [FUTURE_WORKITEMS.md](file:///home/prabu/.gemini/antigravity-cli/worktrees/M
 
 The following workitems represent planned technical debt cleanup and modernizations permitted by the Zero Active Customers mandate:
 
-1. **Unified Trade Ingestion (`placeOrders` -> `/trades`)**:
-   - `MicroServices/Orders/placeOrders` (`dependency.js:triggerBackTestApp`) currently calls `POST /api/trade` on `BackTestApp` using `X-Service-Token`.
-   - *Action*: Update `placeOrders` to use the authenticated `/trades` (or `/api/trades`) endpoint directly with service-token authentication, then remove the unauthenticated legacy `/api/trade` route and its backward-compatibility handler from `BackTestApp/src/routes/tradeRoute.js` and `BackTestApp/src/controllers/trade.js`.
-
-2. **Decommission In-Strategy `candleBuilder.js`**:
+1. **Decommission In-Strategy `candleBuilder.js`**:
    - With `timeframe-constructor` centrally aggregating raw ticks into multi-timeframe candles on `timeframe_live_data` / `timeframe_backtest_data`, individual strategy microservices (`MSB`, `msb_pts`) no longer need local in-process candle building.
    - *Action*: Once all backtest and live pipelines exclusively stream timeframe snapshots, remove `candleBuilder.js` and its local tests from `kafka/services/Strategies/MSB/` and `kafka/services/Strategies/msb_pts/`.
 
-3. **Standardize Deployment Schema on `timeframes: [String]`**:
+2. **Standardize Deployment Schema on `timeframes: [String]`**:
    - The `Deployment` model in `BackTestApp` maintains both singular `timeframe: String` and plural `timeframes: [String]`.
    - *Action*: Deprecate the singular `timeframe` field entirely in favor of `timeframes: [String]` and `data_mode: "tick" | "timeframe" | "hybrid"`, removing fallback resolution logic across `StrategyChooserConsumer`, `Strategy.js`, and `deployment.js`.
 
-4. **Remove Legacy State Migrations in Strategies**:
-   - In `kafka/services/Strategies/msb_pts/MSB.js`, legacy state fields (`lastBuyPrice`, `lastSellPrice`) are kept alongside `position: { direction, entryPrice }` for historical state recovery (`TC-MPT-003`).
-   - *Action*: Simplify state structure to only use `position`, removing `lastBuyPrice` / `lastSellPrice` backfills.
-
-5. **Consolidate `BackTestApp` Route Prefixing**:
+3. **Consolidate `BackTestApp` Route Prefixing**:
    - `BackTestApp/src/app.js` mounts routes at both `/` and `/api/` prefixes for backward compatibility.
    - *Action*: Standardize all internal callers, tests, and frontend proxies on the `/api` prefix and remove dual mounting at root `/`.

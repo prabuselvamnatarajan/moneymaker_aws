@@ -8,7 +8,7 @@ const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',')
 const TARGET_TOPIC = process.env.TARGET_TOPIC;
 const NGINX_ADDRESS = process.env.NGINX_ADDRESS;
 const BACKTEST_APP_URL = process.env.BACKTEST_APP_URL || '/backtestapp';
-const BACKTEST_TRADE_URL = process.env.BACKTEST_TRADE_URL || '/api/trade';
+const BACKTEST_TRADE_URL = process.env.BACKTEST_TRADE_URL || '/api/trades';
 const BACKTEST_SERVICE_TOKEN = process.env.BACKTEST_SERVICE_TOKEN;
 const FUNDS_AND_MARGIN_API_URL = process.env.FUNDS_AND_MARGIN_API_URL || '/funds_and_margin';
 

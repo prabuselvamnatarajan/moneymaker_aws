@@ -636,7 +636,7 @@ services:
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
       FUNDS_AND_MARGIN_API_URL: /fundsandmargin
       BACKTEST_APP_URL: /backtestapp
-      BACKTEST_TRADE_URL: /api/trade
+      BACKTEST_TRADE_URL: /api/trades
       BACKTEST_SERVICE_TOKEN: backtest-internal-service-token
     volumes:
       - ./shared/redis_operations:/app/redis_utils/redis_operations:ro

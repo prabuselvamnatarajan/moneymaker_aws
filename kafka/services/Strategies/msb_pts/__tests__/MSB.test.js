@@ -176,7 +176,6 @@ describe('msb_pts buy/sell consistency', () => {
             prevHigh: { high: 105, low: 95 },
             prevLow: { high: 105, low: 95 },
             position: { direction: 'LONG', entryPrice: 100 },
-            lastBuyPrice: 100,
             closedByTargetOrSl: false,
         };
         resetStore({ balance: 100000, bought: { [holdingsKey()]: 10 } });
@@ -226,7 +225,6 @@ describe('msb_pts buy/sell consistency', () => {
                 quantity: 10,
                 entryTime: new Date().toISOString(),
             },
-            lastBuyPrice: 100,
             closedByTargetOrSl: false,
         };
         resetStore({ balance: 100000, bought: { [holdingsKey()]: 10 } });

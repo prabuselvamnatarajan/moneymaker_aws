@@ -15,25 +15,6 @@
 
 ---
 
-## 1. Unified Trade Ingestion (`placeOrders` -> `/trades`) & Deprecate Legacy `/api/trade`
-
-- **Current State**:
-  `MicroServices/Orders/placeOrders` (`dependency.js:triggerBackTestApp`) currently calls `POST /api/trade` on `BackTestApp` using `X-Service-Token`. `BackTestApp` keeps an unauthenticated/service-token legacy route in `BackTestApp/src/routes/tradeRoute.js` and `BackTestApp/src/controllers/trade.js` that bypasses standard JWT authentication.
-- **Problem & Debt**:
-  Having two separate endpoints (`/api/trade` vs `/trades` or `/api/trades`) creates dual execution paths, duplicate test fixtures (`postLegacyTrade`), and inconsistent authentication models.
-- **Target Resolution**:
-  1. Update `MicroServices/Orders/placeOrders/dependency.js` (`triggerBackTestApp`) to call `/trades` (or `/api/trades`) with service-token authorization.
-  2. In `BackTestApp/src/routes/tradeRoute.js` and `BackTestApp/src/controllers/trade.js`, remove the legacy `/api/trade` handler and its unauthenticated fallback logic.
-  3. Update `e2e/backtest-app/trades-positions.spec.ts` to retire `postLegacyTrade` in favor of standard trade API tests.
-- **Affected Files**:
-  - `MicroServices/Orders/placeOrders/dependency.js`
-  - `BackTest/BackTestApp/src/routes/tradeRoute.js`
-  - `BackTest/BackTestApp/src/controllers/trade.js`
-  - `e2e/backtest-app/trades-positions.spec.ts`
-- **Cleanup Action**: Remove this section once `/api/trade` is fully eliminated.
-
----
-
 ## 2. Decommission In-Strategy `candleBuilder.js`
 
 - **Current State**:
@@ -74,24 +55,6 @@
   - `kafka/services/StrategyChooserConsumer/topicRoutingHelper.js`
   - `shared/strategy/Strategy.js`
 - **Cleanup Action**: Remove this section once singular `timeframe` is removed from schema and code.
-
----
-
-## 4. Remove Legacy State Migrations in Strategies (`msb_pts`)
-
-- **Current State**:
-  In `kafka/services/Strategies/msb_pts/MSB.js`, legacy state fields (`lastBuyPrice`, `lastSellPrice`) are maintained in parallel with `position: { direction, entryPrice }` for historical state recovery (`TC-MPT-003`).
-- **Problem & Debt**:
-  Because there are zero active production customers, preserving backward-compatibility migrations from older unversioned Redis state keys adds unnecessary complexity to strategy state evaluation.
-- **Target Resolution**:
-  1. Standardize strategy state exclusively on `position: { direction, entryPrice }`.
-  2. Remove `lastBuyPrice` and `lastSellPrice` backfills and fallback checks.
-  3. Update test case `TC-MPT-003` to test standard position recovery rather than old schema backfill.
-- **Affected Files**:
-  - `kafka/services/Strategies/msb_pts/MSB.js`
-  - `kafka/services/Strategies/msb_pts/__tests__/MSB.test.js`
-  - `test_case_plans/strategy-msb-pts-live-backtest.md`
-- **Cleanup Action**: Remove this section once `lastBuyPrice` / `lastSellPrice` are removed from `msb_pts`.
 
 ---
 
@@ -162,14 +125,3 @@
 
 ---
 
-## 9. Modernize Kafka Partitioners in `BacktestClient`
-
-- **Current State**:
-  In `BackTest/BacktestClient/clientServer.js`, Kafka producer configuration explicitly specifies `createPartitioner: Partitioners.LegacyPartitioner`.
-- **Problem & Debt**:
-  `Partitioners.LegacyPartitioner` is deprecated in KafkaJS and emits deprecation warnings on startup. Modern KafkaJS defaults to the standard Murmur2 partitioner.
-- **Target Resolution**:
-  Remove `createPartitioner: Partitioners.LegacyPartitioner` or migrate to `Partitioners.DefaultPartitioner`.
-- **Affected Files**:
-  - `BackTest/BacktestClient/clientServer.js`
-- **Cleanup Action**: Remove this section once modern partitioner is adopted.

@@ -40,6 +40,46 @@ export class PersistenceService {
   }
 
   /**
+   * Helper to retrieve and parse data from Redis, supporting RedisJSON, JSON.GET command, and standard GET.
+   *
+   * @param {string} key
+   * @returns {Promise<any>} Parsed data or null
+   */
+  async getRedisJson(key) {
+    if (!this.redisClient || !key) return null;
+    try {
+      let type = null;
+      if (typeof this.redisClient.type === 'function') {
+        type = await this.redisClient.type(key).catch(() => null);
+      }
+
+      if (type !== 'string' && (type === 'ReJSON-RL' || typeof this.redisClient.sendCommand === 'function')) {
+        try {
+          const raw = await this.redisClient.sendCommand(['JSON.GET', key]);
+          if (raw) return typeof raw === 'string' ? JSON.parse(raw) : raw;
+        } catch {
+          // fallback to client.json or standard get
+        }
+      }
+
+      if (typeof this.redisClient.json?.get === 'function') {
+        try {
+          const result = await this.redisClient.json.get(key);
+          if (result !== null && result !== undefined) return result;
+        } catch {
+          // fallback
+        }
+      }
+
+      const raw = await this.redisClient.get(key);
+      if (!raw) return null;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Fetch timeframe requirements for a symbol from Redis.
    * Checks timeframe:requirements:<symbol>, symbol:timeframes:<symbol>, and strategies:<symbol>.
    *
@@ -68,9 +108,8 @@ export class PersistenceService {
 
     for (const k of keysToTry) {
       try {
-        const raw = await this.redisClient.get(k);
-        if (!raw) continue;
-        const parsed = JSON.parse(raw);
+        const parsed = await this.getRedisJson(k);
+        if (!parsed) continue;
         if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map(normalizeTimeframe);
         }
@@ -134,9 +173,7 @@ export class PersistenceService {
     if (!this.redisClient || !symbol) return {};
     const key = this.getStateKey(symbol, isBacktest, deploymentId);
     try {
-      const dataStr = await this.redisClient.get(key);
-      if (!dataStr) return {};
-      const parsed = JSON.parse(dataStr);
+      const parsed = await this.getRedisJson(key);
       if (parsed && typeof parsed === 'object') {
         if (parsed.aggregators && typeof parsed.aggregators === 'object') {
           return parsed.aggregators;
