@@ -52,15 +52,9 @@ const deploymentSchema = new mongoose.Schema({
     enum: ["LIVE", "PAPER", "BACKTEST"],
     required: true,
   },
-  timeframe: {
-    type: String,
-    enum: ["1m", "3m", "5m", "15m"],
-    default: "1m",
-    required: true,
-  },
   timeframes: {
     type: [String],
-    default: undefined,
+    default: ["1m"],
   },
   data_mode: {
     type: String,

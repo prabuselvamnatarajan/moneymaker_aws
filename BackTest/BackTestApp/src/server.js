@@ -56,18 +56,18 @@ try {
       const tfResult = await Deployment.updateMany(
         {
           $or: [
-            { timeframe: { $exists: false } },
-            { timeframe: null },
-            { timeframe: "" },
+            { timeframes: { $exists: false } },
+            { timeframes: null },
+            { timeframes: { $size: 0 } },
           ],
         },
-        { $set: { timeframe: "1m" } }
+        { $set: { timeframes: ["1m"] }, $unset: { timeframe: "" } }
       );
       if (tfResult.modifiedCount > 0) {
-        console.log(`✅ Migrated ${tfResult.modifiedCount} existing deployments to default timeframe 1m`);
+        console.log(`✅ Standardized ${tfResult.modifiedCount} existing deployments to timeframes: ["1m"]`);
       }
     } catch (err) {
-      console.error("⚠️ Failed to migrate existing deployment timeframes:", err.message);
+      console.error("⚠️ Failed to standardize deployment timeframes:", err.message);
     }
 
     try {

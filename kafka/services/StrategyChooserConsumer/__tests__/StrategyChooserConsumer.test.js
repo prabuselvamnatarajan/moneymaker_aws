@@ -27,7 +27,7 @@ describe('StrategyChooserConsumer Routing & Multi-Deployment Isolation (Real Cod
       backtest_run_id: 'run_bbb',
       strategy_mode: 'BACKTEST',
       data_mode: 'timeframe',
-      timeframe: '15m',
+      timeframes: ['15m'],
     },
     {
       name: 'scalping',
