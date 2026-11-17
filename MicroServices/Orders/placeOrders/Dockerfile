@@ -16,7 +16,7 @@ ENV TARGET_TOPIC=order-details
 ENV PORT=80
 ENV NGINX_ADDRESS=http://nginx-server
 ENV BACKTEST_APP_URL=/backtestapp
-ENV BACKTEST_TRADE_URL=/api/trade
+ENV BACKTEST_TRADE_URL=/api/trades
 
 # Copy the rest of the application code to the working directory
 COPY . .

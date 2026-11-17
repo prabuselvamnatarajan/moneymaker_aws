@@ -105,12 +105,12 @@ async function postTrade(
   return createTrade(request, token, payload);
 }
 
-async function postLegacyTrade(
+async function postTradeWithServiceToken(
   request: APIRequestContext,
   payload: Record<string, unknown>,
   headers: Record<string, string> = serviceHeaders()
 ): Promise<APIResponse> {
-  return request.post(apiPath('api/trade'), { headers, data: payload });
+  return request.post(apiPath('api/trades'), { headers, data: payload });
 }
 
 async function parseTradeResponse(res: APIResponse): Promise<{
@@ -411,7 +411,7 @@ test('TC-TRD-002: SELL trade opens SHORT position when flat', async ({ request }
 });
 
 test('TC-TRD-003: missing user_id rejected', async ({ request }) => {
-  const res = await postLegacyTrade(request, {
+  const res = await postTradeWithServiceToken(request, {
     price: 100,
     quantity: 1,
     type_of_order: 'BUY',
@@ -1148,13 +1148,13 @@ test('TC-TRD-030: DELETE trade does not revert position or balance', async ({ re
   expect(ledgerAfterDelete.length).toBeGreaterThan(ledgerBefore.length);
 });
 
-test('TC-TRD-031: legacy POST /api/trade accepts X-Service-Token', async ({ request }) => {
+test('TC-TRD-031: POST /api/trades accepts X-Service-Token', async ({ request }) => {
   const { accessToken } = await loginAsUser(request);
   const meBody = await getMe(request, accessToken);
   const me = meBody.data as { _id: string };
   const fx = await seedFlatDeployment(request, accessToken);
 
-  const res = await postLegacyTrade(request, {
+  const res = await postTradeWithServiceToken(request, {
     user_id: me._id,
     deployment_id: fx.deployment._id,
     account_id: fx.account._id,
@@ -1166,12 +1166,12 @@ test('TC-TRD-031: legacy POST /api/trade accepts X-Service-Token', async ({ requ
   await expectStatus(res, 201);
 });
 
-test('TC-TRD-032: legacy endpoint trusts body user_id (#49)', async ({ request }) => {
+test('TC-TRD-032: service-token trade endpoint trusts body user_id', async ({ request }) => {
   const admin = await loginAsAdmin(request);
   const victim = await createUserB(request, admin.accessToken, Date.now() + 1);
   const fx = await seedFlatDeployment(request, victim.tokens.accessToken);
 
-  const res = await postLegacyTrade(request, {
+  const res = await postTradeWithServiceToken(request, {
     user_id: victim.userId,
     deployment_id: fx.deployment._id,
     account_id: fx.account._id,
@@ -1189,8 +1189,8 @@ test('TC-TRD-032: legacy endpoint trusts body user_id (#49)', async ({ request }
   expect(victimTrades.some((t) => t._id === trade._id)).toBe(true);
 });
 
-test('TC-TRD-033: legacy endpoint rejects unauthenticated calls', async ({ request }) => {
-  const res = await request.post(apiPath('api/trade'), {
+test('TC-TRD-033: trade endpoint rejects unauthenticated calls', async ({ request }) => {
+  const res = await request.post(apiPath('api/trades'), {
     headers: { 'Content-Type': 'application/json' },
     data: { price: 1, quantity: 1, type_of_order: 'BUY', user_id: newObjectId() },
   });

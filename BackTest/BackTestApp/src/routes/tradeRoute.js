@@ -10,11 +10,8 @@ import {
 
 const router = express.Router();
 
-// Legacy endpoint (kept for backward compatibility with backtest streamer)
-router.post("/trade", authenticateOrServiceToken, createTradeController);
-
 // REST API endpoints
-router.post("/", authenticate, createTradeController);
+router.post("/", authenticateOrServiceToken, createTradeController);
 router.get("/", authenticate, getAllTradesController);
 router.get("/:id", authenticate, getTradeByIdController);
 router.delete("/:id", authenticate, deleteTradeController);
