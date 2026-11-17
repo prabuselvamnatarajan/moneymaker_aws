@@ -105,8 +105,7 @@ app.use("/external-brokers", externalBrokerRoutes);
 app.use("/volumes", volumeRoutes);
 app.use("/docker", dockerRoutes);
 
-// --- Mount routes at /api prefix (backward compatibility) ---
-app.use("/api", tradeRoutes);          // legacy /api/trade endpoint
+// --- Mount routes at /api prefix ---
 app.use("/api/auth", authRoutes);
 app.use("/api/me", meRoutes);
 app.use("/api/users", userRoutes);
