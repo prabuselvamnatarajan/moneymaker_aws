@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const WebSocket = require('ws');
-const { Kafka, Partitioners } = require('kafkajs');
+const { Kafka } = require('kafkajs');
 const { sanitize, validateStreamQuery, appendMetadataToTick } = require('./streamHelper.js');
 
 const app = express();
@@ -27,9 +27,7 @@ const kafka = new Kafka({
         retries: 20
     }
 });
-const producer = kafka.producer({
-    createPartitioner: Partitioners.LegacyPartitioner
-});
+const producer = kafka.producer();
 
 (async () => {
     await producer.connect();
