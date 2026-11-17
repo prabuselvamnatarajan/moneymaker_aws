@@ -21,10 +21,18 @@ export async function expectStatus(
   }
 }
 
-export async function expectMessageContains(res: APIResponse, fragment: string): Promise<void> {
+export async function expectMessageContains(
+  res: APIResponse,
+  fragment: string | string[]
+): Promise<void> {
   const body = await res.text();
-  if (!body.toLowerCase().includes(fragment.toLowerCase())) {
-    throw new Error(`Expected message containing "${fragment}", got: ${body}`);
+  const lowerBody = body.toLowerCase();
+  const fragments = Array.isArray(fragment) ? fragment : [fragment];
+  const matched = fragments.some((f) => lowerBody.includes(f.toLowerCase()));
+  if (!matched) {
+    throw new Error(
+      `Expected message containing any of [${fragments.map((f) => `"${f}"`).join(', ')}], got: ${body}`
+    );
   }
 }
 
