@@ -17,10 +17,6 @@ See [FUTURE_WORKITEMS.md](file:///home/prabu/.gemini/antigravity-cli/worktrees/M
 
 The following workitems represent planned technical debt cleanup and modernizations permitted by the Zero Active Customers mandate:
 
-1. **Standardize Deployment Schema on `timeframes: [String]`**:
-   - The `Deployment` model in `BackTestApp` maintains both singular `timeframe: String` and plural `timeframes: [String]`.
-   - *Action*: Deprecate the singular `timeframe` field entirely in favor of `timeframes: [String]` and `data_mode: "tick" | "timeframe" | "hybrid"`, removing fallback resolution logic across `StrategyChooserConsumer`, `Strategy.js`, and `deployment.js`.
-
-2. **Consolidate `BackTestApp` Route Prefixing**:
+1. **Consolidate `BackTestApp` Route Prefixing**:
    - `BackTestApp/src/app.js` mounts routes at both `/` and `/api/` prefixes for backward compatibility.
    - *Action*: Standardize all internal callers, tests, and frontend proxies on the `/api` prefix and remove dual mounting at root `/`.

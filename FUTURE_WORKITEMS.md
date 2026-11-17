@@ -15,26 +15,6 @@
 
 ---
 
-## 3. Standardize Deployment Schema Exclusively on `timeframes: [String]`
-
-- **Current State**:
-  The `Deployment` model in `BackTestApp/src/models/deployment.js` maintains both singular `timeframe: String` (required) and plural `timeframes: [String]` (optional), alongside `data_mode: "tick" | "timeframe" | "hybrid"`.
-- **Problem & Debt**:
-  Consumer and strategy code must repeatedly execute fallback resolution (`dep.timeframes?.[0] || dep.timeframe || '1m'`) to cater to both fields.
-- **Target Resolution**:
-  1. Standardize `Deployment` schema in `BackTestApp` to make `timeframes: [String]` the single source of truth for requested candle intervals (defaulting to `['1m']`).
-  2. Deprecate and drop the singular `timeframe` attribute from MongoDB schemas, API payloads, and frontend types.
-  3. Simplify timeframe resolution in `StrategyChooserConsumer`, `Strategy.js`, and `deployment.js`.
-- **Affected Files**:
-  - `BackTest/BackTestApp/src/models/deployment.js`
-  - `BackTest/BackTestApp/src/services/deployment.js`
-  - `BackTest/BackTestApp/src/controllers/deployment.js`
-  - `kafka/services/StrategyChooserConsumer/topicRoutingHelper.js`
-  - `shared/strategy/Strategy.js`
-- **Cleanup Action**: Remove this section once singular `timeframe` is removed from schema and code.
-
----
-
 ## 5. Consolidate `BackTestApp` Route Prefixing (Eliminate Dual Root & `/api` Mounting)
 
 - **Current State**:
