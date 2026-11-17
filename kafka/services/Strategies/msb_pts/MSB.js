@@ -102,14 +102,12 @@ export class MsbPtsStrategy extends Strategy {
             logger.error(
                 `Resetting stale msb_pts candle epoch for ${symbol}: state_epoch=${prevData.state_epoch} message_epoch=${messageEpoch}`
             );
-            const hasOpen = !!(prevData.position || prevData.lastBuyPrice);
+            const hasOpen = !!prevData.position;
             prevData = hasOpen
                 ? {
                     isUp: null,
                     prevHigh: null,
                     prevLow: null,
-                    lastBuyPrice: prevData.lastBuyPrice ?? null,
-                    lastSellPrice: prevData.lastSellPrice ?? null,
                     position: prevData.position ?? null,
                     closedByTargetOrSl: prevData.closedByTargetOrSl ?? false,
                     candleState: null,
@@ -141,8 +139,6 @@ export class MsbPtsStrategy extends Strategy {
         let isUp;
         let prevHigh;
         let prevLow;
-        let lastBuyPrice;
-        let lastSellPrice;
         let position;
         let closedByTargetOrSl = false;
 
@@ -153,21 +149,16 @@ export class MsbPtsStrategy extends Strategy {
         if (swingsInvalid) {
             // Re-initialize swings but preserve any open position / entry so SL/target exits survive state recovery.
             // Fall through to target/SL checks on this same tick (do not delay exit by one bar).
-            const preservedPosition = prevData?.position
-                || (prevData?.lastBuyPrice ? { direction: "LONG", entryPrice: prevData.lastBuyPrice } : null);
+            const preservedPosition = prevData?.position ?? null;
             const initHigh = closedCandle?.high ?? tickHigh;
             const initLow = closedCandle?.low ?? tickLow;
             isUp = null;
             prevHigh = { high: initHigh, low: initLow };
             prevLow = { high: initHigh, low: initLow };
-            lastBuyPrice = preservedPosition?.direction === "LONG"
-                ? (preservedPosition.entryPrice ?? prevData?.lastBuyPrice ?? null)
-                : (prevData?.lastBuyPrice ?? null);
-            lastSellPrice = prevData?.lastSellPrice ?? null;
             position = preservedPosition;
             closedByTargetOrSl = prevData?.closedByTargetOrSl ?? false;
         } else {
-            ({ isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl = false } = prevData);
+            ({ isUp, prevHigh, prevLow, position, closedByTargetOrSl = false } = prevData);
         }
 
         let target_type = strategy_details.target_type || "POINTS";
@@ -176,11 +167,6 @@ export class MsbPtsStrategy extends Strategy {
         let target_pct = strategy_details.target_pct !== undefined ? strategy_details.target_pct : 2;
         let sl_pct = strategy_details.sl_pct !== undefined ? strategy_details.sl_pct : 2;
         let advance_trade_decision = strategy_details.advance_trade_decision !== undefined ? strategy_details.advance_trade_decision : true;
-
-        // Check if previous schema's lastBuyPrice is set but new position object is not initialized
-        if (lastBuyPrice && !position) {
-            position = { direction: "LONG", entryPrice: lastBuyPrice };
-        }
 
         // 1. Check for Target or Stop Loss hit first (runs real-time on every tick LTP)
         let targetHit = false;
@@ -222,8 +208,6 @@ export class MsbPtsStrategy extends Strategy {
                 });
                 if (placed) {
                     position = null;
-                    lastBuyPrice = null;
-                    lastSellPrice = null;
                     closedByTargetOrSl = true;
                 } else if (order.quantity <= 0) {
                     logger.warn(`msb_pts: Skipping Target/SL SELL due to zero/negative quantity: ${order.quantity}`);
@@ -247,8 +231,6 @@ export class MsbPtsStrategy extends Strategy {
                 });
                 if (placed) {
                     position = null;
-                    lastBuyPrice = null;
-                    lastSellPrice = null;
                     closedByTargetOrSl = true;
                 } else if (order.quantity <= 0) {
                     logger.warn(`msb_pts: Skipping Target/SL BUY due to zero/negative quantity: ${order.quantity}`);
@@ -260,7 +242,7 @@ export class MsbPtsStrategy extends Strategy {
 
         if (!closedCandle) {
             // Intra-bar tick update: Target/SL handled; skip structure breakout evaluation until candle closes
-            return { isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl, candleState: currentCandleState };
+            return { isUp, prevHigh, prevLow, position, closedByTargetOrSl, candleState: currentCandleState };
         }
 
         const high = closedCandle.high;
@@ -274,8 +256,7 @@ export class MsbPtsStrategy extends Strategy {
                 if (existingHoldings > 0 || position) {
                     // Recover LONG awareness after state wipe that preserved bought_quantity
                     if (!position) {
-                        position = { direction: "LONG", entryPrice: lastBuyPrice || ltp };
-                        lastBuyPrice = position.entryPrice;
+                        position = { direction: "LONG", entryPrice: ltp };
                         logger.warn(
                             `msb_pts: Skipping initial BUY — holdings already present (${existingHoldings}). Restored LONG state.`
                         );
@@ -294,7 +275,6 @@ export class MsbPtsStrategy extends Strategy {
                     });
                     if (placed) {
                         position = { direction: "LONG", entryPrice: ltp };
-                        lastBuyPrice = ltp;
                         closedByTargetOrSl = false;
                         isUp = true;
                         prevHigh.high = high;
@@ -330,7 +310,6 @@ export class MsbPtsStrategy extends Strategy {
                     logger.info(`msb_pts: Skip duplicate exit order for LONG. Position already closed by Target/SL.`);
                     closedByTargetOrSl = false;
                     position = null;
-                    lastBuyPrice = null;
                 } else if (position && position.direction === "LONG") {
                     logger.info(`msb_pts: Closing LONG position at ${ltp} on trend break DOWN`);
                     const { placed, order } = await this.triggerOrder('SELL', {
@@ -342,14 +321,11 @@ export class MsbPtsStrategy extends Strategy {
                     });
                     if (placed) {
                         position = null;
-                        lastBuyPrice = null;
                     } else if (order.quantity <= 0) {
                         logger.warn(`msb_pts: Skipping trend-break SELL due to zero/negative quantity: ${order.quantity}`);
                     } else {
                         logger.warn('msb_pts: Trend-break SELL failed; keeping position for retry');
                     }
-                } else if (!position) {
-                    lastBuyPrice = null;
                 }
 
                 prevLow.high = high;
@@ -372,7 +348,6 @@ export class MsbPtsStrategy extends Strategy {
                     logger.info(`msb_pts: Skip duplicate exit order for SHORT. Position already closed by Target/SL.`);
                     closedByTargetOrSl = false;
                     position = null;
-                    lastSellPrice = null;
                 } else if (position && position.direction === "SHORT") {
                     logger.info(`msb_pts: Closing SHORT position at ${ltp} on trend break UP`);
                     const shortQty = await getShortQuantityWithTagFromRedis(symbol, strategy_details.deployment_id);
@@ -386,22 +361,18 @@ export class MsbPtsStrategy extends Strategy {
                     });
                     if (placed) {
                         position = null;
-                        lastSellPrice = null;
                     } else if (order.quantity <= 0) {
                         logger.warn(`msb_pts: Skipping short cover due to zero/negative quantity: ${order.quantity}`);
                     } else {
                         logger.warn('msb_pts: Trend-break short cover failed; keeping position for retry');
                     }
-                } else if (!position) {
-                    lastSellPrice = null;
                 }
 
                 // Open LONG position (entry signal) only when flat and Redis has no leftover holdings
                 if (!position) {
                     const existingHoldings = await getBoughtQuantityWithTagFromRedis(symbol, strategy_details.deployment_id);
                     if (existingHoldings > 0) {
-                        position = { direction: "LONG", entryPrice: lastBuyPrice || ltp };
-                        lastBuyPrice = position.entryPrice;
+                        position = { direction: "LONG", entryPrice: ltp };
                         logger.warn(
                             `msb_pts: Skipping trend-break BUY — holdings already present (${existingHoldings}). Restored LONG state.`
                         );
@@ -416,7 +387,6 @@ export class MsbPtsStrategy extends Strategy {
                         });
                         if (placed) {
                             position = { direction: "LONG", entryPrice: ltp };
-                            lastBuyPrice = ltp;
                             closedByTargetOrSl = false;
                         } else {
                             logger.warn('msb_pts: BUY order failed; not opening LONG position');
@@ -435,7 +405,7 @@ export class MsbPtsStrategy extends Strategy {
             }
         }
 
-        return { isUp, prevHigh, prevLow, lastBuyPrice, lastSellPrice, position, closedByTargetOrSl, candleState: currentCandleState };
+        return { isUp, prevHigh, prevLow, position, closedByTargetOrSl, candleState: currentCandleState };
     }
 }
 
