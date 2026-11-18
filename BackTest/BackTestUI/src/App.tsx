@@ -228,18 +228,23 @@ export default function App() {
             if (typeof msg.volume === 'number' && !Number.isNaN(msg.volume)) {
               patch.volume24h = msg.volume;
             }
-            setLiveQuotes(prev => applyLiveQuote(prev, msg.instrument_token, patch));
+            setLiveQuotes(prev => applyLiveQuote(prev, msg.instrument_token, patch, msg.symbol));
             setSymbols(prevSymbols =>
-              prevSymbols.map(sym =>
-                tokensMatch(sym.instrumentToken || '', msg.instrument_token)
+              prevSymbols.map(sym => {
+                const matches =
+                  tokensMatch(sym.instrumentToken || '', msg.instrument_token) ||
+                  (msg.symbol && (sym.ticker === msg.symbol || tokensMatch(sym.ticker || '', msg.symbol))) ||
+                  tokensMatch(sym.ticker || '', msg.instrument_token);
+
+                return matches
                   ? {
                       ...sym,
                       lastPrice: msg.last_price,
                       ...(patch.change24h !== undefined ? { change24h: patch.change24h } : {}),
                       ...(patch.volume24h !== undefined ? { volume24h: patch.volume24h } : {}),
                     }
-                  : sym
-              )
+                  : sym;
+              })
             );
           }
         } catch (err) {

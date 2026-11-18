@@ -37,11 +37,12 @@ export interface LiveQuote {
 
 const MAX_LIVE_QUOTES = 500;
 
-/** Store a live quote under both the full token and its suffix for O(1) lookup. */
+/** Store a live quote under both the full token, its suffix, and optional symbol/ticker for O(1) lookup. */
 export function applyLiveQuote(
   quotes: Record<string, LiveQuote>,
   instrumentToken: string,
-  patch: LiveQuote
+  patch: LiveQuote,
+  symbol?: string
 ): Record<string, LiveQuote> {
   const merge = (prev: LiveQuote | undefined): LiveQuote => ({
     ...prev,
@@ -58,10 +59,14 @@ export function applyLiveQuote(
     next[suffix] = merge(quotes[suffix]);
   }
 
+  if (symbol && symbol !== instrumentToken && symbol !== suffix) {
+    next[symbol] = merge(quotes[symbol]);
+  }
+
   const keys = Object.keys(next);
   if (keys.length > MAX_LIVE_QUOTES) {
     // Drop oldest-ish keys (insertion order) that are not the ones we just wrote.
-    const protectedKeys = new Set([instrumentToken, suffix].filter(Boolean));
+    const protectedKeys = new Set([instrumentToken, suffix, symbol].filter(Boolean) as string[]);
     let toRemove = keys.length - MAX_LIVE_QUOTES;
     for (const key of keys) {
       if (toRemove <= 0) break;
@@ -76,13 +81,18 @@ export function applyLiveQuote(
 
 export function getLiveQuote(
   quotes: Record<string, LiveQuote>,
-  instrumentToken: string
+  instrumentToken: string,
+  fallbackKey?: string
 ): LiveQuote | undefined {
-  if (!instrumentToken) return undefined;
-  if (quotes[instrumentToken]) return quotes[instrumentToken];
-  const suffix = instrumentTokenSuffix(instrumentToken);
-  if (suffix !== instrumentToken && quotes[suffix]) {
-    return quotes[suffix];
+  if (instrumentToken) {
+    if (quotes[instrumentToken]) return quotes[instrumentToken];
+    const suffix = instrumentTokenSuffix(instrumentToken);
+    if (suffix !== instrumentToken && quotes[suffix]) {
+      return quotes[suffix];
+    }
+  }
+  if (fallbackKey && quotes[fallbackKey]) {
+    return quotes[fallbackKey];
   }
   return undefined;
 }
