@@ -237,6 +237,7 @@ async function initRedisSubscriber() {
             console.error('[WS Upstox] Error closing active WS:', e.message);
           }
           activeWS = null;
+          subscribedSymbols.clear();
         }
 
         console.log('[WS Upstox] Auto-initiating connection with updated broker token...');
@@ -284,6 +285,7 @@ async function get_WS_URL({ access_token, symbol = [] }) {
 
     console.log('[WS Upstox] Initiating WebSocket connection to Upstox feed');
     activeWS = ws;
+    subscribedSymbols.clear();
     connectWebSocket({ ws, symbol }).catch(async (err) => {
       const message = err.message || String(err);
       if (message.includes('401')) {

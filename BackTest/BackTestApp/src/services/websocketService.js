@@ -142,6 +142,11 @@ export function initWebSocketServer(server) {
       subscribedTokens
     });
 
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
+
     const intervalId = setInterval(async () => {
       if (ws.readyState === ws.OPEN) {
         const refreshedTokens = await fetchUserSymbols();
@@ -152,9 +157,22 @@ export function initWebSocketServer(server) {
       }
     }, 10000);
 
+    const pingIntervalId = setInterval(() => {
+      if (ws.readyState === ws.OPEN) {
+        if (ws.isAlive === false) {
+          console.log(`[WS] Terminating unresponsive client socket: ${socketId}`);
+          ws.terminate();
+          return;
+        }
+        ws.isAlive = false;
+        ws.ping();
+      }
+    }, 25000);
+
     ws.on('close', () => {
       console.log(`[WS] Client disconnected: ${socketId}`);
       clearInterval(intervalId);
+      clearInterval(pingIntervalId);
       activeSockets.delete(socketId);
     });
 
