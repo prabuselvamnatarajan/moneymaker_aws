@@ -489,9 +489,9 @@ export default function SymbolsListView({
                   <th className="p-4">Instrument Class</th>
                   <th className="p-4 font-mono">Lot Size</th>
                   <th className="p-4 font-mono">Status</th>
-                  <th className="p-4 font-mono text-center">Latency</th>
                   <th className="p-4 text-right">Last price quote</th>
                   <th className="p-4 text-right">24h Market Swing</th>
+                  <th className="p-4 font-mono text-center">Latency</th>
                   <th className="p-4 text-right">Trading Volume (24h)</th>
                   <th className="p-4 text-center">Workloads Action</th>
                 </tr>
@@ -553,6 +553,21 @@ export default function SymbolsListView({
                           {sym.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
+                      <td className="p-4 text-right font-bold font-mono text-slate-200">
+                        {hasPrice
+                          ? `₹${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+                          : '—'}
+                      </td>
+                      <td className="p-4 text-right">
+                        {quote?.change24h != null || (currentChange != null && currentChange !== 0) ? (
+                          <span className={`inline-flex items-center gap-1 font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                            {isPositive ? '+' : ''}{(currentChange ?? 0).toFixed(2)}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 font-mono">—</span>
+                        )}
+                      </td>
                       <td className="p-4 text-center">
                         {(() => {
                           const lat = quote?.latency_ms ?? liveSym?.latency_ms ?? sym.latency_ms;
@@ -568,21 +583,6 @@ export default function SymbolsListView({
                             </span>
                           );
                         })()}
-                      </td>
-                      <td className="p-4 text-right font-bold font-mono text-slate-200">
-                        {hasPrice
-                          ? `₹${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
-                          : '—'}
-                      </td>
-                      <td className="p-4 text-right">
-                        {quote?.change24h != null || (currentChange != null && currentChange !== 0) ? (
-                          <span className={`inline-flex items-center gap-1 font-bold font-mono ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                            {isPositive ? '+' : ''}{(currentChange ?? 0).toFixed(2)}%
-                          </span>
-                        ) : (
-                          <span className="text-slate-500 font-mono">—</span>
-                        )}
                       </td>
                       <td className="p-4 text-right text-slate-400 font-mono">
                         {currentVolume != null && currentVolume > 0
