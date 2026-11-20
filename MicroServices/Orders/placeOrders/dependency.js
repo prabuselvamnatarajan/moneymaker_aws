@@ -1,7 +1,21 @@
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
+import https from 'node:https';
+import http from 'node:http';
 
 const base_url = 'https://api-hft.upstox.com/v3';
+
+// HTTP Keep-Alive Agents for ultra-low latency connection pooling
+const httpsAgent = new https.Agent({
+    keepAlive: true,
+    keepAliveMsecs: 30000,
+    maxSockets: 50,
+});
+const httpAgent = new http.Agent({
+    keepAlive: true,
+    keepAliveMsecs: 30000,
+    maxSockets: 50,
+});
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -20,6 +34,29 @@ const kafka = new Kafka({
       retries: 20
     }
   });
+
+// Persistent singleton producer across all orders
+let persistentProducer = null;
+let isProducerConnecting = false;
+
+async function getOrCreateProducer() {
+    if (persistentProducer) return persistentProducer;
+    if (isProducerConnecting) {
+        while (isProducerConnecting) {
+            await new Promise(r => setTimeout(r, 10));
+        }
+        if (persistentProducer) return persistentProducer;
+    }
+    isProducerConnecting = true;
+    try {
+        const prod = kafka.producer();
+        await prod.connect();
+        persistentProducer = prod;
+        return persistentProducer;
+    } finally {
+        isProducerConnecting = false;
+    }
+}
 
 async function fetchLTP(symbol, userId) {
     if (!userId || !symbol) {
@@ -48,43 +85,35 @@ async function fetchLTP(symbol, userId) {
 }
 
 async function storeOrderDetails(symbol, order_details) {
-    const producer = kafka.producer();
-    await producer.connect();
-
     const topic = TARGET_TOPIC;
     console.log(`Processing ${symbol} details:`, order_details);
     console.log(`Topic : ${topic}`);
 
-    try {
-        const userId = order_details.strategy_details ? order_details.strategy_details.user_id : '';
-        const ltpInfo = await fetchLTP(symbol, userId);
-        if (ltpInfo) {
-            order_details.ltp = ltpInfo.ltp;
-            order_details.Symbol_Name = ltpInfo.symbolName;
-        } else {
-            order_details.ltp = null;
-            order_details.Symbol_Name = null;
-        }
-    } catch (error) {
-        console.error(`Failed to fetch LTP in storeOrderDetails for symbol ${symbol}:`, error.message);
-        order_details.ltp = null;
-        order_details.Symbol_Name = null;
+    // If ltp and Symbol_Name are not present, attempt fast lookup
+    if (order_details.ltp == null && order_details.price > 0) {
+        order_details.ltp = order_details.price;
+    }
+    if (order_details.Symbol_Name == null && order_details.tag) {
+        order_details.Symbol_Name = order_details.tag;
     }
 
-    await retry(async () => {
-        await producer.send({
-            topic,
-            messages: [{ key: symbol, value: JSON.stringify(order_details) }], // Serialize order_details
+    try {
+        const producer = await getOrCreateProducer();
+        await retry(async () => {
+            await producer.send({
+                topic,
+                messages: [{ key: symbol, value: JSON.stringify(order_details) }],
+            });
+        }, {
+            retries: 3,
+            minTimeout: 200,
+            onRetry: (error, attempt) => {
+                console.log(`Retry attempt ${attempt} for topic ${topic} due to error: ${error.message}`);
+            }
         });
-    }, {
-        retries: 5,
-        minTimeout: 1000,
-        onRetry: (error, attempt) => {
-            console.log(`Retry attempt ${attempt} for topic ${topic} due to error: ${error.message}`);
-        }
-    });
-
-    await producer.disconnect();
+    } catch (err) {
+        console.error(`Failed to produce order details to topic ${topic} for ${symbol}:`, err.message);
+    }
 }
 
 function resolveExecutionMode(strategyDetails) {
@@ -141,7 +170,9 @@ async function placeOrders(access_token, body) {
         const res = await fetch(url, {
             method: 'POST',
             headers: headers,
-            body
+            body,
+            // @ts-ignore
+            dispatcher: undefined,
         });
         const data = await res.json();
         console.log('Response from Upstox:', data);

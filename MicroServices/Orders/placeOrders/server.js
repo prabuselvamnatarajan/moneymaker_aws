@@ -41,35 +41,45 @@ app.post('/', async (req, res) => {
             const brokerPayload = buildBrokerOrderPayload(body);
             result = await placeOrders(access_token, JSON.stringify(brokerPayload));
 
-            let ledgerClosingBalance = null;
-            try {
-                orderResponse = await triggerBackTestApp(body);
-                let { data: { closing_balance } = {} } = orderResponse || {};
-                ledgerClosingBalance = closing_balance;
-                if (closing_balance !== undefined && closing_balance !== null) {
-                    await setAccountBalanceToRedis(strategy_details.account_id, closing_balance, strategy_details.deployment_id, isBacktest);
+            // CRITICAL LATENCY OPTIMIZATION: Respond to caller immediately so strategy consumer does not freeze!
+            res.send(result);
+
+            // Asynchronously handle ledger recording, live balance reconciliation, and Kafka telemetry
+            (async () => {
+                let ledgerClosingBalance = null;
+                try {
+                    orderResponse = await triggerBackTestApp(body);
+                    let { data: { closing_balance } = {} } = orderResponse || {};
+                    ledgerClosingBalance = closing_balance;
+                    if (closing_balance !== undefined && closing_balance !== null) {
+                        await setAccountBalanceToRedis(strategy_details.account_id, closing_balance, strategy_details.deployment_id, isBacktest);
+                    }
+                } catch (err) {
+                    console.error('Failed to record successful live trade in BackTestApp:', err);
                 }
-            } catch (err) {
-                console.error('Failed to record successful live trade in BackTestApp:', err);
-            }
 
-            let liveBalance = null;
-            try {
-                liveBalance = await getLiveAccountBalance(strategy_details.user_id);
-            } catch (err) {
-                console.error('Failed to fetch live account balance after order (keeping ledger balance):', err.message || err);
-            }
-
-            const { balanceToStore, balanceSource } = resolveBalanceAfterLiveOrder(ledgerClosingBalance, liveBalance);
-
-            if (balanceToStore !== null) {
-                await setAccountBalanceToRedis(strategy_details.account_id, balanceToStore, strategy_details.deployment_id, isBacktest);
-                if (balanceSource === 'ledger_kept_over_zero_live') {
-                    console.warn(
-                        `Keeping ledger balance ${ledgerClosingBalance} for account ${strategy_details.account_id}; live availableMargin was ${liveBalance}`
-                    );
+                let liveBalance = null;
+                try {
+                    liveBalance = await getLiveAccountBalance(strategy_details.user_id);
+                } catch (err) {
+                    console.error('Failed to fetch live account balance after order (keeping ledger balance):', err.message || err);
                 }
-            }
+
+                const { balanceToStore, balanceSource } = resolveBalanceAfterLiveOrder(ledgerClosingBalance, liveBalance);
+
+                if (balanceToStore !== null) {
+                    await setAccountBalanceToRedis(strategy_details.account_id, balanceToStore, strategy_details.deployment_id, isBacktest);
+                    if (balanceSource === 'ledger_kept_over_zero_live') {
+                        console.warn(
+                            `Keeping ledger balance ${ledgerClosingBalance} for account ${strategy_details.account_id}; live availableMargin was ${liveBalance}`
+                        );
+                    }
+                }
+
+                storeOrderDetails(body.instrument_token, body);
+            })().catch(err => console.error('Post-order async processing error:', err));
+
+            return;
         } else {
             orderResponse = await triggerBackTestApp(body);
             let { data: { closing_balance } = {} } = orderResponse || {};
@@ -84,10 +94,11 @@ app.post('/', async (req, res) => {
             } else {
                 result = 'Test Mode: Order not placed with external broker.';
             }
-        }
 
-        storeOrderDetails(body.instrument_token, body);
-        res.send(result || orderResponse);
+            storeOrderDetails(body.instrument_token, body);
+            res.send(result || orderResponse);
+            return;
+        }
     } catch (e) {
         console.error(e);
         const status = e.statusCode || 500;
