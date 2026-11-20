@@ -287,9 +287,7 @@ export class Strategy {
                 }
 
                 // Resolve canonical timeframe from deployment configuration
-                const timeframe = (Array.isArray(strategy_details.timeframes) && strategy_details.timeframes[0])
-                    || strategy_details.timeframe
-                    || '1m';
+                const timeframe = (Array.isArray(strategy_details.timeframes) && strategy_details.timeframes[0]) || '1m';
                 strategy_details.timeframe = timeframe;
 
                 // Also keep instance fields for children/tests that set/read them directly.

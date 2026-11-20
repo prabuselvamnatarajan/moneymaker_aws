@@ -414,8 +414,8 @@ describe("Dynamic Symbol Timeframe Requirements Computation & Redis Sync", () =>
         { name: "trend", timeframes: ["15m"], data_mode: "timeframe" },
       ],
       "strategies:live:BANKNIFTY": [
-        { name: "scalp", timeframe: "3m", data_mode: "timeframe" },
-        { name: "tick_only", timeframe: "1m", data_mode: "tick" }, // Ignored for candle requirements
+        { name: "scalp", timeframes: ["3m"], data_mode: "timeframe" },
+        { name: "tick_only", timeframes: ["1m"], data_mode: "tick" }, // Ignored for candle requirements
       ],
       "strategies:backtest:RELIANCE": [
         { name: "msb_pts", timeframes: ["5m", "15m"], data_mode: "timeframe" },

@@ -61,8 +61,6 @@ export function filterSnapshotForDeployment(snapshot, deployment) {
   let requested = [];
   if (Array.isArray(deployment.timeframes) && deployment.timeframes.length > 0) {
     requested = deployment.timeframes.map(normalizeTimeframe);
-  } else if (deployment.timeframe) {
-    requested = [normalizeTimeframe(deployment.timeframe)];
   } else {
     requested = ['1m'];
   }

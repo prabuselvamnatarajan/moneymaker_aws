@@ -15,49 +15,6 @@
 
 ---
 
-## 2. Decommission In-Strategy `candleBuilder.js`
-
-- **Current State**:
-  With the introduction of the centralized `timeframe-constructor` microservice, timeframe candles (`1m`, `3m`, `5m`, `15m`, etc.) are aggregated centrally and published as synchronized multi-timeframe snapshots on Kafka topics `timeframe_live_data` and `timeframe_backtest_data`. However, local in-process candle aggregation helpers still exist in:
-  - `kafka/services/Strategies/MSB/candleBuilder.js`
-  - `kafka/services/Strategies/msb_pts/candleBuilder.js`
-- **Problem & Debt**:
-  Keeping local candle builders inside individual strategy microservices leads to duplicate logic, dead code branches, and extra test surface area for deprecated paths.
-- **Target Resolution**:
-  1. Ensure all live and backtest deployment pipelines strictly route through `timeframe_live_data` / `timeframe_backtest_data`.
-  2. Remove `buildTimeframeCandle` invocation and fallback branches from `kafka/services/Strategies/MSB/MSB.js` and `kafka/services/Strategies/msb_pts/MSB.js`.
-  3. Delete `candleBuilder.js` and its associated unit test files (`__tests__/candleBuilder.test.js`) from both strategy packages.
-- **Affected Files**:
-  - `kafka/services/Strategies/MSB/candleBuilder.js`
-  - `kafka/services/Strategies/MSB/__tests__/candleBuilder.test.js`
-  - `kafka/services/Strategies/MSB/MSB.js`
-  - `kafka/services/Strategies/msb_pts/candleBuilder.js`
-  - `kafka/services/Strategies/msb_pts/__tests__/candleBuilder.test.js`
-  - `kafka/services/Strategies/msb_pts/MSB.js`
-- **Cleanup Action**: Remove this section once `candleBuilder.js` is deleted from all strategy directories.
-
----
-
-## 3. Standardize Deployment Schema Exclusively on `timeframes: [String]`
-
-- **Current State**:
-  The `Deployment` model in `BackTestApp/src/models/deployment.js` maintains both singular `timeframe: String` (required) and plural `timeframes: [String]` (optional), alongside `data_mode: "tick" | "timeframe" | "hybrid"`.
-- **Problem & Debt**:
-  Consumer and strategy code must repeatedly execute fallback resolution (`dep.timeframes?.[0] || dep.timeframe || '1m'`) to cater to both fields.
-- **Target Resolution**:
-  1. Standardize `Deployment` schema in `BackTestApp` to make `timeframes: [String]` the single source of truth for requested candle intervals (defaulting to `['1m']`).
-  2. Deprecate and drop the singular `timeframe` attribute from MongoDB schemas, API payloads, and frontend types.
-  3. Simplify timeframe resolution in `StrategyChooserConsumer`, `Strategy.js`, and `deployment.js`.
-- **Affected Files**:
-  - `BackTest/BackTestApp/src/models/deployment.js`
-  - `BackTest/BackTestApp/src/services/deployment.js`
-  - `BackTest/BackTestApp/src/controllers/deployment.js`
-  - `kafka/services/StrategyChooserConsumer/topicRoutingHelper.js`
-  - `shared/strategy/Strategy.js`
-- **Cleanup Action**: Remove this section once singular `timeframe` is removed from schema and code.
-
----
-
 ## 5. Consolidate `BackTestApp` Route Prefixing (Eliminate Dual Root & `/api` Mounting)
 
 - **Current State**:

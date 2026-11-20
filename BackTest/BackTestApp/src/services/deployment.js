@@ -22,7 +22,7 @@ import { purgePositionsFromRedis, readLiveCache } from "../utils/positionRedis.j
 import { sumOpenUnrealised, round2, resolveCloseExecutionTime } from "../utils/positionMath.js";
 import { completionKey as backtestCompletionKey } from "../utils/backtestCompletionUtil.js";
 
-const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframe", "timeframes", "data_mode", "symbol_control"];
+const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframes", "data_mode", "symbol_control"];
 
 const ALLOWED_TIMEFRAMES = ["1m", "3m", "5m", "15m"];
 
@@ -1024,7 +1024,14 @@ export const createDeployment = async (userId, deploymentData) => {
     prepared.no_of_lots = 1;
   }
 
-  prepared.timeframe = normalizeTimeframe(prepared.timeframe);
+  if (Array.isArray(prepared.timeframes) && prepared.timeframes.length > 0) {
+    prepared.timeframes = prepared.timeframes.map(normalizeTimeframe);
+  } else if (prepared.timeframe) {
+    prepared.timeframes = [normalizeTimeframe(prepared.timeframe)];
+    delete prepared.timeframe;
+  } else {
+    prepared.timeframes = ["1m"];
+  }
 
   if (["RUNNING", "SCHEDULED"].includes(prepared.current_status)) {
     const existingActive = await Deployment.findOne({
@@ -1112,8 +1119,15 @@ export const updateDeployment = async (userId, id, updateData) => {
     sanitizedUpdate.no_of_lots = normalizeNoOfLots(sanitizedUpdate.no_of_lots);
   }
 
-  if (sanitizedUpdate.timeframe !== undefined) {
-    sanitizedUpdate.timeframe = normalizeTimeframe(sanitizedUpdate.timeframe);
+  if (sanitizedUpdate.timeframes !== undefined) {
+    if (Array.isArray(sanitizedUpdate.timeframes) && sanitizedUpdate.timeframes.length > 0) {
+      sanitizedUpdate.timeframes = sanitizedUpdate.timeframes.map(normalizeTimeframe);
+    } else {
+      sanitizedUpdate.timeframes = ["1m"];
+    }
+  } else if (sanitizedUpdate.timeframe !== undefined) {
+    sanitizedUpdate.timeframes = [normalizeTimeframe(sanitizedUpdate.timeframe)];
+    delete sanitizedUpdate.timeframe;
   }
 
   const existing = await Deployment.findOne({ _id: id, user_id: userId }).populate("strategy_id");
@@ -1121,9 +1135,12 @@ export const updateDeployment = async (userId, id, updateData) => {
     throw new Error("Deployment not found");
   }
 
-  const previousTimeframe = existing.timeframe || "1m";
-  const timeframeChanged = sanitizedUpdate.timeframe !== undefined
-    && previousTimeframe !== sanitizedUpdate.timeframe;
+  const previousTimeframes = (Array.isArray(existing.timeframes) && existing.timeframes.length > 0)
+    ? existing.timeframes
+    : (existing.timeframe ? [existing.timeframe] : ["1m"]);
+  const timeframeChanged = sanitizedUpdate.timeframes !== undefined
+    && (previousTimeframes.length !== sanitizedUpdate.timeframes.length ||
+        previousTimeframes.some((tf, idx) => tf !== sanitizedUpdate.timeframes[idx]));
 
   if (timeframeChanged && (await hasOpenPosition(existing._id))) {
     throw new Error("Cannot change timeframe while deployment has an open position. Close the position or stop the deployment first.");
@@ -1195,7 +1212,7 @@ export const updateDeployment = async (userId, id, updateData) => {
       try {
         await Deployment.findOneAndUpdate(
           { _id: id, user_id: userId },
-          { timeframe: previousTimeframe },
+          { timeframes: previousTimeframes },
           { runValidators: true }
         );
         try {
@@ -1788,21 +1805,14 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
 
       const deploymentIdStr = dep._id.toString();
       const stateEpoch = await ensureDeploymentStateEpoch(client, deploymentIdStr);
-      // Resolve canonical timeframe from deployment configuration (defaulting to 1m)
-      const timeframe = dep.timeframe || (Array.isArray(dep.timeframes) && dep.timeframes[0]) || "1m";
-      if (!dep.timeframe && (!Array.isArray(dep.timeframes) || dep.timeframes.length === 0)) {
-        console.warn(`[Sync] RUNNING deployment ${deploymentIdStr} missing timeframe; defaulting to 1m`);
-      }
-
       const timeframes = Array.isArray(dep.timeframes) && dep.timeframes.length > 0
         ? dep.timeframes
-        : [timeframe];
+        : (dep.timeframe ? [dep.timeframe] : ["1m"]);
       const data_mode = dep.data_mode || "timeframe";
 
       newKeysData[key].push({
         name: dep.strategy_id.strategy_name,
         isTest: isTest,
-        timeframe,
         timeframes,
         data_mode,
         state_epoch: stateEpoch,
@@ -1926,8 +1936,7 @@ export const getDeploymentCandles = async (userId, id, timeframe) => {
 
   const symbol = deployment.symbol;
   const date = deployment.backtest_date || new Date().toISOString().slice(0, 10);
-  // Prefer explicit request TF, else deployment's configured candle timeframe
-  const resolvedTf = normalizeTimeframe(timeframe || deployment.timeframe || "1m");
+  const resolvedTf = normalizeTimeframe(timeframe || deployment.timeframes?.[0] || deployment.timeframe || "1m");
 
   return await getSymbolCandles(symbol, date, resolvedTf);
 };
@@ -1954,8 +1963,6 @@ export function computeSymbolTimeframeRequirements(newKeysData = {}) {
         for (const tf of strat.timeframes) {
           if (tf) tfSet.add(normalizeTimeframe(tf));
         }
-      } else if (strat.timeframe) {
-        tfSet.add(normalizeTimeframe(strat.timeframe));
       }
     }
 

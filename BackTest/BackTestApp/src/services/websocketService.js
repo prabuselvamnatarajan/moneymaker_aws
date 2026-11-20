@@ -18,7 +18,8 @@ if (redisUrl) {
   redisClient.connect().catch(err => console.error("Failed to connect Redis in WebSocket service:", err));
 }
 
-function tokenMatchesSubscription(subscribedTokens, instrumentToken) {
+export function tokenMatchesSubscription(subscribedTokens, instrumentToken) {
+  if (!subscribedTokens || !(subscribedTokens instanceof Set)) return false;
   if (subscribedTokens.has(instrumentToken)) return true;
 
   const suffix = instrumentToken.includes('|')
@@ -41,11 +42,31 @@ function tokenMatchesSubscription(subscribedTokens, instrumentToken) {
   return false;
 }
 
+export function extractSubscribedTokens(symbolsList = []) {
+  const tokens = new Set();
+  for (const s of symbolsList) {
+    if (s.instrument_token) {
+      tokens.add(s.instrument_token);
+      const suffix = s.instrument_token.includes('|')
+        ? s.instrument_token.split('|')[1]
+        : s.instrument_token;
+      if (suffix) tokens.add(suffix);
+    }
+    if (s.symbol) {
+      tokens.add(s.symbol);
+    }
+    if (s.symbol_name) {
+      tokens.add(s.symbol_name);
+    }
+  }
+  return tokens;
+}
+
 async function refreshUserSubscriptions(userId) {
   try {
     // ⚡ Bolt Optimization: Added .lean() to high-frequency polling query
     const symbolsList = await UserSymbol.find({ user_id: userId, is_active: true }).lean();
-    const tokens = new Set(symbolsList.map((s) => s.instrument_token));
+    const tokens = extractSubscribedTokens(symbolsList);
     for (const [, client] of activeSockets.entries()) {
       if (client.userId === userId) {
         client.subscribedTokens = tokens;
@@ -106,8 +127,7 @@ export function initWebSocketServer(server) {
       try {
         // ⚡ Bolt Optimization: Added .lean() to high-frequency polling query
         const symbolsList = await UserSymbol.find({ user_id: userId, is_active: true }).lean();
-        const tokens = new Set(symbolsList.map(s => s.instrument_token));
-        return tokens;
+        return extractSubscribedTokens(symbolsList);
       } catch (err) {
         console.error(`[WS] Error fetching symbols for user ${userId}:`, err);
         return new Set();
@@ -122,6 +142,11 @@ export function initWebSocketServer(server) {
       subscribedTokens
     });
 
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
+
     const intervalId = setInterval(async () => {
       if (ws.readyState === ws.OPEN) {
         const refreshedTokens = await fetchUserSymbols();
@@ -132,9 +157,22 @@ export function initWebSocketServer(server) {
       }
     }, 10000);
 
+    const pingIntervalId = setInterval(() => {
+      if (ws.readyState === ws.OPEN) {
+        if (ws.isAlive === false) {
+          console.log(`[WS] Terminating unresponsive client socket: ${socketId}`);
+          ws.terminate();
+          return;
+        }
+        ws.isAlive = false;
+        ws.ping();
+      }
+    }, 25000);
+
     ws.on('close', () => {
       console.log(`[WS] Client disconnected: ${socketId}`);
       clearInterval(intervalId);
+      clearInterval(pingIntervalId);
       activeSockets.delete(socketId);
     });
 
@@ -305,6 +343,9 @@ async function initKafkaConsumer() {
           last_price: metrics.last_price,
           timestamp: Date.now()
         };
+        if (data.symbol_name) {
+          outboundPayload.symbol = data.symbol_name;
+        }
         if (metrics.change_pct != null) {
           outboundPayload.change_pct = metrics.change_pct;
         }
@@ -314,9 +355,13 @@ async function initKafkaConsumer() {
         const outboundMsg = JSON.stringify(outboundPayload);
 
         const cleanToken = instrumentToken.includes('|') ? instrumentToken.split('|')[1] : instrumentToken;
+        const symbolName = data.symbol_name;
 
         for (const [socketId, client] of activeSockets.entries()) {
-          if (tokenMatchesSubscription(client.subscribedTokens, instrumentToken)) {
+          if (
+            tokenMatchesSubscription(client.subscribedTokens, instrumentToken) ||
+            (symbolName && tokenMatchesSubscription(client.subscribedTokens, symbolName))
+          ) {
             if (client.ws.readyState === client.ws.OPEN) {
               client.ws.send(outboundMsg);
             }

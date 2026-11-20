@@ -17,14 +17,6 @@ See [FUTURE_WORKITEMS.md](file:///home/prabu/.gemini/antigravity-cli/worktrees/M
 
 The following workitems represent planned technical debt cleanup and modernizations permitted by the Zero Active Customers mandate:
 
-1. **Decommission In-Strategy `candleBuilder.js`**:
-   - With `timeframe-constructor` centrally aggregating raw ticks into multi-timeframe candles on `timeframe_live_data` / `timeframe_backtest_data`, individual strategy microservices (`MSB`, `msb_pts`) no longer need local in-process candle building.
-   - *Action*: Once all backtest and live pipelines exclusively stream timeframe snapshots, remove `candleBuilder.js` and its local tests from `kafka/services/Strategies/MSB/` and `kafka/services/Strategies/msb_pts/`.
-
-2. **Standardize Deployment Schema on `timeframes: [String]`**:
-   - The `Deployment` model in `BackTestApp` maintains both singular `timeframe: String` and plural `timeframes: [String]`.
-   - *Action*: Deprecate the singular `timeframe` field entirely in favor of `timeframes: [String]` and `data_mode: "tick" | "timeframe" | "hybrid"`, removing fallback resolution logic across `StrategyChooserConsumer`, `Strategy.js`, and `deployment.js`.
-
-3. **Consolidate `BackTestApp` Route Prefixing**:
+1. **Consolidate `BackTestApp` Route Prefixing**:
    - `BackTestApp/src/app.js` mounts routes at both `/` and `/api/` prefixes for backward compatibility.
    - *Action*: Standardize all internal callers, tests, and frontend proxies on the `/api` prefix and remove dual mounting at root `/`.

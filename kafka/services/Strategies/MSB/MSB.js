@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Strategy } from '/app/strategy/Strategy.js';
-import { buildTimeframeCandle } from './candleBuilder.js';
 import {
     getBoughtQuantityWithTagFromRedis,
     setBoughtQuantityWithTagToRedis,
@@ -20,19 +19,8 @@ function isValidState(prevData) {
         && isValidSwing(prevData.prevLow);
 }
 
-function isRawTick(message) {
-    return !!(
-        message?.ltpc
-        || message?.fullFeed
-        || message?.marketFF
-        || message?.indexFF
-        || message?.firstLevelWithGreeks
-    );
-}
-
 /**
- * Resolve candle + closedCandle for centralized timeframe snapshots, live ticks, or
- * prebuilt test fixtures.
+ * Resolve candle + closedCandle from centralized timeframe snapshots or prebuilt test fixtures.
  */
 function resolveCandles(message, timeframe, existingCandleState) {
     // 1. Centralized multi-timeframe snapshot from timeframeConstructor
@@ -56,15 +44,7 @@ function resolveCandles(message, timeframe, existingCandleState) {
         }
     }
 
-    if (isRawTick(message)) {
-        const built = buildTimeframeCandle(message, timeframe, existingCandleState);
-        if (built.candle) {
-            built.candle.candleState = built.newCandleState;
-        }
-        return built;
-    }
-
-    // Prebuilt candle / tick fixture (unit tests)
+    // 2. Prebuilt candle / tick fixture (unit tests)
     let closedCandle;
     if (Object.prototype.hasOwnProperty.call(message, 'closedCandle')) {
         closedCandle = message.closedCandle;

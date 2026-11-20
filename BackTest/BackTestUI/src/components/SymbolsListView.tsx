@@ -197,7 +197,7 @@ export default function SymbolsListView({
 
   // Computed overview metrics — prefer live quotes when available
   const enrichedSymbols = symbols.map(s => {
-    const q = getLiveQuote(liveQuotes, s.instrumentToken || '');
+    const q = getLiveQuote(liveQuotes, s.instrumentToken || '', s.ticker);
     return {
       ...s,
       lastPrice: q?.lastPrice ?? s.lastPrice,
@@ -498,9 +498,11 @@ export default function SymbolsListView({
               <tbody className="divide-y divide-slate-900">
                 {tableSymbols.map(sym => {
                   const liveSym = symbols.find(s =>
-                    s.id === sym.id || tokensMatch(s.instrumentToken || '', sym.instrumentToken || '')
+                    s.id === sym.id ||
+                    tokensMatch(s.instrumentToken || '', sym.instrumentToken || '') ||
+                    (s.ticker && (s.ticker === sym.ticker || tokensMatch(s.ticker, sym.ticker)))
                   );
-                  const quote = getLiveQuote(liveQuotes, sym.instrumentToken || '');
+                  const quote = getLiveQuote(liveQuotes, sym.instrumentToken || '', sym.ticker);
                   const currentPrice =
                     quote?.lastPrice ??
                     (liveSym ? liveSym.lastPrice : sym.lastPrice);
