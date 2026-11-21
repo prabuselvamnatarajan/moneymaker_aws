@@ -145,7 +145,8 @@ export async function computeOrderPayload({
     } = strategy_details;
 
     const isBacktest =
-        strategy_details.strategy_mode === 'BACKTEST' || strategy_details.isTest === true;
+        strategy_details.strategy_mode === 'BACKTEST'
+        || (strategy_details.isTest === true && strategy_details.strategy_mode !== 'PAPER' && strategy_details.strategy_mode !== 'LIVE');
 
     if (quantityOverride != null && Number(quantityOverride) >= 0 && Number.isFinite(Number(quantityOverride))) {
         quantity = Number(quantityOverride);

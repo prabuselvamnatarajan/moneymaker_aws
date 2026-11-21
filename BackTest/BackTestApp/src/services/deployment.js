@@ -1796,7 +1796,7 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
       if (!dep.strategy_id || !dep.account_id) continue;
       const symbol = dep.symbol;
       const isBacktest = dep.strategy_mode === "BACKTEST";
-      const isTest = dep.strategy_mode !== "LIVE"; // PAPER or BACKTEST
+      const isTest = isBacktest; // Only true historical backtests are isTest; PAPER is live simulation
       const key = isBacktest ? `strategies:backtest:${symbol}` : `strategies:live:${symbol}`;
 
       if (!newKeysData[key]) {

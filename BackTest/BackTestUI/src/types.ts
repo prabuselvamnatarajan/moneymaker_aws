@@ -61,6 +61,8 @@ export interface SymbolData {
   strikePriceDiff?: number | null;
   /** Contract lot size for OPTION symbols (e.g. 25, 50, 75). */
   lotSize?: number | null;
+  /** Telemetry latency in milliseconds */
+  latency_ms?: number | null;
 }
 
 export interface SymbolControlConfig {

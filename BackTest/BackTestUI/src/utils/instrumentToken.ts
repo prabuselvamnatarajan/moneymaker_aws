@@ -33,6 +33,7 @@ export interface LiveQuote {
   lastPrice?: number;
   change24h?: number;
   volume24h?: number;
+  latency_ms?: number;
 }
 
 const MAX_LIVE_QUOTES = 500;

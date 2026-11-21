@@ -54,6 +54,7 @@ export function mapSymbol(backendSym: any): SymbolData {
     strikePriceDiff:
       backendSym.strike_price_diff != null ? Number(backendSym.strike_price_diff) : null,
     lotSize: backendSym.lot_size != null ? Number(backendSym.lot_size) : null,
+    latency_ms: backendSym.latency_ms != null ? Number(backendSym.latency_ms) : null,
   };
 }
 

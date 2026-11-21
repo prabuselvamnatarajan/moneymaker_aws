@@ -352,7 +352,22 @@ async function initKafkaConsumer() {
         if (metrics.volume != null) {
           outboundPayload.volume = metrics.volume;
         }
+        if (data.latency?.beforeSplit != null) {
+          outboundPayload.latency_ms = data.latency.beforeSplit;
+        }
         const outboundMsg = JSON.stringify(outboundPayload);
+
+        // Cache latest latency in Redis for REST API lookup
+        if (redisClient && redisClient.isOpen && data.latency?.beforeSplit != null) {
+          const lat = Math.round(Number(data.latency.beforeSplit));
+          if (!isNaN(lat)) {
+            const sym = data.symbol_name || cleanToken;
+            redisClient.setEx(`symbol:latency:${sym}`, 300, String(lat)).catch(() => {});
+            if (cleanToken !== sym) {
+              redisClient.setEx(`symbol:latency:${cleanToken}`, 300, String(lat)).catch(() => {});
+            }
+          }
+        }
 
         const cleanToken = instrumentToken.includes('|') ? instrumentToken.split('|')[1] : instrumentToken;
         const symbolName = data.symbol_name;

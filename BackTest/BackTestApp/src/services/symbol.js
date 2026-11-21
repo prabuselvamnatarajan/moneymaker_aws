@@ -83,6 +83,33 @@ export const getAllSymbols = async (userId, queryParams) => {
     .skip(skip)
     .limit(limit);
 
+  // Attach cached latency if Redis is configured
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl && items.length > 0) {
+    let client;
+    try {
+      client = createClient({ url: redisUrl });
+      await client.connect();
+      const latencyPromises = items.map(async (item) => {
+        try {
+          const symKey = item.symbol ? `symbol:latency:${item.symbol}` : null;
+          const tokenKey = item.instrument_token ? `symbol:latency:${item.instrument_token.split('|')[1] || item.instrument_token}` : null;
+          let latVal = null;
+          if (symKey) latVal = await client.get(symKey);
+          if (!latVal && tokenKey) latVal = await client.get(tokenKey);
+          if (latVal != null) {
+            item.latency_ms = Number(latVal);
+          }
+        } catch {}
+      });
+      await Promise.all(latencyPromises);
+    } catch (err) {
+      // Non-blocking latency enrichment failure
+    } finally {
+      if (client) await client.disconnect().catch(() => {});
+    }
+  }
+
   const total = await UserSymbol.countDocuments(filter);
 
   return {
@@ -105,7 +132,29 @@ export const getSymbolById = async (userId, id) => {
       { user_symbol_id: id }
     ]
   };
-  return await UserSymbol.findOne(query);
+  const symbolDoc = await UserSymbol.findOne(query).lean();
+  if (!symbolDoc) return null;
+
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    let client;
+    try {
+      client = createClient({ url: redisUrl });
+      await client.connect();
+      const symKey = symbolDoc.symbol ? `symbol:latency:${symbolDoc.symbol}` : null;
+      const tokenKey = symbolDoc.instrument_token ? `symbol:latency:${symbolDoc.instrument_token.split('|')[1] || symbolDoc.instrument_token}` : null;
+      let latVal = null;
+      if (symKey) latVal = await client.get(symKey);
+      if (!latVal && tokenKey) latVal = await client.get(tokenKey);
+      if (latVal != null) {
+        symbolDoc.latency_ms = Number(latVal);
+      }
+    } catch {} finally {
+      if (client) await client.disconnect().catch(() => {});
+    }
+  }
+
+  return symbolDoc;
 };
 
 export const updateSymbol = async (userId, id, updateData) => {
