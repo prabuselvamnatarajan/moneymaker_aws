@@ -114,7 +114,8 @@ export function computeBuyQuantity({
  * Explicit quantity is used as given. With no quantity:
  * - SELL uses bought quantity only
  * - BUY uses MSB full-balance / lots / fixed-quantity rules (+ 1e-5 before flooring)
- * client_order_id is added only when includeClientOrderId is true.
+ * Every order carries client_order_id (idempotent ledger/retry key) and the
+ * tick LTP as `ltp`, so placeOrders never has to look the price up.
  */
 export async function computeOrderPayload({
     strategyDetails,
@@ -123,7 +124,6 @@ export async function computeOrderPayload({
     tag,
     timestamp,
     quantity: quantityOverride,
-    includeClientOrderId = false,
 } = {}) {
     const strategy_details = strategyDetails || {};
     let {
@@ -185,6 +185,7 @@ export async function computeOrderPayload({
         product,
         validity,
         price: ltp,
+        ltp,
         tag: cleanTag,
         instrument_token,
         order_type,
@@ -196,14 +197,12 @@ export async function computeOrderPayload({
         strategy_details,
     };
 
-    if (includeClientOrderId) {
-        orderPayLoad.client_order_id = buildClientOrderId(
-            strategy_details.deployment_id,
-            cleanTag,
-            transactionType,
-            timestamp
-        );
-    }
+    orderPayLoad.client_order_id = buildClientOrderId(
+        strategy_details.deployment_id,
+        cleanTag,
+        transactionType,
+        timestamp
+    );
 
     return orderPayLoad;
 }

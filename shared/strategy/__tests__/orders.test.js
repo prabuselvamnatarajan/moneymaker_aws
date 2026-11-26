@@ -104,7 +104,6 @@ describe('shared/strategy orders - Order Payload Math & Sizing Rules', () => {
             price: 500,
             tag: 'TEST:SYMBOL',
             timestamp: 1700000000000,
-            includeClientOrderId: true,
         });
 
         assert.equal(payload.quantity, 10);

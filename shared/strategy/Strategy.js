@@ -43,8 +43,11 @@ export class Strategy {
     /** @type {string} */
     static strategyName;
 
-    /** Per-deployment message queue (MSB / msb_pts). */
-    static serializeByDeployment = false;
+    /**
+     * Per-deployment message queue: a deployment's next tick starts only after
+     * its current tick (including any order and balance update) has finished.
+     */
+    static serializeByDeployment = true;
 
     /** Exit process on unexpected message errors (MSB / msb_pts). */
     static fatalOnMessageError = false;
@@ -54,9 +57,6 @@ export class Strategy {
 
     /** HTTP placeOrder attempts (MSB / msb_pts = 3, sweep = 1). */
     static orderAttempts = 1;
-
-    /** Include client_order_id on order bodies (MSB / msb_pts). */
-    static includeClientOrderId = false;
 
     constructor() {
         this.deploymentLocks = new Map();
@@ -150,7 +150,6 @@ export class Strategy {
             tag: overrides.tag ?? ctx.symbol,
             timestamp: overrides.timestamp,
             quantity: overrides.quantity,
-            includeClientOrderId: this.constructor.includeClientOrderId === true,
         });
     }
 
@@ -388,7 +387,10 @@ export class Strategy {
             logger.info(`Subscribing to topic: ${topic}`);
             await consumer.subscribe({ topic, fromBeginning: false });
 
+            // One message at a time: a tick is fully processed (strategy, order,
+            // balance update) before the next tick is handed to the strategy.
             await consumer.run({
+                partitionsConsumedConcurrently: 1,
                 eachMessage: async ({ message }) => {
                     await this.handleMessage(message);
                 },
