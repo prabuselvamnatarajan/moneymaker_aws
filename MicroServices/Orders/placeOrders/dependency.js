@@ -1,21 +1,7 @@
 import { Kafka } from 'kafkajs';
 import retry from 'async-retry';
-import https from 'node:https';
-import http from 'node:http';
 
 const base_url = 'https://api-hft.upstox.com/v3';
-
-// HTTP Keep-Alive Agents for ultra-low latency connection pooling
-const httpsAgent = new https.Agent({
-    keepAlive: true,
-    keepAliveMsecs: 30000,
-    maxSockets: 50,
-});
-const httpAgent = new http.Agent({
-    keepAlive: true,
-    keepAliveMsecs: 30000,
-    maxSockets: 50,
-});
 
 // Use environment variables with fallback defaults
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
@@ -35,75 +21,78 @@ const kafka = new Kafka({
     }
   });
 
-// Persistent singleton producer across all orders
-let persistentProducer = null;
-let isProducerConnecting = false;
+// ---------------------------------------------------------------------------
+// Single long-lived Kafka producer, shared by every order for the life of the
+// process. Concurrent callers share one in-flight connect. If a send fails or
+// the producer disconnects, it is dropped and the next send reconnects.
+// ---------------------------------------------------------------------------
+let producer = null;
+let connectingPromise = null;
 
-async function getOrCreateProducer() {
-    if (persistentProducer) return persistentProducer;
-    if (isProducerConnecting) {
-        while (isProducerConnecting) {
-            await new Promise(r => setTimeout(r, 10));
-        }
-        if (persistentProducer) return persistentProducer;
+function getProducer() {
+    if (producer) return Promise.resolve(producer);
+    if (!connectingPromise) {
+        connectingPromise = (async () => {
+            const p = kafka.producer();
+            p.on(p.events.DISCONNECT, () => {
+                if (producer === p) {
+                    console.warn('Kafka producer disconnected; will reconnect on next send.');
+                    producer = null;
+                }
+            });
+            await p.connect();
+            producer = p;
+            console.log('Kafka producer connected.');
+            return p;
+        })().finally(() => {
+            connectingPromise = null;
+        });
     }
-    isProducerConnecting = true;
+    return connectingPromise;
+}
+
+function dropProducer(p) {
+    if (producer === p) producer = null;
+    p.disconnect().catch(() => {});
+}
+
+/** Warm the producer at startup so the first order does not pay the connect cost. */
+async function connectProducer() {
     try {
-        const prod = kafka.producer();
-        await prod.connect();
-        persistentProducer = prod;
-        return persistentProducer;
-    } finally {
-        isProducerConnecting = false;
+        await getProducer();
+    } catch (err) {
+        console.error('Initial Kafka producer connect failed (will retry on first send):', err.message);
     }
 }
 
-async function fetchLTP(symbol, userId) {
-    if (!userId || !symbol) {
-        return null;
-    }
-    try {
-        let getLTP_URL = `${NGINX_ADDRESS}/ltp?symbol=${symbol}&userId=${userId}`; // Use Nginx reverse proxy
-        console.log(`Fetching LTP from URL: ${getLTP_URL}`);
-        const ltpResponse = await fetch(getLTP_URL); // Use Nginx reverse proxy
-        const ltpData = await ltpResponse.json();
-
-        if (ltpData.status === 'success' && ltpData.data) {
-            const property = Object.entries(ltpData.data).find(([key, item]) => item.instrumentToken.includes(symbol));
-            if (property) {
-                const [propertyName, propertyValue] = property;
-                return {
-                    ltp: propertyValue.lastPrice,
-                    symbolName: propertyName
-                };
-            }
-        }
-    } catch (error) {
-        console.error(`Failed to fetch LTP for symbol ${symbol}:`, error.message);
-    }
-    return null;
+async function disconnectProducer() {
+    const p = producer;
+    producer = null;
+    if (p) await p.disconnect().catch(() => {});
 }
 
+/**
+ * Publish order details for the order-storer consumer. Never throws: order
+ * history is not on the strategy's critical path.
+ */
 async function storeOrderDetails(symbol, order_details) {
     const topic = TARGET_TOPIC;
-    console.log(`Processing ${symbol} details:`, order_details);
-    console.log(`Topic : ${topic}`);
-
-    // If ltp and Symbol_Name are not present, attempt fast lookup
-    if (order_details.ltp == null && order_details.price > 0) {
-        order_details.ltp = order_details.price;
-    }
     if (order_details.Symbol_Name == null && order_details.tag) {
         order_details.Symbol_Name = order_details.tag;
     }
 
     try {
-        const producer = await getOrCreateProducer();
         await retry(async () => {
-            await producer.send({
-                topic,
-                messages: [{ key: symbol, value: JSON.stringify(order_details) }],
-            });
+            const p = await getProducer();
+            try {
+                await p.send({
+                    topic,
+                    messages: [{ key: String(symbol), value: JSON.stringify(order_details) }],
+                });
+            } catch (err) {
+                dropProducer(p);
+                throw err;
+            }
         }, {
             retries: 3,
             minTimeout: 200,
@@ -130,22 +119,26 @@ function resolveExecutionMode(strategyDetails) {
 }
 
 function buildBrokerOrderPayload(orderFields) {
-    const payload = { ...orderFields };
+    const { ltp: _tickLtp, ...payload } = orderFields;
     if (payload.order_type === 'MARKET') {
         payload.price = 0;
     }
     return payload;
 }
 
-function buildTradePayload(body, resolvedLtp = null) {
+function isMissingPrice(price) {
+    return price === 0 || price === '0' || price === undefined || price === null;
+}
+
+/**
+ * Ledger price comes from the tick that triggered the order: body.price, or
+ * body.ltp when price is zero/missing. No LTP lookup is made here.
+ */
+function buildTradePayload(body) {
     const strategy_details = body.strategy_details || {};
     let price = body.price;
-    if (price === 0 || price === '0' || price === undefined || price === null) {
-        if (resolvedLtp !== null && resolvedLtp !== undefined) {
-            price = resolvedLtp;
-        } else if (body.resolvedLtp !== undefined && body.resolvedLtp !== null) {
-            price = body.resolvedLtp;
-        }
+    if (isMissingPrice(price) && !isMissingPrice(body.ltp)) {
+        price = body.ltp;
     }
     const clientOrderId = body.client_order_id || strategy_details.client_order_id;
     return {
@@ -171,8 +164,6 @@ async function placeOrders(access_token, body) {
             method: 'POST',
             headers: headers,
             body,
-            // @ts-ignore
-            dispatcher: undefined,
         });
         const data = await res.json();
         console.log('Response from Upstox:', data);
@@ -193,18 +184,7 @@ async function triggerBackTestApp(body) {
     try {
         let { strategy_details = {} } = body;
 
-        let price = body.price;
-        let resolvedLtp = null;
-        // Resolve missing/zero price via LTP in all modes so live MARKET orders
-        // still record a usable execution price for deployment analysis.
-        if (price === 0 || price === '0' || price === undefined || price === null) {
-            const ltpInfo = await fetchLTP(body.instrument_token, strategy_details.user_id);
-            if (ltpInfo && ltpInfo.ltp) {
-                resolvedLtp = ltpInfo.ltp;
-            }
-        }
-
-        const testAPIBody = buildTradePayload(body, resolvedLtp);
+        const testAPIBody = buildTradePayload(body);
         console.log('Triggering Test API Call Body:', testAPIBody);
         console.log('URL:', url);
         const headers = {
@@ -244,6 +224,59 @@ async function triggerBackTestApp(body) {
     }
 }
 
+/**
+ * Record the trade in BackTestApp, retrying network/5xx failures. Safe to retry
+ * because createTrade is idempotent on client_order_id (see ensureClientOrderId).
+ * 4xx responses are not retried.
+ */
+async function recordTradeInLedger(body, retries = 2) {
+    return retry(async (bail) => {
+        try {
+            return await triggerBackTestApp(body);
+        } catch (err) {
+            if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+                bail(err);
+                return undefined;
+            }
+            throw err;
+        }
+    }, {
+        retries,
+        minTimeout: 100,
+        maxTimeout: 500,
+        onRetry: (error, attempt) => {
+            console.warn(`Retrying BackTestApp trade record (attempt ${attempt}): ${error.message}`);
+        },
+    });
+}
+
+/**
+ * Every order carries a client_order_id so that ledger retries (and strategy
+ * placeOrder retries) never create a duplicate trade.
+ */
+function ensureClientOrderId(body) {
+    const strategy_details = body.strategy_details || {};
+    if (!body.client_order_id && !strategy_details.client_order_id) {
+        const tag = body.tag || body.instrument_token || 'symbol';
+        body.client_order_id =
+            `${strategy_details.deployment_id || 'manual'}_${tag}_${body.transaction_type}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+    return body;
+}
+
+/**
+ * How the live path orders the broker call and the ledger write.
+ * sequential (default): broker first; the ledger is written only after the
+ *   broker accepts, so a rejection never leaves an orphaned ledger trade.
+ * parallel: both start together and are awaited together (faster, but a broker
+ *   rejection leaves the ledger trade in place; there is no reversal yet).
+ */
+function resolveLedgerMode() {
+    return (process.env.ORDER_LEDGER_MODE || 'sequential').toLowerCase() === 'parallel'
+        ? 'parallel'
+        : 'sequential';
+}
+
 async function getLiveAccountBalance(userId) {
     if (!userId) {
         throw new Error('userId is required to fetch live account balance');
@@ -268,6 +301,11 @@ async function getLiveAccountBalance(userId) {
 
 export {
   resolveExecutionMode,
+  resolveLedgerMode,
+  ensureClientOrderId,
+  recordTradeInLedger,
+  connectProducer,
+  disconnectProducer,
   buildBrokerOrderPayload,
   buildTradePayload,
   placeOrders,

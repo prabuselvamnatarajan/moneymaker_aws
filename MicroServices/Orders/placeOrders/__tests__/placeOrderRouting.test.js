@@ -4,6 +4,9 @@ import {
     resolveExecutionMode,
     buildBrokerOrderPayload,
     buildTradePayload,
+    ensureClientOrderId,
+    recordTradeInLedger,
+    resolveLedgerMode,
 } from '../dependency.js';
 
 describe('placeOrders Routing, Payload Transformation & Client Order ID Tests (Real Codebase)', () => {
@@ -41,14 +44,15 @@ describe('placeOrders Routing, Payload Transformation & Client Order ID Tests (R
         assert.equal(payload.price, 245.0);
     });
 
-    it('TC-PO-013: falls back to resolved LTP for MARKET order when recording trade in BackTestApp', () => {
+    it('TC-PO-013: falls back to the tick LTP for MARKET order when recording trade in BackTestApp', () => {
         const body = {
             transaction_type: 'BUY',
             price: 0,
+            ltp: 152.35,
             quantity: 5,
             strategy_details: { user_id: 'user_1', account_id: 'acc_1' },
         };
-        const tradePayload = buildTradePayload(body, 152.35);
+        const tradePayload = buildTradePayload(body);
         assert.equal(tradePayload.price, 152.35);
         assert.equal(tradePayload.type_of_order, 'BUY');
         assert.equal(tradePayload.quantity, 5);
@@ -71,5 +75,51 @@ describe('placeOrders Routing, Payload Transformation & Client Order ID Tests (R
             strategy_details: { client_order_id: 'ord-nested-456' },
         };
         assert.equal(buildTradePayload(bodyFromNested).client_order_id, 'ord-nested-456');
+    });
+
+    it('TC-PO-015: buildBrokerOrderPayload does not send the tick ltp to the broker', () => {
+        const payload = buildBrokerOrderPayload({ order_type: 'MARKET', price: 250.5, ltp: 250.5, quantity: 1 });
+        assert.equal('ltp' in payload, false);
+    });
+
+    it('TC-PO-016: ensureClientOrderId keeps an existing id and generates one when missing', () => {
+        const withId = ensureClientOrderId({ client_order_id: 'keep-me', strategy_details: {} });
+        assert.equal(withId.client_order_id, 'keep-me');
+        const nested = ensureClientOrderId({ strategy_details: { client_order_id: 'nested' } });
+        assert.equal(nested.client_order_id, undefined);
+        const generated = ensureClientOrderId({ tag: 'SBIN', transaction_type: 'BUY', strategy_details: { deployment_id: 'dep1' } });
+        assert.match(generated.client_order_id, /^dep1_SBIN_BUY_\d+_[a-z0-9]+$/);
+    });
+
+    it('TC-PO-017: resolveLedgerMode defaults to sequential and honours parallel', () => {
+        const prev = process.env.ORDER_LEDGER_MODE;
+        delete process.env.ORDER_LEDGER_MODE;
+        assert.equal(resolveLedgerMode(), 'sequential');
+        process.env.ORDER_LEDGER_MODE = 'PARALLEL';
+        assert.equal(resolveLedgerMode(), 'parallel');
+        if (prev === undefined) delete process.env.ORDER_LEDGER_MODE; else process.env.ORDER_LEDGER_MODE = prev;
+    });
+
+    describe('recordTradeInLedger', () => {
+        const body = { transaction_type: 'BUY', price: 100, quantity: 1, client_order_id: 'c1', strategy_details: { user_id: 'u1' } };
+        const realFetch = globalThis.fetch;
+        const respond = (status, data) => ({ ok: status < 400, status, json: async () => data });
+
+        it('TC-PO-018: retries a 5xx and returns the later success', async (t) => {
+            let calls = 0;
+            globalThis.fetch = async () => (++calls === 1 ? respond(503, { message: 'busy' }) : respond(200, { data: { closing_balance: 900 } }));
+            t.after(() => { globalThis.fetch = realFetch; });
+            const res = await recordTradeInLedger(body);
+            assert.equal(calls, 2);
+            assert.equal(res.data.closing_balance, 900);
+        });
+
+        it('TC-PO-019: does not retry a 4xx', async (t) => {
+            let calls = 0;
+            globalThis.fetch = async () => { calls++; return respond(400, { message: 'bad' }); };
+            t.after(() => { globalThis.fetch = realFetch; });
+            await assert.rejects(recordTradeInLedger(body), /bad/);
+            assert.equal(calls, 1);
+        });
     });
 });

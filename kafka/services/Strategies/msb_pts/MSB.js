@@ -59,11 +59,9 @@ function resolveCandles(message, timeframe, existingCandleState) {
 
 export class MsbPtsStrategy extends Strategy {
     static strategyName = 'msb_pts';
-    static serializeByDeployment = true;
     static fatalOnMessageError = true;
     static lockOrders = true;
     static orderAttempts = 3;
-    static includeClientOrderId = true;
 
     async executeStrategy(lastState, message, symbol, strategyDetails) {
         this.symbol = symbol;
