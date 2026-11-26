@@ -266,13 +266,15 @@ function ensureClientOrderId(body) {
 
 /**
  * How the live path orders the broker call and the ledger write.
- * parallel (default): both start together and are awaited together.
- * sequential: broker first; the ledger is written only after the broker accepts.
+ * sequential (default): broker first; the ledger is written only after the
+ *   broker accepts, so a rejection never leaves an orphaned ledger trade.
+ * parallel: both start together and are awaited together (faster, but a broker
+ *   rejection leaves the ledger trade in place; there is no reversal yet).
  */
 function resolveLedgerMode() {
-    return (process.env.ORDER_LEDGER_MODE || 'parallel').toLowerCase() === 'sequential'
-        ? 'sequential'
-        : 'parallel';
+    return (process.env.ORDER_LEDGER_MODE || 'sequential').toLowerCase() === 'parallel'
+        ? 'parallel'
+        : 'sequential';
 }
 
 async function getLiveAccountBalance(userId) {

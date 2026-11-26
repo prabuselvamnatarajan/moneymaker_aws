@@ -91,12 +91,12 @@ describe('placeOrders Routing, Payload Transformation & Client Order ID Tests (R
         assert.match(generated.client_order_id, /^dep1_SBIN_BUY_\d+_[a-z0-9]+$/);
     });
 
-    it('TC-PO-017: resolveLedgerMode defaults to parallel and honours sequential', () => {
+    it('TC-PO-017: resolveLedgerMode defaults to sequential and honours parallel', () => {
         const prev = process.env.ORDER_LEDGER_MODE;
         delete process.env.ORDER_LEDGER_MODE;
-        assert.equal(resolveLedgerMode(), 'parallel');
-        process.env.ORDER_LEDGER_MODE = 'SEQUENTIAL';
         assert.equal(resolveLedgerMode(), 'sequential');
+        process.env.ORDER_LEDGER_MODE = 'PARALLEL';
+        assert.equal(resolveLedgerMode(), 'parallel');
         if (prev === undefined) delete process.env.ORDER_LEDGER_MODE; else process.env.ORDER_LEDGER_MODE = prev;
     });
 
