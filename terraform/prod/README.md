@@ -12,7 +12,7 @@ State lives in the S3 bucket created by [`../bootstrap`](../bootstrap).
 | VPC, 3 public + 3 private subnets, NAT gateway | Network for EKS and the ALB |
 | EKS cluster + managed node group (`t3.xlarge` × 3, 2–6) | Kubernetes control plane and workers |
 | EKS access entries (`cluster_admin_arns`) | Who can use kubectl (GitHub role + `EKS_ADMIN_ARNS`) |
-| EBS CSI + EFS CSI add-ons | gp3 volumes for Mongo/Redis; RWX EFS volumes |
+| EBS CSI + EFS CSI add-ons (IRSA roles in `csi_iam.tf`) | gp3 volumes for Mongo/Redis; RWX EFS volumes |
 | EFS + access points | Mongo init signal and shared `backtest-data` |
 | ECR repositories (one per custom image) | Prod pulls app images from here, not Docker Hub |
 | ACM certificate + Route 53 DNS validation | TLS for `algo.mrcobra.link` at the ALB |

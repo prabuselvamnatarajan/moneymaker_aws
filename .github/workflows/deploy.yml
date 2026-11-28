@@ -43,9 +43,12 @@ jobs:
           validate_image_tag "$tag" "image tag"
           echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Image tag for branch ${branch}: $tag"
-          # Immutable per-commit tag; prod deploys exactly the images that
-          # were tested, even if a newer main build moves :latest meanwhile.
-          echo "deploy_tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          # main only: immutable per-commit tag. unit, e2e and the EKS deploy
+          # all use it, so prod gets exactly the images that were tested even
+          # if a newer main build moves :latest meanwhile.
+          if [ "$branch" = "main" ]; then
+            echo "deploy_tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: List unit-test images
         id: list-unit
@@ -124,7 +127,7 @@ jobs:
             --tag "$IMAGE_TAG" \
             --image "$IMAGE_NAME"
         env:
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          IMAGE_TAG: ${{ needs.build.outputs.deploy_tag || needs.build.outputs.image_tag }}
           IMAGE_NAME: ${{ matrix.image }}
 
   e2e:
@@ -144,7 +147,7 @@ jobs:
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       API_BASE_URL: http://127.0.0.1/backtestapp/
       UI_BASE_URL: http://127.0.0.1/backtest-ui/
-      IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+      IMAGE_TAG: ${{ needs.build.outputs.deploy_tag || needs.build.outputs.image_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

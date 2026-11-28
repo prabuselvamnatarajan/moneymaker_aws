@@ -53,9 +53,13 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Cluster admins
+        env:
+          ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          EXTRA_ADMIN_ARNS: ${{ vars.EKS_ADMIN_ARNS }}
         run: |
           set -eu
-          admins=$(jq -cn --arg role "${{ vars.AWS_ROLE_ARN }}" --argjson extra '${{ vars.EKS_ADMIN_ARNS || '[]' }}' '[$role] + $extra | unique')
+          [ -n "$ROLE_ARN" ] || { echo "ERROR: repository variable AWS_ROLE_ARN is not set" >&2; exit 1; }
+          admins=$(jq -cn --arg role "$ROLE_ARN" --argjson extra "${EXTRA_ADMIN_ARNS:-[]}" '[$role] + $extra | unique')
           echo "TF_VAR_cluster_admin_arns=$admins" >> "$GITHUB_ENV"
 
       - name: Terraform init

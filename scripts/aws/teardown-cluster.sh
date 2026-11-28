@@ -32,10 +32,15 @@ EFS_ID="$(infra EFS_FILE_SYSTEM_ID)"
 if [ -n "$DOMAIN_NAME" ] && [ -n "$ZONE_ID" ]; then
   _rr="$(aws route53 list-resource-record-sets --hosted-zone-id "$ZONE_ID" \
     --query "ResourceRecordSets[?Name=='${DOMAIN_NAME}.' && Type=='A'] | [0]" --output json)"
-  if [ "$_rr" != "null" ] && [ -n "$_rr" ]; then
-    log "Deleting Route 53 A record $DOMAIN_NAME"
+  # Only remove the alias deploy-prod.sh created. A plain A record (e.g. the
+  # old EC2 IP while testing with SKIP_DNS=1) is live traffic: leave it.
+  _alias="$(printf '%s' "$_rr" | jq -r '.AliasTarget.DNSName // empty' 2>/dev/null || true)"
+  if [ "$_rr" != "null" ] && [ -n "$_rr" ] && printf '%s' "$_alias" | grep -q 'elb\.amazonaws\.com\.\{0,1\}$'; then
+    log "Deleting Route 53 alias $DOMAIN_NAME -> $_alias"
     aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" \
       --change-batch "$(jq -cn --argjson rr "$_rr" '{Changes: [{Action: "DELETE", ResourceRecordSet: $rr}]}')" >/dev/null
+  elif [ "$_rr" != "null" ] && [ -n "$_rr" ]; then
+    log "Route 53 $DOMAIN_NAME is not a load-balancer alias; leaving it"
   fi
 fi
 

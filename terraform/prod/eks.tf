@@ -99,16 +99,6 @@ resource "aws_iam_role_policy_attachment" "eks_ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-resource "aws_iam_role_policy_attachment" "eks_efs_csi" {
-  role       = aws_iam_role.eks_nodes.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
-}
-
-resource "aws_iam_role_policy_attachment" "eks_ebs_csi" {
-  role       = aws_iam_role.eks_nodes.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-}
-
 resource "aws_eks_node_group" "prod" {
   cluster_name    = aws_eks_cluster.prod.name
   node_group_name = "${var.cluster_name}-workers"
@@ -130,8 +120,6 @@ resource "aws_eks_node_group" "prod" {
     aws_iam_role_policy_attachment.eks_worker_node,
     aws_iam_role_policy_attachment.eks_cni,
     aws_iam_role_policy_attachment.eks_ecr_read,
-    aws_iam_role_policy_attachment.eks_efs_csi,
-    aws_iam_role_policy_attachment.eks_ebs_csi,
   ]
 
   tags = {
@@ -142,10 +130,11 @@ resource "aws_eks_node_group" "prod" {
 resource "aws_eks_addon" "efs_csi" {
   cluster_name                = aws_eks_cluster.prod.name
   addon_name                  = "aws-efs-csi-driver"
+  service_account_role_arn    = aws_iam_role.efs_csi.arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
-  depends_on = [aws_eks_node_group.prod]
+  depends_on = [aws_eks_node_group.prod, aws_iam_role_policy_attachment.efs_csi]
 }
 
 # Mongo / Redis StatefulSets use volumeClaimTemplates on the default
@@ -153,10 +142,11 @@ resource "aws_eks_addon" "efs_csi" {
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name                = aws_eks_cluster.prod.name
   addon_name                  = "aws-ebs-csi-driver"
+  service_account_role_arn    = aws_iam_role.ebs_csi.arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
-  depends_on = [aws_eks_node_group.prod]
+  depends_on = [aws_eks_node_group.prod, aws_iam_role_policy_attachment.ebs_csi]
 }
 
 resource "aws_eks_access_entry" "admins" {

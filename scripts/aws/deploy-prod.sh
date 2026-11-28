@@ -50,7 +50,7 @@ ECR_REPOSITORIES="$(infra ECR_REPOSITORIES)"
 [ -n "$CERT_ARN" ] && [ -n "$ECR_REGISTRY" ] && [ -n "$ECR_REPOSITORIES" ] || die "moneymaker-infra ConfigMap is incomplete"
 
 # Every :latest image without a registry in the prod render must have an ECR repo.
-_rendered_custom=$(kubectl kustomize "$OVERLAY_DIR" | sed -n 's/^ *image: \([a-z0-9-]*\):latest$/\1/p' | sort -u)
+_rendered_custom=$(kubectl kustomize "$OVERLAY_DIR" | sed -n 's/^ *\(- \)\{0,1\}image: \([a-z0-9-]*\):latest$/\2/p' | sort -u)
 for _img in $_rendered_custom; do
   case "$_img" in
     nginx|mongo-express) continue ;;  # third-party images that happen to use :latest
