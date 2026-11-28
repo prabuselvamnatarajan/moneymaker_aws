@@ -47,6 +47,18 @@ spec:
           image: mongo:6.0
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "/init.sh"]
+          env:
+            # Used once, when init.sh creates the root user on an empty volume.
+            - name: MONGO_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: MONGO_ROOT_USERNAME
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: moneymaker-secrets
+                  key: MONGO_ROOT_PASSWORD
           ports:
             - containerPort: 27017
               hostPort: 27017

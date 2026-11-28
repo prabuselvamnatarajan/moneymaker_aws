@@ -1,51 +1,60 @@
-# MoneyMaker prod Terraform (scaffold)
+# MoneyMaker prod Terraform (EKS)
 
-Provisions AWS networking and EKS for the `k8s/overlays/prod` overlay.
-**This scaffold is not applied by CI.** Run `terraform plan` / `apply` yourself when ready.
+Provisions the AWS infrastructure for the `k8s/overlays/prod` overlay.
+Normally applied by the **Infrastructure Apply** workflow
+(`.github/workflows/infra-apply.yml`) and removed by **Infrastructure Destroy**.
+State lives in the S3 bucket created by [`../bootstrap`](../bootstrap).
 
 ## What it creates
 
 | Resource | Purpose |
 | --- | --- |
-| VPC + public/private subnets + NAT | Network for EKS and ALB |
-| EKS cluster + managed node group | Kubernetes control plane and workers |
-| EFS + access points | RWX storage for Mongo init signal and backtest shared volume |
-| EFS CSI addon | Mount EFS from pods |
-| ACM certificate + Route 53 validation | TLS for `algo.mrcobra.link` |
-| Optional Route 53 alias | Points `algo.mrcobra.link` at the ALB once you pass `alb_dns_name` / `alb_zone_id` |
-| IAM role (IRSA) for AWS Load Balancer Controller | Used by Helm install below |
+| VPC, 3 public + 3 private subnets, NAT gateway | Network for EKS and the ALB |
+| EKS cluster + managed node group (`t3.xlarge` × 3, 2–6) | Kubernetes control plane and workers |
+| EKS access entries (`cluster_admin_arns`) | Who can use kubectl (GitHub role + `EKS_ADMIN_ARNS`) |
+| EBS CSI + EFS CSI add-ons (IRSA roles in `csi_iam.tf`) | gp3 volumes for Mongo/Redis; RWX EFS volumes |
+| EFS + access points | Mongo init signal and shared `backtest-data` |
+| ECR repositories (one per custom image) | Prod pulls app images from here, not Docker Hub |
+| ACM certificate + Route 53 DNS validation | TLS for `algo.mrcobra.link` at the ALB |
+| IAM role (IRSA) for AWS Load Balancer Controller | Official policy in `policies/` |
 
-## Suggested order
+Prerequisite: the Route 53 hosted zone `mrcobra.link` already exists.
 
-1. Copy `terraform.tfvars.example` → `terraform.tfvars` and adjust.
-2. Ensure the Route 53 hosted zone `mrcobra.link` already exists in the account.
-3. `terraform init` then `terraform plan` (review) then `terraform apply` when you intend to create resources.
-4. Configure kubectl from the `configure_kubectl` output.
-5. Install the AWS Load Balancer Controller (Helm), for example:
+Not in Terraform (and why):
+
+- **AWS Load Balancer Controller, metrics-server, StorageClasses** are installed
+  by `scripts/aws/install-cluster-addons.sh` right after apply (same workflow).
+  It also writes ConfigMap `kube-system/moneymaker-infra` with the outputs the
+  app deploy needs (cert ARN, ECR registry, zone id).
+- **`algo.mrcobra.link` → ALB alias** is UPSERTed by `scripts/aws/deploy-prod.sh`,
+  because the ALB only exists after the first app deploy creates the Ingress.
+
+## Full flow
+
+1. Once: `terraform/bootstrap` (state bucket + GitHub OIDC role) and the GitHub
+   variables/secrets in `.github/workflows/deploy-secrets.example.txt`.
+2. Actions → **Infrastructure Apply** → `apply = false` to review the plan,
+   then `apply = true` and approve. (~20–30 min the first time.)
+3. Set repository variable `PROD_DEPLOY_ENABLED=true`.
+4. Every push to `main`: CI builds, tests, and the **Deploy to EKS** job ships it.
+5. Infra changes later: edit these `.tf` files, merge, run Infrastructure Apply again.
+6. To remove everything: Actions → **Infrastructure Destroy**, type the cluster
+   name, approve. All data is deleted.
+
+## Running by hand
 
 ```sh
-helm repo add eks https://aws.github.io/eks-charts
-helm repo update
-helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-  -n kube-system \
-  --set clusterName="$(terraform output -raw cluster_name)" \
-  --set serviceAccount.create=true \
-  --set serviceAccount.name=aws-load-balancer-controller \
-  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$(terraform output -raw alb_controller_role_arn)"
+export TF_STATE_BUCKET=<bootstrap state_bucket> AWS_REGION=ap-south-1
+./scripts/aws/tf-init.sh
+cd terraform/prod
+terraform plan -var 'cluster_admin_arns=["arn:aws:iam::<acct>:role/moneymaker-github-actions"]'
 ```
 
-6. Set `fileSystemId` in [`../../k8s/overlays/prod/efs-storageclass.yaml`](../../k8s/overlays/prod/efs-storageclass.yaml) from `efs_file_system_id`, then `kubectl apply -f` that file.
-7. Set `CERTIFICATE_ARN` in [`../../k8s/overlays/prod/certificate-arn.env`](../../k8s/overlays/prod/certificate-arn.env) from `acm_certificate_arn`.
-8. Push images to a registry the cluster can pull, then:
+Pass the same `cluster_admin_arns` the workflow uses (GitHub role plus
+`EKS_ADMIN_ARNS`), or a local apply will remove the workflow's cluster access.
 
-```sh
-./scripts/deploy-k8s.sh --overlay prod --no-import
-```
+## Upgrading the Load Balancer Controller
 
-9. Read the ALB hostname from `kubectl -n moneymaker get ingress moneymaker`, set `alb_dns_name` and `alb_zone_id` in tfvars, and re-apply Terraform so Route 53 aliases `algo.mrcobra.link` to the load balancer.
-
-## Notes
-
-- TLS is terminated at the ALB using the ACM certificate. The Kubernetes Ingress does not mount the self-signed `reverse-proxy-tls` secret.
-- CPU, memory, and application passwords stay in the shared Kustomize base for now.
-- Do not commit `terraform.tfvars` or state files with secrets.
+Bump `ALB_CONTROLLER_CHART_VERSION` in `scripts/aws/install-cluster-addons.sh`
+and replace `policies/aws-load-balancer-controller-v*.json` with
+`docs/install/iam_policy.json` from the matching controller release tag.

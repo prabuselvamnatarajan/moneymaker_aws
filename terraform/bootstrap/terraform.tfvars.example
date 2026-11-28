@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars (gitignored) and adjust.
+aws_region        = "ap-south-1"
+state_bucket_name = "moneymaker-tfstate-CHANGE-ME"   # must be globally unique
+
+github_repository   = "prabuselvamnatarajan/moneymaker_aws"
+github_environments = ["production", "production-infra"]
+
+# false if the account already has the GitHub OIDC provider
+create_github_oidc_provider = true

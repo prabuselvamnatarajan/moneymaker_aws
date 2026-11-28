@@ -61,17 +61,50 @@ variable "route53_zone_name" {
 variable "kubernetes_version" {
   description = "EKS Kubernetes version"
   type        = string
-  default     = "1.29"
+  default     = "1.34"
 }
 
-variable "alb_dns_name" {
-  description = "ALB DNS name from kubectl get ingress (empty until Ingress exists)"
-  type        = string
-  default     = ""
+variable "cluster_admin_arns" {
+  description = "IAM role/user ARNs given cluster-admin through EKS access entries (the GitHub Actions role plus any humans)"
+  type        = list(string)
+  default     = []
 }
 
-variable "alb_zone_id" {
-  description = "Canonical hosted zone ID of the ALB (empty until Ingress exists)"
-  type        = string
-  default     = ""
+variable "ecr_repositories" {
+  description = "ECR repositories for the MoneyMaker images (one per custom image)"
+  type        = list(string)
+  default = [
+    "appinit",
+    "upstock-login",
+    "connect-upstox-web-socket",
+    "get-ltp",
+    "get-ohlc",
+    "get-fullmarketquote",
+    "placeorder",
+    "get-orderbook",
+    "get-put-call-option-chain",
+    "get-option-contracts",
+    "get-funds-and-margin",
+    "wsdatasplitterconsumer",
+    "storer-consumer",
+    "strategy-chooser-consumer",
+    "position-tracker-consumer",
+    "deployment-symbol-resolver-consumer",
+    "backteststreamer",
+    "backtestclient",
+    "backtestapp",
+    "backtestui",
+    "exporttofile",
+    "timeframe-constructor",
+    "stream-to-client",
+    "msb-strategy",
+    "msb-pts-strategy",
+    "liquidity-sweep-strategy",
+  ]
+}
+
+variable "ecr_keep_images" {
+  description = "How many images each ECR repository keeps (older ones expire)"
+  type        = number
+  default     = 30
 }

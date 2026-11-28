@@ -1,0 +1,155 @@
+name: Infrastructure Apply
+
+# Creates or updates the production AWS infrastructure (terraform/prod) and
+# the cluster add-ons. Run by hand: Actions -> Infrastructure Apply -> Run.
+#   apply=false  plan only (safe; shows what would change)
+#   apply=true   plan, then wait for approval on the production-infra
+#                environment, then apply exactly that plan.
+# App deploys are NOT done here; they run from deploy.yml on every main push.
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply the plan after approval (false = plan only)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: terraform-prod
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  TF_VAR_aws_region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TF_VAR_cluster_name: ${{ vars.EKS_CLUSTER_NAME || 'moneymaker-prod' }}
+  TF_IN_AUTOMATION: "1"
+  TERRAFORM_VERSION: "1.13.3"
+
+jobs:
+  plan:
+    name: Terraform plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # No reviewers needed to plan; the environment scopes the AWS role.
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Cluster admins
+        env:
+          ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          EXTRA_ADMIN_ARNS: ${{ vars.EKS_ADMIN_ARNS }}
+        run: |
+          set -eu
+          [ -n "$ROLE_ARN" ] || { echo "ERROR: repository variable AWS_ROLE_ARN is not set" >&2; exit 1; }
+          admins=$(jq -cn --arg role "$ROLE_ARN" --argjson extra "${EXTRA_ADMIN_ARNS:-[]}" '[$role] + $extra | unique')
+          echo "TF_VAR_cluster_admin_arns=$admins" >> "$GITHUB_ENV"
+
+      - name: Terraform init
+        run: ./scripts/aws/tf-init.sh
+
+      - name: Terraform fmt and validate
+        working-directory: terraform/prod
+        run: |
+          terraform fmt -check -recursive
+          terraform validate
+
+      - name: Terraform plan
+        working-directory: terraform/prod
+        run: |
+          set -eu
+          terraform plan -input=false -lock-timeout=5m -out=tfplan
+          {
+            echo '### Terraform plan'
+            echo '```'
+            terraform show -no-color tfplan | tail -c 60000
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.run_id }}
+          path: |
+            terraform/prod/tfplan
+            terraform/prod/.terraform.lock.hcl
+          retention-days: 1
+          include-hidden-files: true
+
+  apply:
+    name: Terraform apply + cluster add-ons
+    needs: plan
+    if: inputs.apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # Add required reviewers to this environment in GitHub settings.
+    environment: production-infra
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.run_id }}
+          path: terraform/prod
+
+      - name: Terraform init
+        run: ./scripts/aws/tf-init.sh
+
+      - name: Terraform apply
+        working-directory: terraform/prod
+        run: |
+          set -eu
+          terraform apply -input=false -lock-timeout=5m tfplan
+          terraform output -json > "$RUNNER_TEMP/tf-outputs.json"
+
+      - name: Install cluster add-ons
+        run: ./scripts/aws/install-cluster-addons.sh
+        env:
+          TF_OUTPUTS: ${{ runner.temp }}/tf-outputs.json
+
+      - name: Summary
+        run: |
+          {
+            echo '### Infrastructure ready'
+            echo
+            echo "Cluster: \`$(jq -r .cluster_name.value "$RUNNER_TEMP/tf-outputs.json")\`"
+            echo "ECR: \`$(jq -r .ecr_registry.value "$RUNNER_TEMP/tf-outputs.json")\`"
+            echo "kubectl: \`$(jq -r .configure_kubectl.value "$RUNNER_TEMP/tf-outputs.json")\`"
+            echo
+            echo 'Next: set repository variable `PROD_DEPLOY_ENABLED=true` (first time only), then push to main or re-run the CI/CD Pipeline on main.'
+          } >> "$GITHUB_STEP_SUMMARY"

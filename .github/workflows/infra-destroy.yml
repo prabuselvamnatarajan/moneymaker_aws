@@ -1,0 +1,89 @@
+name: Infrastructure Destroy
+
+# Deletes the production AWS infrastructure created by Infrastructure Apply.
+# ALL APPLICATION DATA IS LOST (Mongo, Redis, Kafka, backtest volumes).
+# The Terraform state bucket and the GitHub OIDC role (terraform/bootstrap)
+# are kept, so Infrastructure Apply can recreate everything later.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type the cluster name (e.g. moneymaker-prod) to confirm"
+        type: string
+        required: true
+
+concurrency:
+  group: terraform-prod
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'moneymaker-prod' }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  TF_VAR_aws_region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TF_VAR_cluster_name: ${{ vars.EKS_CLUSTER_NAME || 'moneymaker-prod' }}
+  TF_IN_AUTOMATION: "1"
+  TERRAFORM_VERSION: "1.13.3"
+
+jobs:
+  destroy:
+    name: Tear down and terraform destroy
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production-infra
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "$CLUSTER_NAME" ]; then
+            echo "ERROR: confirmation '$CONFIRM' does not match cluster name '$CLUSTER_NAME'" >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Cluster admins
+        env:
+          ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          EXTRA_ADMIN_ARNS: ${{ vars.EKS_ADMIN_ARNS }}
+        run: |
+          set -eu
+          [ -n "$ROLE_ARN" ] || { echo "ERROR: repository variable AWS_ROLE_ARN is not set" >&2; exit 1; }
+          admins=$(jq -cn --arg role "$ROLE_ARN" --argjson extra "${EXTRA_ADMIN_ARNS:-[]}" '[$role] + $extra | unique')
+          echo "TF_VAR_cluster_admin_arns=$admins" >> "$GITHUB_ENV"
+
+      - name: Remove Kubernetes-created AWS resources
+        run: ./scripts/aws/teardown-cluster.sh
+
+      - name: Terraform init
+        run: ./scripts/aws/tf-init.sh
+
+      - name: Terraform destroy
+        working-directory: terraform/prod
+        run: terraform destroy -input=false -lock-timeout=5m -auto-approve
+
+      - name: Summary
+        run: |
+          {
+            echo '### Infrastructure destroyed'
+            echo
+            echo 'Set repository variable `PROD_DEPLOY_ENABLED=false` so main pushes stop trying to deploy.'
+          } >> "$GITHUB_STEP_SUMMARY"

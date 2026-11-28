@@ -20,12 +20,12 @@ output "configure_kubectl" {
 }
 
 output "acm_certificate_arn" {
-  description = "ACM certificate ARN for algo.mrcobra.link — paste into k8s/overlays/prod/certificate-arn.env"
+  description = "ACM certificate ARN for the Ingress (published to the cluster by install-cluster-addons.sh)"
   value       = aws_acm_certificate_validation.algo.certificate_arn
 }
 
 output "efs_file_system_id" {
-  description = "EFS file system ID — paste into k8s/overlays/prod/efs-storageclass.yaml"
+  description = "EFS file system ID (used for the efs-sc StorageClass)"
   value       = aws_efs_file_system.shared.id
 }
 
@@ -58,4 +58,22 @@ output "public_subnet_ids" {
 
 output "route53_zone_id" {
   value = data.aws_route53_zone.main.zone_id
+}
+
+output "aws_region" {
+  value = var.aws_region
+}
+
+output "domain_name" {
+  value = var.domain_name
+}
+
+output "ecr_registry" {
+  description = "ECR registry host the prod overlay pulls images from"
+  value       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
+}
+
+output "ecr_repositories" {
+  description = "Custom images the deploy copies into ECR"
+  value       = sort(keys(aws_ecr_repository.app))
 }

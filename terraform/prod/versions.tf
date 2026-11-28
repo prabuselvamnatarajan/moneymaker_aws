@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0"
 
   required_providers {
     aws = {
@@ -12,12 +12,10 @@ terraform {
     }
   }
 
-  # Configure a remote backend before apply, for example:
-  # backend "s3" {
-  #   bucket = "your-tf-state-bucket"
-  #   key    = "moneymaker/prod/terraform.tfstate"
-  #   region = "ap-south-1"
-  # }
+  # Partial S3 backend. bucket / key / region / use_lockfile are passed with
+  # -backend-config by the GitHub workflows (and by hand, see README.md).
+  # The bucket comes from terraform/bootstrap.
+  backend "s3" {}
 }
 
 provider "aws" {
