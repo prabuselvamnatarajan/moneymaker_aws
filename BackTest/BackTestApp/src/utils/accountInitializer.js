@@ -10,10 +10,13 @@ import {
   MANUAL_SYMBOL,
   MANUAL_DEPLOYMENT_NAME,
 } from "./constants.js";
+import { modeForAccountType } from "./deploymentMode.js";
 
 /**
- * Initializes predefined accounts (paper and simulation), strategies, and
- * a "Manual" deployment for each account for a new user.
+ * Initializes predefined accounts for a new user: one PAPER account (live market
+ * data, internal fills) and one SIMULATION account (backtests). LIVE accounts are
+ * never pre-created because they need the user's own external broker.
+ * Also creates the "Manual" strategy, symbol, and one Manual deployment per account.
  * This function is idempotent — safe to call multiple times.
  * @param {string|mongoose.Types.ObjectId} userId - The user's ID.
  */
@@ -148,6 +151,8 @@ export async function ensureManualStrategyAndSymbol(userId, { session } = {}) {
 
 /**
  * Ensures a Manual deployment exists for a specific account (any account type).
+ * The Manual deployment books deposits, withdrawals and manual trades; it never
+ * runs a strategy, and its mode always follows the account type.
  * Idempotent — safe inside transactions when session is provided.
  */
 export async function ensureManualDeploymentForAccount(
@@ -214,7 +219,10 @@ export async function ensureManualDeploymentForAccount(
     symbol: MANUAL_SYMBOL,
     start_time: new Date(),
     current_status: "RUNNING",
-    strategy_mode: accountDoc.account_type === "LIVE" ? "LIVE" : "PAPER",
+    // Same mode/account pairing as user deployments (LIVE->LIVE, PAPER->PAPER,
+    // SIMULATION->BACKTEST). Its balance still uses the account-level Redis key;
+    // see usesDeploymentScopedBalance().
+    strategy_mode: modeForAccountType(accountDoc.account_type),
     deployment_name: MANUAL_DEPLOYMENT_NAME,
     notes:
       "Auto-created deployment for manual account operations (deposits, withdrawals, transfers, manual trades).",

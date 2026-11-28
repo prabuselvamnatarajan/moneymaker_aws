@@ -24,10 +24,13 @@ async function openFreshDeployDialog(page: Page): Promise<Locator> {
 async function fillRequiredDeployFields(
   page: Page,
   form: Locator,
-  opts: { deploymentName?: string; pickSymbol?: boolean } = {}
+  opts: { deploymentName?: string; pickSymbol?: boolean; mode?: 'live' | 'paper' | 'backtest' } = {}
 ): Promise<void> {
   const deploymentName = opts.deploymentName ?? `E2E Deploy ${Date.now()}`;
 
+  // The account list depends on the mode, so pick the mode first. Seeded users
+  // always have a PAPER account; LIVE accounts need an external broker.
+  await fieldByLabel(form, 'Deployment Mode').selectOption(opts.mode ?? 'paper');
   await fieldByLabel(form, 'Strategy Template').selectOption({ index: 1 });
   await fieldByLabel(form, 'Deployment Display Name').fill(deploymentName);
   await fieldByLabel(form, 'Deployment Notes / Description').fill('Automated deploy-dialog E2E coverage.');
@@ -118,6 +121,47 @@ test.describe('BackTest UI — Deploy Strategy dialog', () => {
     await modeSelect.selectOption('paper');
     await expect(backtestDate).toBeHidden();
     await expect(backtestSpeed).toBeHidden();
+  });
+
+  test('TC-UI-063: account dropdown only lists accounts that match the deployment mode', async ({ page }) => {
+    const form = await openFreshDeployDialog(page);
+    const modeSelect = fieldByLabel(form, 'Deployment Mode');
+    const accountSelect = fieldByLabel(form, 'Target Brokerage Account');
+
+    await modeSelect.selectOption('paper');
+    await expect(form.locator('label').filter({ hasText: 'Target Brokerage Account' })).toContainText('PAPER only');
+    const paperOptions = await accountSelect.locator('option').count();
+    expect(paperOptions).toBeGreaterThan(1);
+
+    await modeSelect.selectOption('backtest');
+    await expect(form.locator('label').filter({ hasText: 'Target Brokerage Account' })).toContainText('SIMULATION only');
+  });
+
+  test('TC-UI-064: switching mode clears an account that no longer fits', async ({ page }) => {
+    const form = await openFreshDeployDialog(page);
+    const modeSelect = fieldByLabel(form, 'Deployment Mode');
+    const accountSelect = fieldByLabel(form, 'Target Brokerage Account');
+
+    await modeSelect.selectOption('paper');
+    await accountSelect.selectOption({ index: 1 });
+    await expect(accountSelect).not.toHaveValue('');
+
+    await modeSelect.selectOption('backtest');
+    await expect(accountSelect).toHaveValue('');
+  });
+
+  test('TC-UI-065: a mode with no matching account explains why and blocks submit', async ({ page }) => {
+    const form = await openFreshDeployDialog(page);
+    const postWatcher = deploymentPostWatcher(page);
+    await fieldByLabel(form, 'Deployment Mode').selectOption('live');
+    const accountSelect = fieldByLabel(form, 'Target Brokerage Account');
+    const liveOptions = await accountSelect.locator('option').count();
+    test.skip(liveOptions > 1, 'This user has a LIVE account; the empty-state message only shows without one');
+
+    await expect(form.getByText(/Live deployments need a LIVE account/i)).toBeVisible();
+    await expect(accountSelect).toBeDisabled();
+    await form.getByRole('button', { name: /Deploy Container Bot/i }).click();
+    expect(postWatcher.seen()).toBe(false);
   });
 
   test('TC-UI-028: dynamic symbol requires underlying and valid YYYY-MM-DD expiry before submit', async ({

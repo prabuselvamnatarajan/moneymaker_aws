@@ -20,6 +20,8 @@ const accountSchema = new mongoose.Schema({
     type: String,
     enum: ["LIVE", "PAPER", "SIMULATION"],
     required: true,
+    // Fixed for the life of the account: deployment modes are validated against it.
+    immutable: true,
   },
   current_balance: {
     type: Number,
@@ -63,6 +65,9 @@ const accountSchema = new mongoose.Schema({
 // Update timestamp and validate broker on save
 accountSchema.pre("save", async function (next) {
   this.updated_at = Date.now();
+  if (this.account_type === "LIVE" && !this.broker_id) {
+    return next(new Error("LIVE accounts must be linked to an external broker."));
+  }
   if (this.broker_id) {
     try {
       const Broker = mongoose.model("Broker");
@@ -72,6 +77,9 @@ accountSchema.pre("save", async function (next) {
       }
       if (this.account_type !== "LIVE" && !broker.is_internal) {
         return next(new Error("Only LIVE accounts can be associated with external brokers. PAPER and SIMULATION accounts must use Cobra Trades broker."));
+      }
+      if (this.account_type === "LIVE" && broker.is_internal) {
+        return next(new Error("LIVE accounts must be linked to an external broker."));
       }
     } catch (err) {
       return next(err);

@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node --test src/utils/__tests__/positionMath.test.js src/utils/__tests__/queryHelper.test.js src/services/__tests__/backtestCompletionWatcher.test.js src/services/__tests__/backtestRunIdSync.test.js src/services/__tests__/tradeIdempotency.test.js src/services/__tests__/parallelBacktestIsolation.test.js src/services/__tests__/accountLedgerRules.test.js src/services/__tests__/volumeService.test.js src/routes/__tests__/volumeRoute.test.js src/controllers/__tests__/dockerController.test.js src/routes/__tests__/dockerRoute.test.js src/services/__tests__/brokerCredentials.test.js src/db/__tests__/connection.test.js src/routes/__tests__/healthRoute.test.js",
+    "test": "node --test src/utils/__tests__/positionMath.test.js src/utils/__tests__/queryHelper.test.js src/services/__tests__/backtestCompletionWatcher.test.js src/services/__tests__/backtestRunIdSync.test.js src/services/__tests__/tradeIdempotency.test.js src/services/__tests__/parallelBacktestIsolation.test.js src/services/__tests__/accountLedgerRules.test.js src/services/__tests__/volumeService.test.js src/routes/__tests__/volumeRoute.test.js src/controllers/__tests__/dockerController.test.js src/routes/__tests__/dockerRoute.test.js src/services/__tests__/brokerCredentials.test.js src/db/__tests__/connection.test.js src/services/__tests__/deploymentAccountMode.test.js src/routes/__tests__/healthRoute.test.js",
     "start": "node src/server.js"
   },
   "author": "",

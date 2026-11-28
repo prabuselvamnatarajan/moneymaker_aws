@@ -50,9 +50,11 @@ Each microservice is built using Node.js and Express, designed to perform a scop
 * **Endpoint**: `POST /`
 * **Flow**:
   * Receives payload: `{ symbol, price, quantity, type_of_order, strategy_details }`.
-  * Checks mode:
-    * If `strategy_details.strategy_mode === "LIVE"` and `strategy_details.isTest === false`, it places a real order on Upstox using the Upstox SDK's `OrderApi.placeOrder(...)`.
-    * If `isTest === true` or `strategy_mode !== "LIVE"`, it delegates the execution to BackTestApp's REST API: `POST /backtestapp/api/trade` (maps to `triggerBackTestApp(body)`).
+  * Requires `client_order_id` (the ledger's idempotency key; 400 if missing).
+  * Checks mode (`strategy_details.strategy_mode` only; `isTest` is ignored):
+    * `LIVE` on a `LIVE` account linked to Upstox: places a real order with `POST /v3/order/place`, sending only the documented fields ([upstox_place_order_v3.md](./upstox_place_order_v3.md)), then records the trade in the ledger. A LIVE order on any other account is refused with 409.
+    * `PAPER` or `BACKTEST`: never calls a broker; records the trade through BackTestApp's REST API `POST /backtestapp/api/trades` (`recordTradeInLedger(body)`).
+    * Unknown or missing mode: 400.
   * Publishes order summary to Kafka topic `order_details` via `storeOrderDetails(body, brokerResponse)`.
   * If in paper/backtest mode, updates Redis key `account_balance:${account_id}` with the closing balance returned by BackTestApp.
 

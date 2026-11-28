@@ -90,13 +90,13 @@ sequenceDiagram
     Strategy->>Strategy: Build candle & evaluate trend break (BUY / SELL signal)
     alt Signal Triggered
         Strategy->>PlaceOrder: POST / (Order Payload + strategy_details)
-        alt LIVE Mode (isTest = false & is_internal_broker = false)
+        alt strategy_mode LIVE & account_type LIVE & external_broker_id upstox
             PlaceOrder->>Redis: Get user OAuth token ("upstox_access_token:<user_id>")
-            PlaceOrder->>UpstoxAPI: POST /v2/order/place (Upstox REST SDK)
+            PlaceOrder->>UpstoxAPI: POST /v3/order/place (allowlisted V3 fields)
             UpstoxAPI-->>PlaceOrder: Return Broker Order Response
             PlaceOrder->>BTApp: POST /api/trade (Record trade in ledger)
             PlaceOrder->>Redis: Update account balance ("account_balance:<account_id>")
-        else PAPER / TEST / INTERNAL Mode
+        else strategy_mode PAPER / BACKTEST (never a broker)
             PlaceOrder->>BTApp: POST /api/trade (Simulate execution in ledger)
             PlaceOrder->>Redis: Update virtual account balance ("account_balance:<account_id>")
         end
@@ -267,7 +267,7 @@ The table below outlines how the data flow adapts across every combination of sy
 | **Case 2: Multiple Deployments on Same Symbol** | 5 different users deploy strategies on `NSE_EQ|RELIANCE`. | When a tick for `NSE_EQ|RELIANCE` arrives at `StrategyChooserConsumer`, it fetches `strategies:live:NSE_EQ|RELIANCE` from Redis, returning 5 deployment configurations. The chooser **clones the tick 5 times**, attaches each deployment's metadata (`deployment_id`, `user_id`, `account_id`, `parameters`, `state_epoch`), and publishes 5 messages to the strategy Kafka topic. |
 | **Case 3: Multiple Strategies on Same Symbol** | User A runs `MSB` strategy and User B runs `LiquiditySweep` on `NIFTY`. | `StrategyChooserConsumer` inspects the strategy name in each deployment payload. It routes User A's tick to `msb_live_data` and User B's tick to `liquidity_sweep_live_data`. Independent strategy engine instances consume their respective topics in parallel without interfering with each other's candle builders. |
 | **Case 4: Multiple Accounts & Users** | User 1 (Account ACC-01) and User 2 (Account ACC-02) trigger order signals. | When `MSB` strategy emits an order signal, the payload includes `strategy_details.user_id` and `strategy_details.account_id`. The `placeorder` service retrieves User 1's OAuth token (`upstox_access_token:user_1`) for Upstox API dispatch, while User 2's token is fetched for User 2. After execution, `placeorder` updates Redis keys `account_balance:ACC-01` and `account_balance:ACC-02` independently. |
-| **Case 5: Hybrid LIVE & PAPER Trading** | User has 1 LIVE deployment and 1 PAPER deployment on `NSE_EQ|SBIN`. | `StrategyChooserConsumer` checks `isTest` flag on each deployment. It sets `strategy_details.isTest = false` for LIVE and `isTest = true` for PAPER. When signals trigger, `placeorder` sends the LIVE order to the Upstox REST API and the PAPER order to the `BackTestApp` internal simulation ledger. Both order executions emit payloads to `order_details` for MongoDB auditing. |
+| **Case 5: Hybrid LIVE & PAPER Trading** | User has 1 LIVE deployment (on a LIVE Upstox account) and 1 PAPER deployment (on a PAPER account) on `NSE_EQ|SBIN`. | A deployment's mode must match its account type (LIVE→LIVE, PAPER→PAPER, BACKTEST→SIMULATION), enforced at creation. `placeorder` routes by `strategy_mode` only: the LIVE order goes to the Upstox V3 REST API and the PAPER order is booked in the `BackTestApp` ledger and never reaches a broker. Both executions emit payloads to `order_details` for MongoDB auditing. |
 
 ---
 

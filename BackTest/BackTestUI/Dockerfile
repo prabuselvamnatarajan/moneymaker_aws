@@ -6,6 +6,9 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+# The runtime image is nginx (no Node, no sources), so CI's in-image unit-test
+# step cannot run UI tests. Run them here instead: a failing test fails the build.
+RUN npm run test:unit
 RUN npm run build
 
 FROM nginx:alpine

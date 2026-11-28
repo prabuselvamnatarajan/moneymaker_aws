@@ -10,6 +10,14 @@ import {
   Edit, Trash2
 } from 'lucide-react';
 import { Strategy, SymbolData, Account } from '../types';
+import {
+  ACCOUNT_TYPE_FOR_MODE,
+  MODE_LABEL,
+  accountsForMode,
+  deploymentAccountError,
+  isAccountAllowedForMode,
+  type DeploymentMode,
+} from '../utils/deploymentMode';
 
 interface StrategiesListViewProps {
   strategies: Strategy[];
@@ -147,6 +155,20 @@ export default function StrategiesListView({
   const [offset, setOffset] = useState(1);
   const [optionType, setOptionType] = useState<'CE' | 'PE'>('CE');
   const [optionExpiry, setOptionExpiry] = useState(new Date().toISOString().slice(0, 10));
+  const [deployFormError, setDeployFormError] = useState<string | null>(null);
+
+  // Deployment mode decides which accounts are allowed (LIVE->LIVE, PAPER->PAPER,
+  // BACKTEST->SIMULATION); the server rejects any other pairing.
+  const modeAccounts = accountsForMode(accounts, mode);
+  const selectedDeployAccount = accounts.find((a) => a.id === selectedAccountId);
+
+  const handleModeChange = (nextMode: DeploymentMode) => {
+    setMode(nextMode);
+    setDeployFormError(null);
+    if (selectedDeployAccount && !isAccountAllowedForMode(selectedDeployAccount, nextMode)) {
+      setSelectedAccountId('');
+    }
+  };
 
   /** Active underlyings for dynamic symbol control — all non-OPTION symbols. */
   const underlyingCandidates = symbols.filter(
@@ -181,6 +203,12 @@ export default function StrategiesListView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const accountError = deploymentAccountError(selectedDeployAccount, mode);
+    if (accountError) {
+      setDeployFormError(accountError);
+      return;
+    }
+    setDeployFormError(null);
     if (!deploymentName || !selectedAccountId || !selectedStrategyId) return;
     if (dynamicSymbol && !underlyingSymbolId) return;
     if (dynamicSymbol && !/^\d{4}-\d{2}-\d{2}$/.test(optionExpiry)) return;
@@ -247,6 +275,7 @@ export default function StrategiesListView({
     setDeploymentName('');
     setDescription('');
     setMode('live');
+    setDeployFormError(null);
     setSelectedSymbolId('');
     setInitialStatus('active');
     setSelectedAccountId('');
@@ -577,29 +606,12 @@ export default function StrategiesListView({
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Target Brokerage Account</label>
-                <select
-                  required
-                  value={selectedAccountId}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
-                >
-                  <option value="">Select Account...</option>
-                  {accounts.map(acc => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.name} (₹{acc.balance.toLocaleString()})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Deployment Mode</label>
                   <select
                     value={mode}
-                    onChange={(e) => setMode(e.target.value as any)}
+                    onChange={(e) => handleModeChange(e.target.value as DeploymentMode)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500"
                   >
                     <option value="live">Live Workload (Broker Routing)</option>
@@ -634,6 +646,36 @@ export default function StrategiesListView({
                     <option value="stopped">Fully Terminated</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">
+                  Target Brokerage Account ({ACCOUNT_TYPE_FOR_MODE[mode]} only)
+                </label>
+                <select
+                  required
+                  value={selectedAccountId}
+                  onChange={(e) => {
+                    setSelectedAccountId(e.target.value);
+                    setDeployFormError(null);
+                  }}
+                  disabled={modeAccounts.length === 0}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500 disabled:opacity-60"
+                >
+                  <option value="">
+                    {modeAccounts.length === 0 ? `No ${ACCOUNT_TYPE_FOR_MODE[mode]} accounts available` : 'Select Account...'}
+                  </option>
+                  {modeAccounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} (₹{acc.balance.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+                {modeAccounts.length === 0 && (
+                  <p className="text-[10px] text-amber-400">
+                    {MODE_LABEL[mode]} deployments need a {ACCOUNT_TYPE_FOR_MODE[mode]} account. Create one under Accounts first.
+                  </p>
+                )}
               </div>
 
               {mode === 'backtest' && (
@@ -823,6 +865,13 @@ export default function StrategiesListView({
                   Use Full Account Balance for Allocation
                 </label>
               </div>
+
+              {deployFormError && (
+                <div role="alert" className="flex items-start gap-2 text-[11px] text-rose-300 bg-rose-950/40 border border-rose-900 rounded-md p-2.5">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{deployFormError}</span>
+                </div>
+              )}
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs">
                 <button

@@ -173,21 +173,31 @@ test('TC-ACC-003: Create LIVE account requires explicit external broker_id', asy
   expect(brokerRefId(account.broker_id)).toBe(String(external._id));
 });
 
-test('TC-ACC-004: Create LIVE account with internal broker_id explicitly set', async ({
+test('TC-ACC-004: Create LIVE account with the internal broker is rejected', async ({
   request,
 }) => {
   const { accessToken } = await loginAsUser(request);
   const internal = await getInternalBroker(request, accessToken);
   const suffix = uniqueSuffix();
-  const { res, account } = await postAccount(request, accessToken, {
+  const { res } = await postAccount(request, accessToken, {
     account_name: `live-internal-${suffix}`,
     account_type: 'LIVE',
     initial_balance: 10000,
     broker_id: internal._id,
   });
-  await expectStatus(res, 201);
-  expect(account.account_type).toBe('LIVE');
-  expect(brokerRefId(account.broker_id)).toBe(String(internal._id));
+  await expectStatus(res, 400);
+  await expectMessageContains(res, 'LIVE accounts must be linked to an external broker');
+});
+
+test('TC-ACC-004b: Create LIVE account without any broker is rejected', async ({ request }) => {
+  const { accessToken } = await loginAsUser(request);
+  const { res } = await postAccount(request, accessToken, {
+    account_name: `live-nobroker-${uniqueSuffix()}`,
+    account_type: 'LIVE',
+    initial_balance: 10000,
+  });
+  await expectStatus(res, 400);
+  await expectMessageContains(res, 'external broker');
 });
 
 test('TC-ACC-005: Create PAPER with external broker rejected', async ({ request }) => {
@@ -428,20 +438,38 @@ test('TC-ACC-019: Non-admin can update whitelisted fields only', async ({ reques
   expect(updated.current_balance).toBe(10000);
 });
 
-test('TC-ACC-020: Admin can update current_balance initial_balance account_type', async ({
+test('TC-ACC-020: Admin can update current_balance and initial_balance', async ({
   request,
 }) => {
   const { accessToken: adminToken } = await loginAsAdmin(request);
   const account = asAccount(await createAccount(request, adminToken));
 
   const patchRes = await apiRequest(request, adminToken).patch(`/accounts/${account._id}`, {
-    data: { current_balance: 42000, initial_balance: 42000, account_type: 'SIMULATION' },
+    data: { current_balance: 42000, initial_balance: 42000 },
   });
   await expectStatus(patchRes, 200);
   const updated = await accountFromResponse(patchRes);
   expect(updated.current_balance).toBe(42000);
   expect(updated.initial_balance).toBe(42000);
-  expect(updated.account_type).toBe('SIMULATION');
+  expect(updated.account_type).toBe('PAPER');
+});
+
+test('TC-ACC-020b: Nobody can change account_type, not even an admin', async ({ request }) => {
+  const { accessToken: adminToken } = await loginAsAdmin(request);
+  const { accessToken: userToken } = await loginAsUser(request);
+  const adminAccount = asAccount(await createAccount(request, adminToken));
+  const userAccount = asAccount(await createAccount(request, userToken));
+
+  for (const [token, account] of [[adminToken, adminAccount], [userToken, userAccount]] as const) {
+    const patchRes = await apiRequest(request, token).patch(`/accounts/${account._id}`, {
+      data: { account_type: 'SIMULATION' },
+    });
+    await expectStatus(patchRes, 400);
+    await expectMessageContains(patchRes, 'account_type cannot be changed');
+    const getRes = await apiRequest(request, token).get(`/accounts/${account._id}`);
+    const fresh = await accountFromResponse(getRes);
+    expect(fresh.account_type).toBe('PAPER');
+  }
 });
 
 test('TC-ACC-021: Update with no valid fields returns explicit error', async ({ request }) => {
@@ -625,29 +653,46 @@ test('TC-LDG-003: Deposit to nonexistent or foreign account rejected', async ({ 
   await expectMessageContains(bogusRes, 'Account not found');
 });
 
-test('TC-LDG-004: Deposit ledger entry auto-links to Manual deployment if one exists', async ({
+test('TC-LDG-004: Deposit ledger entry auto-links to the system-created Manual deployment', async ({
   request,
 }) => {
-  const { accessToken } = await loginAsUser(request);
-  const account = asAccount(await createAccount(request, accessToken));
-  const strategy = await createStrategy(request, accessToken);
-  const symbol = await createSymbol(request, accessToken);
-  const manualDep = await createDeployment(request, accessToken, {
-    strategy_id: strategy._id,
-    account_id: account._id,
-    user_symbol_id: symbol._id,
-    instrument_token: symbol.instrument_token,
-    symbol: symbol.symbol,
-    overrides: { deployment_name: 'Manual' },
-  });
+  // "Manual" is a reserved name, so the API cannot create it. A new user gets
+  // PAPER + SIMULATION accounts, each with its own Manual deployment, from the
+  // account initializer.
+  const { accessToken: adminToken } = await loginAsAdmin(request);
+  const newUser = await createUserB(request, adminToken);
+  const token = newUser.tokens.accessToken;
 
-  const res = await deposit(request, accessToken, account._id, 250, 'Manual dep link');
+  const accounts = await jsonBody<PaginatedResponse<AccountDoc>>(
+    await apiRequest(request, token).get('/accounts', { params: { limit: 50 } })
+  );
+  const paper = accounts.items.find((a) => a.account_type === 'PAPER');
+  expect(paper, 'initializer should create a PAPER account').toBeTruthy();
+
+  const deployments = await jsonBody<
+    PaginatedResponse<{
+      _id: string;
+      account_id: string;
+      deployment_name: string;
+      strategy_mode: string;
+      strategy_id: string;
+      user_symbol_id: string;
+      symbol: string;
+    }>
+  >(await apiRequest(request, token).get('/deployments', { params: { limit: 100 } }));
+  const manualDep = deployments.items.find(
+    (d) => d.deployment_name === 'Manual' && String(d.account_id) === String(paper!._id)
+  );
+  expect(manualDep, 'initializer should create a Manual deployment for the PAPER account').toBeTruthy();
+  expect(manualDep!.strategy_mode).toBe('PAPER');
+
+  const res = await deposit(request, token, paper!._id, 250, 'Manual dep link');
   await expectStatus(res, 200);
   const entry = await ledgerFromResponse(res);
-  expect(String(entry.deployment_id)).toBe(String(manualDep._id));
-  expect(String(entry.strategy_id)).toBe(String(strategy._id));
-  expect(String(entry.user_symbol_id)).toBe(String(symbol._id));
-  expect(entry.symbol).toBe(symbol.symbol);
+  expect(String(entry.deployment_id)).toBe(String(manualDep!._id));
+  expect(String(entry.strategy_id)).toBe(String(manualDep!.strategy_id));
+  expect(String(entry.user_symbol_id)).toBe(String(manualDep!.user_symbol_id));
+  expect(entry.symbol).toBe(manualDep!.symbol);
 });
 
 test('TC-LDG-005: Deposit without Manual deployment omits deployment linkage fields', async ({

@@ -794,7 +794,7 @@ test('TC-ADM-009: Get/list users returns -password and populates roles', async (
 
 // ─── Admin — User Sub-Resources / Bypasses (TC-ADM-010 – TC-ADM-014) ────────
 
-test('TC-ADM-010: createUserAccount bypasses service — no internal-broker auto-assignment (#51)', async ({
+test('TC-ADM-010: createUserAccount uses the account service — PAPER gets the internal broker (#51 fixed)', async ({
   request,
 }) => {
   const admin = await loginAsAdmin(request);
@@ -813,10 +813,11 @@ test('TC-ADM-010: createUserAccount bypasses service — no internal-broker auto
   );
   await expectStatus(res, 201);
   const account = unwrapData<{ broker_id?: string | null }>(await jsonBody(res));
-  expect(account.broker_id == null || account.broker_id === '').toBe(true);
+  const internal = await getInternalBroker(request, admin.accessToken);
+  expect(String(account.broker_id)).toBe(String(internal._id));
 });
 
-test('TC-ADM-011: createUserAccount skips current_balance defaulting from service (#51)', async ({
+test('TC-ADM-011: createUserAccount defaults current_balance from initial_balance (#51 fixed)', async ({
   request,
 }) => {
   const admin = await loginAsAdmin(request);
@@ -838,7 +839,20 @@ test('TC-ADM-011: createUserAccount skips current_balance defaulting from servic
     await jsonBody(res)
   );
   expect(account.initial_balance).toBe(10000);
-  expect(account.current_balance).toBe(0);
+  expect(account.current_balance).toBe(10000);
+});
+
+test('TC-ADM-011b: createUserAccount refuses a LIVE account without an external broker', async ({
+  request,
+}) => {
+  const admin = await loginAsAdmin(request);
+  const target = await createUserB(request, admin.accessToken);
+  const res = await apiRequest(request, admin.accessToken).post(
+    `/admin/users/${target.userId}/accounts`,
+    { data: { account_name: `Admin LIVE ${uniqueSuffix()}`, account_type: 'LIVE', initial_balance: 10000 } }
+  );
+  await expectStatus(res, 400);
+  await expectMessageContains(res, 'external broker');
 });
 
 test('TC-ADM-012: createUserStrategy bypasses service advanced-field defaulting (#51)', async ({

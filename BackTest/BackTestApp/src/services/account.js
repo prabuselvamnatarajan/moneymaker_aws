@@ -5,12 +5,22 @@ import { pickAllowedFields } from "../utils/updateHelper.js";
 import { createClient } from "redis";
 
 const USER_UPDATABLE_FIELDS = ["account_name", "description", "is_active", "commission_type", "commission_rate", "broker_id"];
+// account_type is fixed at creation for everyone (admins included): a deployment's
+// mode is validated against it, so changing it would silently re-route orders.
 const ADMIN_UPDATABLE_FIELDS = [
   ...USER_UPDATABLE_FIELDS,
-  "account_type",
   "current_balance",
   "initial_balance",
 ];
+
+const LIVE_NEEDS_EXTERNAL_BROKER =
+  "LIVE accounts must be linked to an external broker. Use a PAPER or SIMULATION account for internal trading.";
+
+function badRequest(message) {
+  const err = new Error(message);
+  err.statusCode = 400;
+  return err;
+}
 
 export const createAccount = async (userId, accountData) => {
   const Broker = mongoose.model("Broker");
@@ -29,6 +39,14 @@ export const createAccount = async (userId, accountData) => {
       internalBroker = await Broker.create({ name: "Cobra Trades", is_internal: true });
     }
     accountData.broker_id = internalBroker._id;
+  } else if (accountData.account_type === "LIVE") {
+    const requestedBroker = accountData.broker_id ? await Broker.findById(accountData.broker_id) : null;
+    if (accountData.broker_id && !requestedBroker) {
+      throw new Error("Associated broker not found");
+    }
+    if (!requestedBroker || requestedBroker.is_internal) {
+      throw badRequest(LIVE_NEEDS_EXTERNAL_BROKER);
+    }
   }
 
   const account = new Account({
@@ -85,6 +103,10 @@ export const updateAccount = async (userId, id, updateData, isAdmin = false) => 
     query.user_id = userId;
   }
 
+  if (updateData && updateData.account_type !== undefined) {
+    throw badRequest("account_type cannot be changed after the account is created");
+  }
+
   const allowedFields = isAdmin ? ADMIN_UPDATABLE_FIELDS : USER_UPDATABLE_FIELDS;
   const sanitizedUpdate = pickAllowedFields(updateData, allowedFields);
 
@@ -97,7 +119,7 @@ export const updateAccount = async (userId, id, updateData, isAdmin = false) => 
     if (!account) {
       throw new Error("Account not found");
     }
-    const targetAccountType = sanitizedUpdate.account_type || account.account_type;
+    const targetAccountType = account.account_type;
     const Broker = mongoose.model("Broker");
     const broker = await Broker.findById(sanitizedUpdate.broker_id);
     if (!broker) {
@@ -105,6 +127,9 @@ export const updateAccount = async (userId, id, updateData, isAdmin = false) => 
     }
     if (targetAccountType !== "LIVE" && !broker.is_internal) {
       throw new Error("Only LIVE accounts can be associated with external brokers. PAPER and SIMULATION accounts must use Cobra Trades broker.");
+    }
+    if (targetAccountType === "LIVE" && broker.is_internal) {
+      throw badRequest(LIVE_NEEDS_EXTERNAL_BROKER);
     }
   }
 
