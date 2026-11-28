@@ -228,6 +228,9 @@ export default function App() {
             if (typeof msg.volume === 'number' && !Number.isNaN(msg.volume)) {
               patch.volume24h = msg.volume;
             }
+            if (typeof msg.latency_ms === 'number' && !Number.isNaN(msg.latency_ms)) {
+              patch.latency_ms = msg.latency_ms;
+            }
             setLiveQuotes(prev => applyLiveQuote(prev, msg.instrument_token, patch, msg.symbol));
             setSymbols(prevSymbols =>
               prevSymbols.map(sym => {
@@ -242,6 +245,7 @@ export default function App() {
                       lastPrice: msg.last_price,
                       ...(patch.change24h !== undefined ? { change24h: patch.change24h } : {}),
                       ...(patch.volume24h !== undefined ? { volume24h: patch.volume24h } : {}),
+                      ...(patch.latency_ms !== undefined ? { latency_ms: patch.latency_ms } : {}),
                     }
                   : sym;
               })

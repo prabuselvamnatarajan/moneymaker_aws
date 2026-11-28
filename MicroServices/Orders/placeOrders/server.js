@@ -7,11 +7,31 @@ const port = process.env.PORT || 80;
 app.use(cors());
 app.use(express.json());
 
-import { storeOrderDetails, placeOrders, triggerBackTestApp, getLiveAccountBalance, buildBrokerOrderPayload, resolveExecutionMode } from './dependency.js';
+import {
+    storeOrderDetails,
+    placeOrders,
+    recordTradeInLedger,
+    getLiveAccountBalance,
+    buildBrokerOrderPayload,
+    resolveExecutionMode,
+    connectProducer,
+    disconnectProducer,
+} from './dependency.js';
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js';
-import { isMissingRequiredOrderFields } from './orderValidation.js';
+import { isMissingRequiredOrderFields, isMissingClientOrderId } from './orderValidation.js';
+import { createOrderFlow } from './orderFlow.js';
+
+const { handleLiveBrokerOrder, handleInternalOrder } = createOrderFlow({
+    getAccessTokenFromRedis,
+    placeOrders,
+    recordTradeInLedger,
+    getLiveAccountBalance,
+    setAccountBalanceToRedis,
+    buildBrokerOrderPayload,
+    resolveBalanceAfterLiveOrder,
+});
 
 app.post('/', async (req, res) => {
     const body = req.body;
@@ -21,73 +41,28 @@ app.post('/', async (req, res) => {
         return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
     }
 
-    if (body.price === null || body.price <= 0) {
-        console.warn(`⚠️ Warning: Incoming order price is missing or zero (${body.price}). BackTestApp will attempt LTP fallback.`);
+    if (isMissingClientOrderId(body)) {
+        return res.status(400).send('Bad Request: client_order_id is required (reuse the same id when retrying an order)');
+    }
+
+    if ((body.price === null || body.price <= 0) && !(body.ltp > 0)) {
+        console.warn(`⚠️ Warning: Incoming order has no price or tick LTP (${body.price}).`);
     }
 
     try {
         console.log('Request Body:', body);
 
-        let result = null;
-        let orderResponse = null;
+        // Throws 400/409 for an unknown mode or a LIVE order on an account that
+        // cannot reach a supported broker. PAPER/BACKTEST never reach the broker.
+        const { shouldCallExternalBroker, isBacktest } = resolveExecutionMode(strategy_details);
+        const result = shouldCallExternalBroker
+            ? await handleLiveBrokerOrder(body, strategy_details, isBacktest)
+            : await handleInternalOrder(body, strategy_details, isBacktest);
 
-        const { isLive, isInternalBroker, isBacktest } = resolveExecutionMode(strategy_details);
+        res.send(result);
 
-        if (isLive && !isInternalBroker) {
-            // Throws 401 if token missing/expired — no silent fallback.
-            const access_token = await getAccessTokenFromRedis(strategy_details.user_id);
-
-            // Zero MARKET price only for the broker payload; keep original body.price for ledger/analysis.
-            const brokerPayload = buildBrokerOrderPayload(body);
-            result = await placeOrders(access_token, JSON.stringify(brokerPayload));
-
-            let ledgerClosingBalance = null;
-            try {
-                orderResponse = await triggerBackTestApp(body);
-                let { data: { closing_balance } = {} } = orderResponse || {};
-                ledgerClosingBalance = closing_balance;
-                if (closing_balance !== undefined && closing_balance !== null) {
-                    await setAccountBalanceToRedis(strategy_details.account_id, closing_balance, strategy_details.deployment_id, isBacktest);
-                }
-            } catch (err) {
-                console.error('Failed to record successful live trade in BackTestApp:', err);
-            }
-
-            let liveBalance = null;
-            try {
-                liveBalance = await getLiveAccountBalance(strategy_details.user_id);
-            } catch (err) {
-                console.error('Failed to fetch live account balance after order (keeping ledger balance):', err.message || err);
-            }
-
-            const { balanceToStore, balanceSource } = resolveBalanceAfterLiveOrder(ledgerClosingBalance, liveBalance);
-
-            if (balanceToStore !== null) {
-                await setAccountBalanceToRedis(strategy_details.account_id, balanceToStore, strategy_details.deployment_id, isBacktest);
-                if (balanceSource === 'ledger_kept_over_zero_live') {
-                    console.warn(
-                        `Keeping ledger balance ${ledgerClosingBalance} for account ${strategy_details.account_id}; live availableMargin was ${liveBalance}`
-                    );
-                }
-            }
-        } else {
-            orderResponse = await triggerBackTestApp(body);
-            let { data: { closing_balance } = {} } = orderResponse || {};
-            if (closing_balance !== undefined && closing_balance !== null) {
-                await setAccountBalanceToRedis(strategy_details.account_id, closing_balance, strategy_details.deployment_id, isBacktest);
-            } else {
-                console.warn('⚠️ Warning: Received invalid closing balance from BackTestApp:', closing_balance);
-            }
-
-            if (isInternalBroker) {
-                result = 'Internal Broker Mode: Order recorded internally.';
-            } else {
-                result = 'Test Mode: Order not placed with external broker.';
-            }
-        }
-
+        // Order history only; nothing on the strategy's next tick reads it.
         storeOrderDetails(body.instrument_token, body);
-        res.send(result || orderResponse);
     } catch (e) {
         console.error(e);
         const status = e.statusCode || 500;
@@ -96,9 +71,17 @@ app.post('/', async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
-    app.listen(port, () => {
+    connectProducer();
+    const server = app.listen(port, () => {
         console.log(`Server is running on port ${port}`);
     });
+    const shutdown = () => {
+        server.close(() => {
+            disconnectProducer().finally(() => process.exit(0));
+        });
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
 }
 
 export default app;

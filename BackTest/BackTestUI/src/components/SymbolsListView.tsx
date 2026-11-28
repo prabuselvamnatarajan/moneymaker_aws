@@ -491,6 +491,7 @@ export default function SymbolsListView({
                   <th className="p-4 font-mono">Status</th>
                   <th className="p-4 text-right">Last price quote</th>
                   <th className="p-4 text-right">24h Market Swing</th>
+                  <th className="p-4 font-mono text-center">Latency</th>
                   <th className="p-4 text-right">Trading Volume (24h)</th>
                   <th className="p-4 text-center">Workloads Action</th>
                 </tr>
@@ -566,6 +567,22 @@ export default function SymbolsListView({
                         ) : (
                           <span className="text-slate-500 font-mono">—</span>
                         )}
+                      </td>
+                      <td className="p-4 text-center">
+                        {(() => {
+                          const lat = quote?.latency_ms ?? liveSym?.latency_ms ?? sym.latency_ms;
+                          if (lat == null) return <span className="text-slate-600 font-mono text-[10px]">—</span>;
+                          const color = lat < 100 
+                            ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/40' 
+                            : lat <= 300 
+                            ? 'bg-amber-950/40 text-amber-400 border-amber-900/40' 
+                            : 'bg-rose-950/40 text-rose-400 border-rose-900/40';
+                          return (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${color}`}>
+                              {lat}ms
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="p-4 text-right text-slate-400 font-mono">
                         {currentVolume != null && currentVolume > 0

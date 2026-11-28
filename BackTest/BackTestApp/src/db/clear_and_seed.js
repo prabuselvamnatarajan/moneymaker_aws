@@ -183,7 +183,9 @@ export const clearAndSeedDB = async () => {
         current_balance: 25000000,
         description: "Admin production trading account",
         is_active: true,
-        broker_id: zerodhaBroker._id
+        // LIVE accounts must use an external broker; Upstox is the only one the
+        // order service can route to today.
+        broker_id: upstoxBrokerAdmin._id
       },
       {
         user_id: adminUser._id,
@@ -272,15 +274,21 @@ export const clearAndSeedDB = async () => {
     console.log(`Created ${seededSymbols.length} user symbols.`);
 
     // 7. Create deployments
+    // Every deployment follows the mode/account rule in utils/deploymentMode.js:
+    // LIVE -> LIVE account, PAPER -> PAPER account, BACKTEST -> SIMULATION account.
+    // The seeded LIVE deployment starts STOPPED so seeding never places a real order.
     const standardSimAcc = seededAccounts.find(a => a.account_name === "simulation" && a.user_id.equals(standardUser._id));
     const standardPaperAcc = seededAccounts.find(a => a.account_name === "Test 1" && a.user_id.equals(standardUser._id));
+    const adminLiveAcc = seededAccounts.find(a => a.account_name === "Admin Live" && a.user_id.equals(adminUser._id));
 
     const meanReversionStrat = seededStrategies.find(s => s.strategy_name === "Mean Reversion v4" && s.user_id.equals(standardUser._id));
     const momentumStrat = seededStrategies.find(s => s.strategy_name === "Momentum Scalper" && s.user_id.equals(standardUser._id));
     const gridStrat = seededStrategies.find(s => s.strategy_name === "Grid Bot Alpha" && s.user_id.equals(standardUser._id));
+    const breakoutStrat = seededStrategies.find(s => s.strategy_name === "Breakout Rider" && s.user_id.equals(adminUser._id));
 
     const nifty50Symbol = seededSymbols.find(sym => sym.symbol.toUpperCase() === "NSE_INDEX|NIFTY 50" && sym.user_id.equals(standardUser._id));
     const niftyBankSymbol = seededSymbols.find(sym => sym.symbol.toUpperCase() === "NSE_INDEX|NIFTY BANK" && sym.user_id.equals(standardUser._id));
+    const adminNifty50Symbol = seededSymbols.find(sym => sym.symbol.toUpperCase() === "NSE_INDEX|NIFTY 50" && sym.user_id.equals(adminUser._id));
 
     const deploymentsData = [
       {
@@ -291,23 +299,25 @@ export const clearAndSeedDB = async () => {
         instrument_token: "NSE_INDEX|Nifty 50",
         symbol: "NSE_INDEX|Nifty 50",
         start_time: new Date(Date.now() - 24 * 60 * 60 * 1000), // 24 hours ago
-        current_status: "RUNNING",
-        strategy_mode: "LIVE",
-        deployment_name: "Mean Reversion v4 (live)",
-        notes: "Running live simulation for audit check"
+        current_status: "COMPLETED",
+        strategy_mode: "BACKTEST",
+        backtest_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        backtest_speed: 0,
+        deployment_name: "Mean Reversion v4 (backtest)",
+        notes: "Completed historical replay used for the sample trade history"
       },
       {
         user_id: standardUser._id,
         strategy_id: momentumStrat._id,
-        account_id: standardSimAcc._id,
+        account_id: standardPaperAcc._id,
         user_symbol_id: niftyBankSymbol._id,
         instrument_token: "NSE_INDEX|Nifty Bank",
         symbol: "NSE_INDEX|Nifty Bank",
         start_time: new Date(Date.now() - 12 * 60 * 60 * 1000), // 12 hours ago
         current_status: "RUNNING",
         strategy_mode: "PAPER",
-        deployment_name: "Momentum Scalper (live)",
-        notes: "Trading on quick hourly trends"
+        deployment_name: "Momentum Scalper (paper)",
+        notes: "Paper trading on live market data; fills are internal only"
       },
       {
         user_id: standardUser._id,
@@ -318,16 +328,30 @@ export const clearAndSeedDB = async () => {
         symbol: "NSE_INDEX|Nifty 50",
         start_time: new Date(Date.now() - 48 * 60 * 60 * 1000), // 48 hours ago
         current_status: "PAUSED",
-        strategy_mode: "BACKTEST",
-        deployment_name: "Grid Bot Alpha",
+        strategy_mode: "PAPER",
+        deployment_name: "Grid Bot Alpha (paper)",
         notes: "Grid bounds need readjustment"
+      },
+      {
+        user_id: adminUser._id,
+        strategy_id: breakoutStrat._id,
+        account_id: adminLiveAcc._id,
+        user_symbol_id: adminNifty50Symbol._id,
+        instrument_token: "NSE_INDEX|Nifty 50",
+        symbol: "NSE_INDEX|Nifty 50",
+        start_time: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
+        current_status: "STOPPED",
+        strategy_mode: "LIVE",
+        deployment_name: "Breakout Rider (live)",
+        notes: "Seeded STOPPED: starting it places real Upstox orders"
       }
     ];
     const seededDeployments = await Deployment.insertMany(deploymentsData);
     console.log(`Created ${seededDeployments.length} deployments.`);
 
     // 8. Create some sample trades and ledgers to generate yield history
-    const nifty50Deployment = seededDeployments.find(d => d.symbol.toUpperCase() === "NSE_INDEX|NIFTY 50");
+    // Sample history belongs to the completed backtest on the SIMULATION account.
+    const nifty50Deployment = seededDeployments.find(d => d.deployment_name === "Mean Reversion v4 (backtest)");
 
     // Trade 1: Buy
     const buyTrade = new Trade({

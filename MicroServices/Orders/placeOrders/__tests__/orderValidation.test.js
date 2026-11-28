@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isMissingRequiredOrderFields } from '../orderValidation.js';
+import { isMissingRequiredOrderFields, isMissingClientOrderId } from '../orderValidation.js';
 
 describe('isMissingRequiredOrderFields', () => {
     const valid = {
@@ -32,5 +32,19 @@ describe('isMissingRequiredOrderFields', () => {
     it('returns true for an empty body', () => {
         assert.equal(isMissingRequiredOrderFields(), true);
         assert.equal(isMissingRequiredOrderFields({}), true);
+    });
+});
+
+describe('isMissingClientOrderId', () => {
+    it('TC-PO-039: accepts an id on the body or in strategy_details', () => {
+        assert.equal(isMissingClientOrderId({ client_order_id: 'c1', strategy_details: {} }), false);
+        assert.equal(isMissingClientOrderId({ strategy_details: { client_order_id: 'c1' } }), false);
+    });
+
+    it('TC-PO-040: rejects a missing, empty or non-string id (no server-side fallback)', () => {
+        assert.equal(isMissingClientOrderId({ strategy_details: {} }), true);
+        assert.equal(isMissingClientOrderId({}), true);
+        assert.equal(isMissingClientOrderId({ client_order_id: '   ' }), true);
+        assert.equal(isMissingClientOrderId({ client_order_id: 123 }), true);
     });
 });

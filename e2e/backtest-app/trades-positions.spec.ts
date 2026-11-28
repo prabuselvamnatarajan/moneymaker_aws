@@ -20,6 +20,7 @@ import {
   createTrade,
   createTradeFixture,
   getAccountBalance,
+  createAccountForMode,
 } from '../fixtures/factories';
 import { fireConcurrentWithResults } from '../fixtures/concurrent';
 import {
@@ -896,9 +897,11 @@ test('TC-TRD-024: BACKTEST position tracks max_up/max_down from tick files', asy
     return;
   }
 
+  // BACKTEST deployments need a SIMULATION account.
+  const simAccount = await createAccountForMode(request, accessToken, 'BACKTEST');
   const backtestDep = await createDeployment(request, accessToken, {
     strategy_id: fx.strategy._id,
-    account_id: fx.account._id,
+    account_id: simAccount._id,
     user_symbol_id: fx.symbol._id,
     instrument_token: fx.symbol.instrument_token,
     symbol: fx.symbol.symbol,
@@ -951,9 +954,11 @@ test('TC-TRD-025: excursion tick lookup tries fallback paths', async ({ request 
   const datesBody = await jsonBody<{ data: string[] }>(datesRes);
   expect(Array.isArray(datesBody.data)).toBe(true);
 
+  // BACKTEST deployments need a SIMULATION account.
+  const simAccount = await createAccountForMode(request, accessToken, 'BACKTEST');
   const backtestDep = await createDeployment(request, accessToken, {
     strategy_id: fx.strategy._id,
-    account_id: fx.account._id,
+    account_id: simAccount._id,
     user_symbol_id: fx.symbol._id,
     instrument_token: fx.symbol.instrument_token,
     symbol: fx.symbol.symbol,
@@ -976,9 +981,11 @@ test('TC-TRD-026: missing tick files do not crash trade save', async ({ request 
     symbol: `NOTICKS${uniqueSuffix().slice(-5)}`,
   });
 
+  // BACKTEST deployments need a SIMULATION account.
+  const simAccount = await createAccountForMode(request, accessToken, 'BACKTEST');
   const backtestDep = await createDeployment(request, accessToken, {
     strategy_id: fx.strategy._id,
-    account_id: fx.account._id,
+    account_id: simAccount._id,
     user_symbol_id: uniqueSymbol._id,
     instrument_token: uniqueSymbol.instrument_token,
     symbol: uniqueSymbol.symbol,
@@ -1016,9 +1023,11 @@ test('TC-TRD-027: multi-day BACKTEST aggregates ticks across date range', async 
     return;
   }
 
+  // BACKTEST deployments need a SIMULATION account.
+  const simAccount = await createAccountForMode(request, accessToken, 'BACKTEST');
   const backtestDep = await createDeployment(request, accessToken, {
     strategy_id: fx.strategy._id,
-    account_id: fx.account._id,
+    account_id: simAccount._id,
     user_symbol_id: fx.symbol._id,
     instrument_token: fx.symbol.instrument_token,
     symbol: fx.symbol.symbol,

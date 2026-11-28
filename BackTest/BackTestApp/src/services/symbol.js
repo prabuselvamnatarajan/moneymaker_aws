@@ -4,6 +4,8 @@ import path from "path";
 import UserSymbol from "../models/userSymbol.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
 import { createClient } from "redis";
+import { getReadySharedRedisClient } from "../utils/sharedRedis.js";
+import { attachCachedLatency } from "../utils/symbolLatency.js";
 
 
 export const publishSymbolUpdate = async (payload) => {
@@ -83,6 +85,9 @@ export const getAllSymbols = async (userId, queryParams) => {
     .skip(skip)
     .limit(limit);
 
+  // Best-effort feed latency from the shared Redis client (skipped when Redis is down).
+  await attachCachedLatency(items, getReadySharedRedisClient());
+
   const total = await UserSymbol.countDocuments(filter);
 
   return {
@@ -105,7 +110,12 @@ export const getSymbolById = async (userId, id) => {
       { user_symbol_id: id }
     ]
   };
-  return await UserSymbol.findOne(query);
+  const symbolDoc = await UserSymbol.findOne(query).lean();
+  if (!symbolDoc) return null;
+
+  await attachCachedLatency([symbolDoc], getReadySharedRedisClient());
+
+  return symbolDoc;
 };
 
 export const updateSymbol = async (userId, id, updateData) => {

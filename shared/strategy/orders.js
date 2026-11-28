@@ -65,10 +65,18 @@ export function sanitizeTag(tag) {
     return tag ? tag.replace(/[^a-zA-Z0-9_-]/g, '_') : 'symbol';
 }
 
-export function buildClientOrderId(deploymentId, tag, transactionType, timestamp) {
+/**
+ * Ledger idempotency key: deployment, tag, side, tick time and the order's
+ * position among the orders placed while handling that tick (1, 2, ...).
+ * The sequence keeps two same-side orders in one tick apart (a stop-and-reverse
+ * cover + entry, or a partial exit + final exit), and it is deterministic, so a
+ * retried HTTP request or a re-processed tick gets the same id again.
+ */
+export function buildClientOrderId(deploymentId, tag, transactionType, timestamp, sequence = 1) {
     const cleanTag = sanitizeTag(tag);
     const tsMs = timestamp ? new Date(timestamp).getTime() : Date.now();
-    return `${deploymentId || 'manual'}_${cleanTag}_${transactionType}_${tsMs}`;
+    const seq = Number.isInteger(Number(sequence)) && Number(sequence) > 0 ? Number(sequence) : 1;
+    return `${deploymentId || 'manual'}_${cleanTag}_${transactionType}_${tsMs}_${seq}`;
 }
 
 export function computeBuyQuantity({
@@ -114,7 +122,8 @@ export function computeBuyQuantity({
  * Explicit quantity is used as given. With no quantity:
  * - SELL uses bought quantity only
  * - BUY uses MSB full-balance / lots / fixed-quantity rules (+ 1e-5 before flooring)
- * client_order_id is added only when includeClientOrderId is true.
+ * Every order carries client_order_id (idempotent ledger/retry key) and the
+ * tick LTP as `ltp`, so placeOrders never has to look the price up.
  */
 export async function computeOrderPayload({
     strategyDetails,
@@ -123,7 +132,7 @@ export async function computeOrderPayload({
     tag,
     timestamp,
     quantity: quantityOverride,
-    includeClientOrderId = false,
+    sequence = 1,
 } = {}) {
     const strategy_details = strategyDetails || {};
     let {
@@ -145,7 +154,8 @@ export async function computeOrderPayload({
     } = strategy_details;
 
     const isBacktest =
-        strategy_details.strategy_mode === 'BACKTEST' || strategy_details.isTest === true;
+        strategy_details.strategy_mode === 'BACKTEST'
+        || (strategy_details.isTest === true && strategy_details.strategy_mode !== 'PAPER' && strategy_details.strategy_mode !== 'LIVE');
 
     if (quantityOverride != null && Number(quantityOverride) >= 0 && Number.isFinite(Number(quantityOverride))) {
         quantity = Number(quantityOverride);
@@ -184,6 +194,7 @@ export async function computeOrderPayload({
         product,
         validity,
         price: ltp,
+        ltp,
         tag: cleanTag,
         instrument_token,
         order_type,
@@ -195,14 +206,13 @@ export async function computeOrderPayload({
         strategy_details,
     };
 
-    if (includeClientOrderId) {
-        orderPayLoad.client_order_id = buildClientOrderId(
-            strategy_details.deployment_id,
-            cleanTag,
-            transactionType,
-            timestamp
-        );
-    }
+    orderPayLoad.client_order_id = buildClientOrderId(
+        strategy_details.deployment_id,
+        cleanTag,
+        transactionType,
+        timestamp,
+        sequence
+    );
 
     return orderPayLoad;
 }

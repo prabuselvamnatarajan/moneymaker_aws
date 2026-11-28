@@ -43,8 +43,11 @@ export class Strategy {
     /** @type {string} */
     static strategyName;
 
-    /** Per-deployment message queue (MSB / msb_pts). */
-    static serializeByDeployment = false;
+    /**
+     * Per-deployment message queue: a deployment's next tick starts only after
+     * its current tick (including any order and balance update) has finished.
+     */
+    static serializeByDeployment = true;
 
     /** Exit process on unexpected message errors (MSB / msb_pts). */
     static fatalOnMessageError = false;
@@ -54,9 +57,6 @@ export class Strategy {
 
     /** HTTP placeOrder attempts (MSB / msb_pts = 3, sweep = 1). */
     static orderAttempts = 1;
-
-    /** Include client_order_id on order bodies (MSB / msb_pts). */
-    static includeClientOrderId = false;
 
     constructor() {
         this.deploymentLocks = new Map();
@@ -105,11 +105,23 @@ export class Strategy {
 
     /** Message-local symbol / strategyDetails / isBackTest (falls back to instance fields for unit tests). */
     messageCtx() {
-        return messageContext.getStore() || {
+        const store = messageContext.getStore();
+        if (store) return store;
+        // Direct executeStrategy calls (unit tests) have no message store. Reuse one
+        // fallback context per strategyDetails object so the order sequence counts
+        // across the orders of that call.
+        const fb = this._fallbackCtx;
+        if (fb && fb.strategyDetails === this.strategyDetails && fb.symbol === this.symbol) {
+            fb.isBackTest = this.isBackTest;
+            return fb;
+        }
+        this._fallbackCtx = {
             symbol: this.symbol,
             strategyDetails: this.strategyDetails,
             isBackTest: this.isBackTest,
+            orderSeq: 0,
         };
+        return this._fallbackCtx;
     }
 
     constructRedisKey(symbol, isTestMode, deploymentId) {
@@ -143,6 +155,8 @@ export class Strategy {
 
     async computeOrderPayload(type, overrides = {}) {
         const ctx = this.messageCtx();
+        // n-th order built while handling this tick; part of client_order_id.
+        ctx.orderSeq = (ctx.orderSeq || 0) + 1;
         return buildOrderPayload({
             strategyDetails: overrides.strategyDetails ?? ctx.strategyDetails,
             transactionType: type,
@@ -150,7 +164,7 @@ export class Strategy {
             tag: overrides.tag ?? ctx.symbol,
             timestamp: overrides.timestamp,
             quantity: overrides.quantity,
-            includeClientOrderId: this.constructor.includeClientOrderId === true,
+            sequence: ctx.orderSeq,
         });
     }
 
@@ -296,7 +310,7 @@ export class Strategy {
                 this.isBackTest = isBackTest;
 
                 await messageContext.run(
-                    { symbol, strategyDetails: strategy_details, isBackTest },
+                    { symbol, strategyDetails: strategy_details, isBackTest, orderSeq: 0 },
                     async () => {
                         const lastState = await this.getLastSymbolStateFromRedis();
                         const newState = await this.executeStrategy(
@@ -388,7 +402,10 @@ export class Strategy {
             logger.info(`Subscribing to topic: ${topic}`);
             await consumer.subscribe({ topic, fromBeginning: false });
 
+            // One message at a time: a tick is fully processed (strategy, order,
+            // balance update) before the next tick is handed to the strategy.
             await consumer.run({
+                partitionsConsumedConcurrently: 1,
                 eachMessage: async ({ message }) => {
                     await this.handleMessage(message);
                 },

@@ -61,6 +61,34 @@ export async function createAccount(
   return unwrapEntity<AccountRef>(await res.json());
 }
 
+/**
+ * Deployment mode -> required account type (mirrors BackTestApp utils/deploymentMode.js).
+ * LIVE -> LIVE (external broker), PAPER -> PAPER, BACKTEST -> SIMULATION.
+ */
+export const ACCOUNT_TYPE_FOR_MODE = {
+  LIVE: 'LIVE',
+  PAPER: 'PAPER',
+  BACKTEST: 'SIMULATION',
+} as const;
+
+export type DeploymentModeName = keyof typeof ACCOUNT_TYPE_FOR_MODE;
+
+/** Create an account that a deployment of `mode` is allowed to use. */
+export async function createAccountForMode(
+  request: APIRequestContext,
+  token: string,
+  mode: DeploymentModeName,
+  overrides: Record<string, unknown> = {}
+): Promise<AccountRef> {
+  const extra: Record<string, unknown> = { account_type: ACCOUNT_TYPE_FOR_MODE[mode] };
+  if (mode === 'LIVE' && overrides.broker_id === undefined) {
+    const external =
+      (await getExternalBroker(request, token)) || (await createExternalBrokerForUser(request, token));
+    extra.broker_id = (external as { _id: string })._id;
+  }
+  return createAccount(request, token, { ...extra, ...overrides });
+}
+
 export async function createStrategy(
   request: APIRequestContext,
   token: string,

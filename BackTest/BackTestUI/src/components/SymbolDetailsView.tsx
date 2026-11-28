@@ -439,7 +439,22 @@ export default function SymbolDetailsView({
           )}
 
           <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 rounded-md border border-slate-800">
-            <Clock className="w-3.5 h-3.5 text-indigo-400" /> FEED: DELAYLESS 200ms
+            {(() => {
+              const lat = symbol.latency_ms;
+              const color = lat == null 
+                ? 'text-indigo-400' 
+                : lat < 100 
+                ? 'text-emerald-400' 
+                : lat <= 300 
+                ? 'text-amber-400' 
+                : 'text-rose-400';
+              return (
+                <>
+                  <Clock className={`w-3.5 h-3.5 ${color}`} />
+                  LATENCY: {lat != null ? `${lat}ms` : 'DELAYLESS 200ms'}
+                </>
+              );
+            })()}
           </span>
         </div>
       </div>
