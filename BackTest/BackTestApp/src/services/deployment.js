@@ -21,6 +21,12 @@ import {
 import { purgePositionsFromRedis, readLiveCache } from "../utils/positionRedis.js";
 import { sumOpenUnrealised, round2, resolveCloseExecutionTime } from "../utils/positionMath.js";
 import { completionKey as backtestCompletionKey } from "../utils/backtestCompletionUtil.js";
+import {
+  assertAccountMatchesMode,
+  isAccountTypeAllowedForMode,
+  usesDeploymentScopedBalance,
+} from "../utils/deploymentMode.js";
+import { MANUAL_DEPLOYMENT_NAME } from "../utils/constants.js";
 
 const USER_UPDATABLE_FIELDS = ["deployment_name", "notes", "backtest_date", "backtest_speed", "use_full_amount", "no_of_lots", "timeframes", "data_mode", "symbol_control"];
 
@@ -967,6 +973,15 @@ const resetLiquiditySweepRuntimeState = async (deployment) => {
   await resetDeploymentStrategyRuntimeState(deployment, { bumpEpoch: true });
 };
 
+/** "Manual" is the system-created per-account deployment; users cannot take that name. */
+const assertNotReservedDeploymentName = (name) => {
+  if (typeof name === "string" && name.trim().toLowerCase() === MANUAL_DEPLOYMENT_NAME.toLowerCase()) {
+    const err = new Error(`"${MANUAL_DEPLOYMENT_NAME}" is a reserved deployment name`);
+    err.statusCode = 400;
+    throw err;
+  }
+};
+
 export const createDeployment = async (userId, deploymentData) => {
   const prepared = await prepareSymbolControlOnCreate(userId, deploymentData);
 
@@ -980,15 +995,23 @@ export const createDeployment = async (userId, deploymentData) => {
     }
   }
 
-  if (prepared.account_id) {
-    const account = await Account.findOne({
-      _id: prepared.account_id,
-      user_id: userId,
-    });
-    if (!account) {
-      throw new Error("Associated account not found");
-    }
+  assertNotReservedDeploymentName(prepared.deployment_name);
+
+  if (!prepared.account_id) {
+    const err = new Error("account_id is required");
+    err.statusCode = 400;
+    throw err;
   }
+  const account = await Account.findOne({
+    _id: prepared.account_id,
+    user_id: userId,
+  }).populate("broker_id");
+  if (!account) {
+    throw new Error("Associated account not found");
+  }
+  // Mode and account are fixed after creation (not in USER_UPDATABLE_FIELDS),
+  // so this is the only place the pairing has to be checked.
+  assertAccountMatchesMode(prepared.strategy_mode, account, account.broker_id);
 
   if (prepared.user_symbol_id) {
     const symbol = await UserSymbol.findOne({
@@ -1110,6 +1133,9 @@ export const updateDeployment = async (userId, id, updateData) => {
     return null;
   }
   const sanitizedUpdate = pickAllowedFields(updateData, USER_UPDATABLE_FIELDS);
+  if (sanitizedUpdate.deployment_name !== undefined) {
+    assertNotReservedDeploymentName(sanitizedUpdate.deployment_name);
+  }
 
   if (Object.keys(sanitizedUpdate).length === 0 && !updateData.symbol_control) {
     throw new Error("No valid fields provided for update");
@@ -1765,6 +1791,24 @@ export function buildValidAccountIds(allAccounts = [], allDeployments = []) {
   return validAccountIds;
 }
 
+/**
+ * Deployments that may receive ticks: they need a strategy and an account, and
+ * their mode must fit the account type. A mismatch (e.g. a PAPER deployment on
+ * a LIVE broker account) is logged and dropped so it can never trade.
+ */
+export const filterRoutableDeployments = (deployments = []) =>
+  deployments.filter((dep) => {
+    if (!dep.strategy_id || !dep.account_id) return false;
+    if (!isAccountTypeAllowedForMode(dep.strategy_mode, dep.account_id.account_type)) {
+      console.error(
+        `[Sync] Skipping deployment ${dep._id}: ${dep.strategy_mode} mode does not fit ` +
+          `${dep.account_id.account_type} account ${dep.account_id._id}`
+      );
+      return false;
+    }
+    return true;
+  });
+
 export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
@@ -1792,8 +1836,7 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
 
     const newKeysData = {};
 
-    for (const dep of runningDeployments) {
-      if (!dep.strategy_id || !dep.account_id) continue;
+    for (const dep of filterRoutableDeployments(runningDeployments)) {
       const symbol = dep.symbol;
       const isBacktest = dep.strategy_mode === "BACKTEST";
       const isTest = isBacktest; // Only true historical backtests are isTest; PAPER is live simulation
@@ -1824,7 +1867,9 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
         deployment_id: deploymentIdStr,
         user_id: dep.user_id.toString(),
         strategy_mode: dep.strategy_mode,
-        is_internal_broker: dep.account_id.broker_id ? dep.account_id.broker_id.is_internal : false,
+        account_type: dep.account_id.account_type,
+        is_internal_broker: dep.account_id.broker_id ? Boolean(dep.account_id.broker_id.is_internal) : true,
+        external_broker_id: dep.account_id.broker_id?.external_broker_id || null,
         use_full_amount: dep.use_full_amount || false,
         lot_size: Number(dep.lot_size) > 0 ? Number(dep.lot_size) : undefined,
         no_of_lots: Number(dep.no_of_lots) >= 1 ? Number(dep.no_of_lots) : 1,
@@ -1842,7 +1887,7 @@ export const syncAllDeploymentsToRedis = async ({ failLoud = false } = {}) => {
 
       // Sync account balance to Redis (namespaced by deploymentId for backtest mode to prevent cross-deployment collision)
       const accountId = dep.account_id.account_id || dep.account_id._id.toString();
-      const balanceKey = isBacktest ? `account_balance:${deploymentIdStr}` : `account_balance:${accountId}`;
+      const balanceKey = usesDeploymentScopedBalance(dep) ? `account_balance:${deploymentIdStr}` : `account_balance:${accountId}`;
       const balanceData = { balance: dep.account_id.current_balance };
       try {
         if (typeof client.json?.set === 'function') {

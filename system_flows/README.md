@@ -66,3 +66,5 @@ Please refer to the specific files below for detailed deep dives:
 4. **[Kafka Topics & Services](kafka_and_services.md)**: Documenting all Kafka brokers, topics, consumers, partitioners, and the shape of JSON messages.
 5. **[Microservices & REST APIs](microservices_and_api.md)**: Describes all Express endpoints, controllers, and utility classes, including database collections and authentication.
 6. **[Kubernetes & Infrastructure](docker_and_stack.md)**: Summarizes the k3s workloads, DNS names, host ports, and volumes.
+7. **[Upstox Place Order V3 Reference](upstox_place_order_v3.md)**: The broker payload `placeorder` sends to Upstox, the allowed values, and how internal order fields map to it.
+8. **Deployment mode ↔ account type**: LIVE deployments run on LIVE accounts (external broker), PAPER on PAPER, BACKTEST on SIMULATION. Enforced in `BackTestApp/src/utils/deploymentMode.js`, mirrored in `BackTestUI/src/utils/deploymentMode.ts`.

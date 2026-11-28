@@ -82,3 +82,27 @@
 
 ---
 
+## 9. Support External Brokers Beyond Upstox (Zerodha Kite, Groww, ...)
+
+- **Current State**:
+  `placeorder` can only place real orders with Upstox. `resolveExecutionMode()` in `MicroServices/Orders/placeOrders/dependency.js` refuses a LIVE order (409) unless `strategy_details.external_broker_id === 'upstox'`. `buildBrokerOrderPayload()` builds only the Upstox V3 body (see `system_flows/upstox_place_order_v3.md`). The broker id reaches the order service through `syncAllDeploymentsToRedis()` (`external_broker_id` on each deployment's `strategy_details`).
+- **Problem & Debt**:
+  A LIVE account can be linked to any external broker record, e.g. Zerodha in the seed list. Until each broker has its own adapter, LIVE deployments on those accounts cannot trade, and broker-specific steps are hard-wired to Upstox:
+  - access token lookup
+  - order payload
+  - response parsing
+  - funds/margin lookup
+- **Target Resolution**:
+  1. Introduce a broker adapter interface in `placeOrders`. Each adapter provides `buildOrderPayload`, `placeOrder`, `parseOrderResponse`, `getAvailableMargin` and `getAccessToken`. Select the adapter by `external_broker_id`.
+  2. Move the current Upstox code behind an `upstox` adapter without changing its behaviour.
+  3. Add a `zerodha` (Kite Connect) adapter and then a `groww` adapter. Give each a payload reference doc in `system_flows/` like `upstox_place_order_v3.md`.
+  4. Add each broker's id to `SUPPORTED_EXTERNAL_BROKERS` only when its adapter and tests land.
+  5. Extend broker onboarding/OAuth (`MicroServices/UpstoxLogin`-style flows) and `ExternalBrokerId` seed data for each new broker.
+- **Affected Files**:
+  - `MicroServices/Orders/placeOrders/dependency.js`, `orderFlow.js`, `server.js`
+  - `BackTest/BackTestApp/src/services/deployment.js` (`external_broker_id` in Redis payload)
+  - `BackTest/BackTestApp/src/services/broker.js`
+  - `system_flows/upstox_place_order_v3.md` (pattern for new broker references)
+- **Cleanup Action**: Remove this section once at least Zerodha Kite and Groww place LIVE orders through their own adapters.
+
+---

@@ -14,15 +14,13 @@ import {
     getLiveAccountBalance,
     buildBrokerOrderPayload,
     resolveExecutionMode,
-    resolveLedgerMode,
-    ensureClientOrderId,
     connectProducer,
     disconnectProducer,
 } from './dependency.js';
 import { getAccessTokenFromRedis } from './redis_utils/AuthoriseUpstoxClient.js';
 import { setAccountBalanceToRedis } from './redis_utils/account_utils.js';
 import { resolveBalanceAfterLiveOrder } from './resolveBalanceAfterLiveOrder.js';
-import { isMissingRequiredOrderFields } from './orderValidation.js';
+import { isMissingRequiredOrderFields, isMissingClientOrderId } from './orderValidation.js';
 import { createOrderFlow } from './orderFlow.js';
 
 const { handleLiveBrokerOrder, handleInternalOrder } = createOrderFlow({
@@ -32,7 +30,6 @@ const { handleLiveBrokerOrder, handleInternalOrder } = createOrderFlow({
     getLiveAccountBalance,
     setAccountBalanceToRedis,
     buildBrokerOrderPayload,
-    resolveLedgerMode,
     resolveBalanceAfterLiveOrder,
 });
 
@@ -44,18 +41,23 @@ app.post('/', async (req, res) => {
         return res.status(400).send('Bad Request: Missing required order fields (instrument_token, price, quantity, transaction_type, strategy_details with user_id)');
     }
 
+    if (isMissingClientOrderId(body)) {
+        return res.status(400).send('Bad Request: client_order_id is required (reuse the same id when retrying an order)');
+    }
+
     if ((body.price === null || body.price <= 0) && !(body.ltp > 0)) {
         console.warn(`⚠️ Warning: Incoming order has no price or tick LTP (${body.price}).`);
     }
 
     try {
         console.log('Request Body:', body);
-        ensureClientOrderId(body);
 
-        const { isLive, isInternalBroker, isBacktest } = resolveExecutionMode(strategy_details);
-        const result = (isLive && !isInternalBroker)
+        // Throws 400/409 for an unknown mode or a LIVE order on an account that
+        // cannot reach a supported broker. PAPER/BACKTEST never reach the broker.
+        const { shouldCallExternalBroker, isBacktest } = resolveExecutionMode(strategy_details);
+        const result = shouldCallExternalBroker
             ? await handleLiveBrokerOrder(body, strategy_details, isBacktest)
-            : await handleInternalOrder(body, strategy_details, isBacktest, isInternalBroker);
+            : await handleInternalOrder(body, strategy_details, isBacktest);
 
         res.send(result);
 

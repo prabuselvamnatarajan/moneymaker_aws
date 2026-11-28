@@ -55,10 +55,11 @@ sequenceDiagram
         alt Signal Triggered (BUY/SELL)
             Strategy->>Order: POST / (Order request)
             activate Order
-            alt IS LIVE MODE (isTest == false)
-                Order->>Upstox: Place market/limit order via OrderApi
+            alt strategy_mode LIVE on a LIVE account with Upstox
+                Order->>Upstox: POST /v3/order/place (allowlisted fields only)
                 Upstox-->>Order: Return execution response
-            else IS PAPER MODE (isTest == true)
+                Order->>DB: Record trade in BackTestApp ledger (after broker accepts)
+            else strategy_mode PAPER or BACKTEST
                 Order->>DB: Run virtual trade execution in BackTestApp (MongoDB)
                 Order->>DB: Update account_balance:<id> in Redis
             end
@@ -112,7 +113,7 @@ sequenceDiagram
   * Key: `strategies:live:${symbol}`
 * **Topic Routing**:
   * If a matching deployment is found, it copies the configuration (`strategy_details`).
-  * Determines if the deployment is `isTest` (Paper trading) or `isTest = false` (Live trading).
+  * `isTest` is true only for BACKTEST deployments, so LIVE and PAPER deployments both receive live ticks.
   * Routes the message to the Kafka topic `${strategyName}_live_data` (e.g., `msb_live_data`).
 
 ### 5. Strategy Calculation (msb-strategy-live)
@@ -124,13 +125,15 @@ sequenceDiagram
 * **Order Request**: Assembles an order payload (getting balances/quantities from Redis) and triggers order placement by POSTing to the `placeorder` API.
 
 ### 6. Order Routing & Verification
-* **Ingestion**: The `placeorder` service receives the trade request.
-* **Routing Decision**:
-  * **Live Trading (`isTest === false`)**:
-    * Gets the authorized client using `redis_upstox_access_token`.
-    * Invokes the Upstox SDK `OrderApi.placeOrder(...)` with instrument token, transaction type (BUY/SELL), quantity, order type (MARKET/LIMIT), price, and product.
+* **Ingestion**: The `placeorder` service receives the trade request. It rejects an order without `client_order_id` (400).
+* **Routing Decision** (`resolveExecutionMode`; `strategy_mode` is the only input, `isTest` is ignored):
+  * **Live Trading** (`strategy_mode === "LIVE"`, `account_type === "LIVE"`, `is_internal_broker === false`, `external_broker_id === "upstox"`):
+    * Gets the user's Upstox access token from Redis.
+    * Builds the Upstox V3 body from an allowlist (see [upstox_place_order_v3.md](./upstox_place_order_v3.md)) and calls `POST /v3/order/place`.
+    * Records the trade in the BackTestApp ledger only after Upstox accepts, then updates the Redis balance.
     * Publishes execution details to `order_details` Kafka topic.
-  * **Paper Trading (`isTest === true`)**:
+    * A LIVE order on an account that fails any of these checks is refused (409), never booked internally.
+  * **Paper Trading** (`strategy_mode === "PAPER"`, never reaches a broker):
     * Bypasses Upstox.
     * Invokes the internal `BackTestApp` REST API at `POST /api/trade` to settle virtual balances.
     * Receives the new closing balance and updates the Redis key `account_balance:${account_id}`.

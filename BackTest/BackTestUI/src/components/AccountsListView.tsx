@@ -140,6 +140,9 @@ export default function AccountsListView({
     };
   }, [showAddForm, brokers.length]);
 
+  const [liveBrokerError, setLiveBrokerError] = useState<string | null>(null);
+  const selectableBrokers = accountType === 'LIVE' ? brokers.filter(b => !b.is_internal) : brokers;
+
   // Auto-select broker based on account type selection
   useEffect(() => {
     if (accountType === 'SIMULATION' || accountType === 'PAPER') {
@@ -149,17 +152,15 @@ export default function AccountsListView({
         setBroker(internalB.name);
       }
     } else {
-      // For LIVE account, select first external broker if any, else default to internal
-      const externalB = brokers.find(b => !b.is_internal && b.name !== 'Cobra Trades');
+      // LIVE accounts must use an external broker (LIVE always means real orders).
+      // With none registered, leave the selection empty so submit is blocked.
+      const externalB = brokers.find(b => !b.is_internal);
       if (externalB) {
         setBrokerId(externalB._id);
         setBroker(externalB.name);
       } else {
-        const internalB = brokers.find(b => b.is_internal || b.name === 'Cobra Trades');
-        if (internalB) {
-          setBrokerId(internalB._id);
-          setBroker(internalB.name);
-        }
+        setBrokerId('');
+        setBroker('');
       }
     }
   }, [accountType, brokers]);
@@ -198,6 +199,14 @@ export default function AccountsListView({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (accountType === 'LIVE') {
+      const chosen = brokers.find(b => b._id === brokerId);
+      if (!chosen || chosen.is_internal) {
+        setLiveBrokerError('LIVE accounts must be linked to an external broker. Register or select one first.');
+        return;
+      }
+    }
+    setLiveBrokerError(null);
     if (!name || !brokerId || !balance) return;
 
     const initialVal = parseFloat(balance);
@@ -547,12 +556,18 @@ export default function AccountsListView({
                     disabled={accountType !== 'LIVE'}
                     className="w-full bg-slate-950 border border-slate-800 rounded-md p-2.5 text-xs text-slate-200 focus:outline-hidden focus:border-indigo-500 disabled:opacity-75 disabled:text-slate-500"
                   >
-                    {brokers.map((b) => (
+                    {accountType === 'LIVE' && selectableBrokers.length === 0 && (
+                      <option value="">No external broker registered</option>
+                    )}
+                    {selectableBrokers.map((b) => (
                       <option key={b._id} value={b._id}>
                         {b.name} {b.is_internal ? '(Internal Only)' : '(External)'}
                       </option>
                     ))}
                   </select>
+                )}
+                {liveBrokerError && (
+                  <p role="alert" className="text-[10px] text-rose-400 font-mono mt-1">{liveBrokerError}</p>
                 )}
                 {(accountType === 'SIMULATION' || accountType === 'PAPER') && (
                   <p className="text-[10px] text-slate-500 mt-1 italic leading-relaxed">

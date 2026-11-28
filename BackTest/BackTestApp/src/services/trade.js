@@ -24,6 +24,7 @@ import {
   setJson,
 } from "../utils/positionRedis.js";
 import { MANUAL_DEPLOYMENT_NAME } from "../utils/constants.js";
+import { usesDeploymentScopedBalance } from "../utils/deploymentMode.js";
 
 
 function buildAccountQuery(accountId) {
@@ -708,10 +709,14 @@ const runCreateTrade = async (tradeData) => {
 
     // Sync updated account balance to Redis so next strategy calculation uses accurate closing balance
     try {
-      const isBacktestMode = deployment?.strategy_mode === "BACKTEST";
+      // Same key scheme as syncAllDeploymentsToRedis and the strategies
+      // (account_balance:<account.account_id>, or :<deploymentId> for backtests;
+      // the Manual deployment always uses the account key).
       const depIdStr = deployment?._id?.toString() || tradeData.deployment_id;
-      const accIdStr = account?._id?.toString() || account?.account_id;
-      const balanceKey = isBacktestMode && depIdStr ? `account_balance:${depIdStr}` : `account_balance:${accIdStr}`;
+      const accIdStr = account?.account_id || account?._id?.toString();
+      const balanceKey = usesDeploymentScopedBalance(deployment) && depIdStr
+        ? `account_balance:${depIdStr}`
+        : `account_balance:${accIdStr}`;
       if (balanceKey) {
         await withRedis(async (client) => {
           await setJson(client, balanceKey, { balance: closing_balance });

@@ -105,23 +105,124 @@ async function storeOrderDetails(symbol, order_details) {
     }
 }
 
-function resolveExecutionMode(strategyDetails) {
-    const strategy_details = strategyDetails || {};
-    const isLive = strategy_details.strategy_mode === 'LIVE' || strategy_details.isTest === false;
-    const isInternalBroker = Boolean(strategy_details.is_internal_broker);
-    const isBacktest = strategy_details.strategy_mode === 'BACKTEST' || (strategy_details.isTest === true && strategy_details.strategy_mode !== 'LIVE');
-    return {
-        isLive,
-        isInternalBroker,
-        isBacktest,
-        shouldCallExternalBroker: isLive && !isInternalBroker
-    };
+function httpError(statusCode, message) {
+    const err = new Error(message);
+    err.statusCode = statusCode;
+    return err;
 }
 
-function buildBrokerOrderPayload(orderFields) {
-    const { ltp: _tickLtp, ...payload } = orderFields;
-    if (payload.order_type === 'MARKET') {
-        payload.price = 0;
+const DEPLOYMENT_MODES = ['LIVE', 'PAPER', 'BACKTEST'];
+const SUPPORTED_EXTERNAL_BROKERS = ['upstox'];
+
+/**
+ * Decide where an order goes. Only a LIVE deployment on a LIVE account linked to
+ * a supported external broker reaches the broker. PAPER and BACKTEST orders are
+ * always booked internally (ledger only), whatever else the payload says.
+ * A LIVE order whose account does not qualify is refused rather than booked
+ * internally, because the strategy believes it is trading real money.
+ * `isTest` is deliberately ignored: strategy_mode is the single source of truth.
+ */
+function resolveExecutionMode(strategyDetails) {
+    const strategy_details = strategyDetails || {};
+    const mode = strategy_details.strategy_mode;
+    if (!DEPLOYMENT_MODES.includes(mode)) {
+        throw httpError(400, `strategy_details.strategy_mode must be one of ${DEPLOYMENT_MODES.join(', ')}; got ${JSON.stringify(mode)}`);
+    }
+    if (mode !== 'LIVE') {
+        return { mode, isBacktest: mode === 'BACKTEST', shouldCallExternalBroker: false };
+    }
+    if (strategy_details.account_type !== 'LIVE') {
+        throw httpError(409, `LIVE order refused: account type is ${strategy_details.account_type || 'unknown'}, not LIVE`);
+    }
+    if (strategy_details.is_internal_broker !== false) {
+        throw httpError(409, 'LIVE order refused: the account is not linked to an external broker');
+    }
+    if (!SUPPORTED_EXTERNAL_BROKERS.includes(strategy_details.external_broker_id)) {
+        throw httpError(409, `LIVE order refused: broker ${JSON.stringify(strategy_details.external_broker_id || null)} is not supported yet (supported: ${SUPPORTED_EXTERNAL_BROKERS.join(', ')})`);
+    }
+    return { mode, isBacktest: false, shouldCallExternalBroker: true };
+}
+
+// ---------------------------------------------------------------------------
+// Upstox Place Order V3 payload. Only the documented fields are sent; see
+// system_flows/upstox_place_order_v3.md for the field reference.
+// ---------------------------------------------------------------------------
+const UPSTOX_PRODUCTS = ['I', 'D', 'MTF'];
+const UPSTOX_VALIDITIES = ['DAY', 'IOC'];
+const UPSTOX_ORDER_TYPES = ['MARKET', 'LIMIT', 'SL', 'SL-M'];
+const UPSTOX_TRANSACTION_TYPES = ['BUY', 'SELL'];
+const PRICED_ORDER_TYPES = ['LIMIT', 'SL'];
+const TRIGGERED_ORDER_TYPES = ['SL', 'SL-M'];
+
+function enumField(value, allowed, name) {
+    const normalized = typeof value === 'string' ? value.trim().toUpperCase() : value;
+    if (!allowed.includes(normalized)) {
+        throw httpError(400, `Invalid ${name} ${JSON.stringify(value)}; expected one of ${allowed.join(', ')}`);
+    }
+    return normalized;
+}
+
+function toBool(value) {
+    return value === true || value === 'true';
+}
+
+/**
+ * Build the body for POST /v3/order/place from an order. Throws a 400 for any
+ * value Upstox would reject, before the broker is called. Internal fields
+ * (strategy_details, client_order_id, ltp, ...) are never sent.
+ */
+function buildBrokerOrderPayload(order = {}) {
+    const order_type = enumField(order.order_type, UPSTOX_ORDER_TYPES, 'order_type');
+    const transaction_type = enumField(order.transaction_type, UPSTOX_TRANSACTION_TYPES, 'transaction_type');
+    const product = enumField(order.product, UPSTOX_PRODUCTS, 'product');
+    const validity = enumField(order.validity, UPSTOX_VALIDITIES, 'validity');
+
+    const quantity = Number(order.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw httpError(400, `Invalid quantity ${JSON.stringify(order.quantity)}; expected a positive integer`);
+    }
+
+    const instrument_token = typeof order.instrument_token === 'string' ? order.instrument_token.trim() : '';
+    if (!instrument_token) {
+        throw httpError(400, 'instrument_token is required for a broker order');
+    }
+
+    let price = 0;
+    if (PRICED_ORDER_TYPES.includes(order_type)) {
+        price = Number(order.price);
+        if (!Number.isFinite(price) || price <= 0) {
+            throw httpError(400, `${order_type} orders need a positive price; got ${JSON.stringify(order.price)}`);
+        }
+    }
+
+    let trigger_price = 0;
+    if (TRIGGERED_ORDER_TYPES.includes(order_type)) {
+        trigger_price = Number(order.trigger_price);
+        if (!Number.isFinite(trigger_price) || trigger_price <= 0) {
+            throw httpError(400, `${order_type} orders need a positive trigger_price; got ${JSON.stringify(order.trigger_price)}`);
+        }
+    }
+
+    const disclosed_quantity = order.disclosed_quantity == null ? 0 : Number(order.disclosed_quantity);
+    if (!Number.isInteger(disclosed_quantity) || disclosed_quantity < 0 || disclosed_quantity > quantity) {
+        throw httpError(400, `Invalid disclosed_quantity ${JSON.stringify(order.disclosed_quantity)}; expected an integer from 0 to quantity`);
+    }
+
+    const payload = {
+        quantity,
+        product,
+        validity,
+        price,
+        instrument_token,
+        order_type,
+        transaction_type,
+        disclosed_quantity,
+        trigger_price,
+        is_amo: toBool(order.is_amo),
+        slice: toBool(order.slice),
+    };
+    if (typeof order.tag === 'string' && order.tag.trim()) {
+        payload.tag = order.tag.trim();
     }
     return payload;
 }
@@ -140,7 +241,7 @@ function buildTradePayload(body) {
     if (isMissingPrice(price) && !isMissingPrice(body.ltp)) {
         price = body.ltp;
     }
-    const clientOrderId = body.client_order_id || strategy_details.client_order_id;
+    const clientOrderId = getClientOrderId(body);
     return {
         type_of_order: body.transaction_type,
         price,
@@ -226,7 +327,8 @@ async function triggerBackTestApp(body) {
 
 /**
  * Record the trade in BackTestApp, retrying network/5xx failures. Safe to retry
- * because createTrade is idempotent on client_order_id (see ensureClientOrderId).
+ * because createTrade is idempotent on client_order_id, which every order must
+ * carry (server.js rejects orders without one).
  * 4xx responses are not retried.
  */
 async function recordTradeInLedger(body, retries = 2) {
@@ -250,31 +352,9 @@ async function recordTradeInLedger(body, retries = 2) {
     });
 }
 
-/**
- * Every order carries a client_order_id so that ledger retries (and strategy
- * placeOrder retries) never create a duplicate trade.
- */
-function ensureClientOrderId(body) {
-    const strategy_details = body.strategy_details || {};
-    if (!body.client_order_id && !strategy_details.client_order_id) {
-        const tag = body.tag || body.instrument_token || 'symbol';
-        body.client_order_id =
-            `${strategy_details.deployment_id || 'manual'}_${tag}_${body.transaction_type}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    }
-    return body;
-}
-
-/**
- * How the live path orders the broker call and the ledger write.
- * sequential (default): broker first; the ledger is written only after the
- *   broker accepts, so a rejection never leaves an orphaned ledger trade.
- * parallel: both start together and are awaited together (faster, but a broker
- *   rejection leaves the ledger trade in place; there is no reversal yet).
- */
-function resolveLedgerMode() {
-    return (process.env.ORDER_LEDGER_MODE || 'sequential').toLowerCase() === 'parallel'
-        ? 'parallel'
-        : 'sequential';
+/** The id that makes ledger retries idempotent; strategies always send it. */
+function getClientOrderId(body = {}) {
+    return body.client_order_id || (body.strategy_details && body.strategy_details.client_order_id) || null;
 }
 
 async function getLiveAccountBalance(userId) {
@@ -301,8 +381,7 @@ async function getLiveAccountBalance(userId) {
 
 export {
   resolveExecutionMode,
-  resolveLedgerMode,
-  ensureClientOrderId,
+  getClientOrderId,
   recordTradeInLedger,
   connectProducer,
   disconnectProducer,

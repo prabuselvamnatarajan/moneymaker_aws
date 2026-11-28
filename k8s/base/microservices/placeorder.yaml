@@ -67,11 +67,6 @@ spec:
                   key: KAFKA_NUM_PARTITIONS
             - name: TARGET_TOPIC
               value: 'order_details'
-            # sequential: ledger written only after the broker accepts.
-            # parallel: broker call and ledger write run together (faster, but a
-            # broker rejection leaves an orphaned ledger trade).
-            - name: ORDER_LEDGER_MODE
-              value: 'sequential'
             - name: PORT
               value: '80'
             - name: REDIS_URL

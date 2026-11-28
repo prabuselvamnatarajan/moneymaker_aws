@@ -7,6 +7,7 @@ import Deployment from "../models/deployment.js";
 import Trade from "../models/trade.js";
 import Ledger from "../models/ledger.js";
 import { parseQueryParams } from "../utils/queryHelper.js";
+import { createAccount } from "../services/account.js";
 
 // --- User Management ---
 export const getUsers = async (req, res, next) => {
@@ -153,8 +154,9 @@ export const getUserAccounts = async (req, res, next) => {
 
 export const createUserAccount = async (req, res, next) => {
   try {
-    const newAccount = new Account({ ...req.body, user_id: req.params.userId });
-    await newAccount.save();
+    // Same rules as self-service creation (internal broker for PAPER/SIMULATION,
+    // external broker required for LIVE).
+    const newAccount = await createAccount(req.params.userId, req.body);
     res.status(201).json({ message: "User account created successfully", data: newAccount });
   } catch (error) {
     next(error);

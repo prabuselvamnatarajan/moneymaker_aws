@@ -18,6 +18,7 @@ import {
   createTrade,
   createTradeFixture,
   getAccountBalance,
+  createAccountForMode,
 } from '../fixtures/factories';
 import {
   expectMessageContains,
@@ -609,9 +610,68 @@ test.describe('Deployment create', () => {
       overrides: { strategy_mode: 'DEMO' },
     });
     const res = await postDeployment(request, accessToken, payload);
-    await expectStatus(res, 500);
+    await expectStatus(res, 400);
     const text = await res.text();
     expect(text.toLowerCase()).toMatch(/strategy_mode|enum|validation/i);
+  });
+
+  const mismatches: Array<[string, 'LIVE' | 'PAPER' | 'BACKTEST']> = [
+    ['LIVE', 'PAPER'], ['LIVE', 'BACKTEST'],
+    ['PAPER', 'LIVE'], ['PAPER', 'BACKTEST'],
+    ['BACKTEST', 'LIVE'], ['BACKTEST', 'PAPER'],
+  ];
+  for (const [mode, accountMode] of mismatches) {
+    test(`TC-DEP-052: ${mode} deployment on an account made for ${accountMode} is rejected with 400`, async ({ request }) => {
+      const { accessToken } = await loginAsUser(request);
+      const account = await createAccountForMode(request, accessToken, accountMode);
+      const strategy = await createStrategy(request, accessToken);
+      const symbol = await createSymbol(request, accessToken);
+      const res = await postDeployment(request, accessToken, deploymentPayload({
+        strategy_id: strategy._id,
+        account_id: account._id,
+        user_symbol_id: symbol._id,
+        instrument_token: symbol.instrument_token,
+        symbol: symbol.symbol,
+        overrides: { strategy_mode: mode },
+      }));
+      await expectStatus(res, 400);
+      expect(await res.text()).toMatch(/deployment needs a (LIVE|PAPER|SIMULATION) account/);
+    });
+  }
+
+  for (const mode of ['LIVE', 'PAPER', 'BACKTEST'] as const) {
+    test(`TC-DEP-053: ${mode} deployment on its matching account is created`, async ({ request }) => {
+      const { accessToken } = await loginAsUser(request);
+      const account = await createAccountForMode(request, accessToken, mode);
+      const strategy = await createStrategy(request, accessToken);
+      const symbol = await createSymbol(request, accessToken);
+      const res = await postDeployment(request, accessToken, deploymentPayload({
+        strategy_id: strategy._id,
+        account_id: account._id,
+        user_symbol_id: symbol._id,
+        instrument_token: symbol.instrument_token,
+        symbol: symbol.symbol,
+        overrides: { strategy_mode: mode, ...(mode === 'BACKTEST' ? { backtest_date: '2026-01-15' } : {}) },
+      }));
+      await expectStatus(res, 201);
+    });
+  }
+
+  test('TC-DEP-054: "Manual" is a reserved deployment name', async ({ request }) => {
+    const { accessToken } = await loginAsUser(request);
+    const account = await createAccountForMode(request, accessToken, 'PAPER');
+    const strategy = await createStrategy(request, accessToken);
+    const symbol = await createSymbol(request, accessToken);
+    const res = await postDeployment(request, accessToken, deploymentPayload({
+      strategy_id: strategy._id,
+      account_id: account._id,
+      user_symbol_id: symbol._id,
+      instrument_token: symbol.instrument_token,
+      symbol: symbol.symbol,
+      overrides: { deployment_name: 'Manual' },
+    }));
+    await expectStatus(res, 400);
+    expect(await res.text()).toMatch(/reserved/);
   });
 
   // UI only - see deploy-dialog.spec.ts TC-UI-024
@@ -1102,7 +1162,7 @@ test.describe('Deployment lifecycle', () => {
     request,
   }) => {
     const { accessToken } = await loginAsUser(request);
-    const account = await createAccount(request, accessToken, {
+    const account = await createAccountForMode(request, accessToken, 'BACKTEST', {
       initial_balance: 200_000,
       current_balance: 200_000,
     });
@@ -1140,7 +1200,7 @@ test.describe('Deployment lifecycle', () => {
   }) => {
     // Related Issue #65 — documented regression; full detail in liquidity_sweep plan
     const { accessToken } = await loginAsUser(request);
-    const account = await createAccount(request, accessToken);
+    const account = await createAccountForMode(request, accessToken, 'BACKTEST');
     const strategy = await createStrategy(request, accessToken, {
       strategy_name: 'liquidity_sweep',
     });
@@ -1248,7 +1308,7 @@ test.describe('Deployment lifecycle', () => {
     request,
   }) => {
     const { accessToken } = await loginAsUser(request);
-    const account = await createAccount(request, accessToken);
+    const account = await createAccountForMode(request, accessToken, 'BACKTEST');
     const strategy = await createStrategy(request, accessToken);
     const symbol = await createSymbol(request, accessToken);
     const deployment = await createDeployment(request, accessToken, {
@@ -1336,7 +1396,7 @@ test.describe('Deployment update and delete', () => {
     request,
   }) => {
     const { accessToken } = await loginAsUser(request);
-    const account = await createAccount(request, accessToken);
+    const account = await createAccountForMode(request, accessToken, 'LIVE');
     const strategy = await createStrategy(request, accessToken);
     const symbol = await createSymbol(request, accessToken);
     const deployment = await createDeployment(request, accessToken, {
@@ -1555,7 +1615,7 @@ test.describe('Deployment monitoring', () => {
     request,
   }) => {
     const { accessToken } = await loginAsUser(request);
-    const account = await createAccount(request, accessToken);
+    const account = await createAccountForMode(request, accessToken, 'BACKTEST');
     const strategy = await createStrategy(request, accessToken);
     const symbol = await createSymbol(request, accessToken);
     const deployment = await createDeployment(request, accessToken, {
@@ -1658,7 +1718,9 @@ test.describe('Redis sync integrity', () => {
     request,
   }) => {
     const { accessToken } = await loginAsUser(request);
-    const account = await createAccount(request, accessToken);
+    const liveAccount = await createAccountForMode(request, accessToken, 'LIVE');
+    const paperAccount = await createAccountForMode(request, accessToken, 'PAPER');
+    const simAccount = await createAccountForMode(request, accessToken, 'BACKTEST');
     const strategy = await createStrategy(request, accessToken);
     const symLive = await createSymbol(request, accessToken);
     const symPaper = await createSymbol(request, accessToken);
@@ -1666,7 +1728,7 @@ test.describe('Redis sync integrity', () => {
 
     const liveDep = await createDeployment(request, accessToken, {
       strategy_id: strategy._id,
-      account_id: account._id,
+      account_id: liveAccount._id,
       user_symbol_id: symLive._id,
       instrument_token: symLive.instrument_token,
       symbol: symLive.symbol,
@@ -1674,14 +1736,14 @@ test.describe('Redis sync integrity', () => {
     });
     const paperDep = await createDeployment(request, accessToken, {
       strategy_id: strategy._id,
-      account_id: account._id,
+      account_id: paperAccount._id,
       user_symbol_id: symPaper._id,
       instrument_token: symPaper.instrument_token,
       symbol: symPaper.symbol,
     });
     const btDep = await createDeployment(request, accessToken, {
       strategy_id: strategy._id,
-      account_id: account._id,
+      account_id: simAccount._id,
       user_symbol_id: symBt._id,
       instrument_token: symBt.instrument_token,
       symbol: symBt.symbol,

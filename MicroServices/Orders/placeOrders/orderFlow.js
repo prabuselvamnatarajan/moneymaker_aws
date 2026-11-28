@@ -9,53 +9,27 @@ export function closingBalanceOf(ledgerResponse) {
 
 export function createOrderFlow(deps) {
     /**
-     * Live order with an external broker. The response is sent only after the
-     * broker call, the ledger write and the Redis balance update have all
-     * finished, so the strategy's next tick always sees the post-order balance.
+     * Live order with an external broker. The broker is always called first and
+     * the ledger is written only after the broker accepts, so a rejection never
+     * leaves a ledger trade (or a ledger-written Redis balance) behind.
+     * The response is sent only after the broker call, the ledger write and the
+     * Redis balance update have all finished, so the strategy's next tick always
+     * sees the post-order balance.
      */
     async function handleLiveBrokerOrder(body, strategy_details, isBacktest) {
-        const { getAccessTokenFromRedis, placeOrders, recordTradeInLedger, getLiveAccountBalance, setAccountBalanceToRedis, buildBrokerOrderPayload, resolveLedgerMode, resolveBalanceAfterLiveOrder } = deps;
+        const { getAccessTokenFromRedis, placeOrders, recordTradeInLedger, getLiveAccountBalance, setAccountBalanceToRedis, buildBrokerOrderPayload, resolveBalanceAfterLiveOrder } = deps;
+        // Validate the Upstox payload before anything else; throws 400 on bad input.
+        const brokerPayload = JSON.stringify(buildBrokerOrderPayload(body));
         // Throws 401 if token missing/expired — no silent fallback.
         const access_token = await getAccessTokenFromRedis(strategy_details.user_id);
-        const brokerPayload = JSON.stringify(buildBrokerOrderPayload(body));
-        const mode = resolveLedgerMode();
 
-        let brokerResult;
+        const brokerResult = await placeOrders(access_token, brokerPayload);
+
         let ledgerResponse = null;
-        let ledgerError = null;
-
-        if (mode === 'sequential') {
-            brokerResult = await placeOrders(access_token, brokerPayload);
-            try {
-                ledgerResponse = await recordTradeInLedger(body);
-            } catch (err) {
-                ledgerError = err;
-            }
-        } else {
-            const [broker, ledger] = await Promise.allSettled([
-                placeOrders(access_token, brokerPayload),
-                recordTradeInLedger(body),
-            ]);
-            if (ledger.status === 'fulfilled') {
-                ledgerResponse = ledger.value;
-            } else {
-                ledgerError = ledger.reason;
-            }
-            if (broker.status === 'rejected') {
-                if (ledgerResponse) {
-                    console.error(
-                        `CRITICAL: broker rejected order ${body.client_order_id || strategy_details.client_order_id} ` +
-                        `(deployment ${strategy_details.deployment_id}) but the ledger already recorded it. ` +
-                        'Ledger position and balance now overstate the real account until reconciled.'
-                    );
-                }
-                throw broker.reason;
-            }
-            brokerResult = broker.value;
-        }
-
-        if (ledgerError) {
-            console.error('CRITICAL: broker accepted the order but the ledger write failed after retries:', ledgerError.message || ledgerError);
+        try {
+            ledgerResponse = await recordTradeInLedger(body);
+        } catch (err) {
+            console.error('CRITICAL: broker accepted the order but the ledger write failed after retries:', err.message || err);
         }
 
         const ledgerClosingBalance = closingBalanceOf(ledgerResponse);
@@ -80,8 +54,8 @@ export function createOrderFlow(deps) {
         return brokerResult;
     }
 
-    /** Paper, backtest and internal-broker orders: ledger only. */
-    async function handleInternalOrder(body, strategy_details, isBacktest, isInternalBroker) {
+    /** PAPER and BACKTEST orders: ledger only, never the external broker. */
+    async function handleInternalOrder(body, strategy_details, isBacktest) {
         const { recordTradeInLedger, setAccountBalanceToRedis } = deps;
         const ledgerResponse = await recordTradeInLedger(body);
         const closing_balance = closingBalanceOf(ledgerResponse);
@@ -90,9 +64,9 @@ export function createOrderFlow(deps) {
         } else {
             console.warn('⚠️ Warning: Received invalid closing balance from BackTestApp:', closing_balance);
         }
-        return isInternalBroker
-            ? 'Internal Broker Mode: Order recorded internally.'
-            : 'Test Mode: Order not placed with external broker.';
+        return isBacktest
+            ? 'Backtest Mode: Order recorded internally; not sent to a broker.'
+            : 'Paper Mode: Order recorded internally; not sent to a broker.';
     }
 
     return { handleLiveBrokerOrder, handleInternalOrder };
