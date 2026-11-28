@@ -23,25 +23,33 @@ variable "availability_zones" {
 }
 
 variable "node_instance_types" {
-  description = "EC2 instance types for the managed node group"
+  description = "EC2 instance types for the managed node group, in preference order. Keep them the same size (Cluster Autoscaler assumes one shape per group)."
   type        = list(string)
-  default     = ["t3.xlarge"]
+  # 2 vCPU / 8 GiB. Small nodes let capacity follow the market-hours schedule
+  # in small steps; t3.large is the fallback if t3a capacity is short.
+  default = ["t3a.large", "t3.large"]
+}
+
+variable "node_availability_zone" {
+  description = "Single AZ for worker nodes. EBS volumes (Mongo, Redis) are zonal, so one AZ keeps every pod schedulable when nodes scale down after market hours."
+  type        = string
+  default     = "ap-south-1a"
 }
 
 variable "node_desired_size" {
-  description = "Desired node count"
+  description = "Initial node count only; afterwards Cluster Autoscaler owns it (ignored by Terraform)"
   type        = number
-  default     = 3
+  default     = 4
 }
 
 variable "node_min_size" {
-  description = "Minimum node count"
+  description = "Initial minimum node count; scripts/aws/market-mode.sh raises it for market hours and lowers it after (ignored by Terraform)"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "node_max_size" {
-  description = "Maximum node count"
+  description = "Maximum node count Cluster Autoscaler may scale to"
   type        = number
   default     = 6
 }
@@ -107,4 +115,11 @@ variable "ecr_keep_images" {
   description = "How many images each ECR repository keeps (older ones expire)"
   type        = number
   default     = 30
+}
+
+check "node_az_in_vpc" {
+  assert {
+    condition     = contains(var.availability_zones, var.node_availability_zone)
+    error_message = "node_availability_zone must be one of availability_zones."
+  }
 }

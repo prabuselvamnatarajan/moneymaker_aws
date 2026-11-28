@@ -8,6 +8,7 @@
 #   4. Create Secret moneymaker-secrets (and the Docker Hub pull secret).
 #   5. kubectl apply -k k8s/overlays/prod via deploy-k8s.sh and wait.
 #   6. UPSERT Route 53 <domain> -> ALB and smoke-test /backtestapp/health.
+#   7. scripts/aws/market-mode.sh auto (after-hours capacity outside market hours).
 #
 # Required env:
 #   AWS_REGION, CLUSTER_NAME
@@ -154,6 +155,9 @@ for _i in $(seq 1 30); do
   # -k: hit the ALB by its own name, so the cert (issued for $DOMAIN_NAME) won't match.
   if curl -fsSk -o /dev/null -H "Host: $DOMAIN_NAME" "https://$ALB_HOST/backtestapp/health"; then
     log "Deploy of $IMAGE_TAG is healthy"
+    # The apply restored market-hours replicas; outside market hours this
+    # puts live-trading services back to sleep.
+    "$ROOT/scripts/aws/market-mode.sh" auto
     exit 0
   fi
   sleep 10

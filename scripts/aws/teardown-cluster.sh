@@ -80,6 +80,7 @@ if [ -n "$EFS_ID" ]; then
 fi
 
 # --- Helm releases ------------------------------------------------------------
+helm -n kube-system uninstall cluster-autoscaler --wait 2>/dev/null || true
 helm -n kube-system uninstall aws-load-balancer-controller --wait 2>/dev/null || true
 helm -n kube-system uninstall metrics-server --wait 2>/dev/null || true
 

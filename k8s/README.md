@@ -92,10 +92,28 @@ Prod runs on EKS and is driven entirely by GitHub Actions:
 | --- | --- | --- |
 | `infra-apply.yml` | manual | `terraform/prod` plan → approval → apply, then `scripts/aws/install-cluster-addons.sh` (ALB controller, metrics-server, `k8s/cluster/storageclasses.yaml`) |
 | `deploy.yml` → **Deploy to EKS** | every push to `main` after unit + e2e pass | `scripts/aws/deploy-prod.sh`: copy `sha-<commit>` images Docker Hub → ECR, create `moneymaker-secrets` from `PROD_APP_SECRETS`, `deploy-k8s.sh --overlay prod`, point `algo.mrcobra.link` at the ALB, smoke test |
+| `market-hours.yml` | 08:17 and 16:07 IST Mon–Fri (+ retries) | `scripts/aws/market-mode.sh auto`: open = full capacity, close = live-trading services to 0, shared ones to 1, node floor 4 → 1 |
 | `infra-destroy.yml` | manual | `scripts/aws/teardown-cluster.sh` (DNS, namespace, ALB, volumes) then `terraform destroy` |
 
 Setup order and GitHub settings: [`terraform/prod/README.md`](../terraform/prod/README.md)
 and [`.github/workflows/deploy-secrets.example.txt`](../.github/workflows/deploy-secrets.example.txt).
+
+### Market-hours capacity
+
+Nodes are `t3a.large` (2 vCPU / 8 GiB) in one AZ, sized by Cluster Autoscaler
+between the node group's min and max (6). `market-mode.sh` moves the min:
+
+| | Market (08:00–16:00 IST, Mon–Fri) | After hours / weekends |
+| --- | --- | --- |
+| Live trading (Upstox feed + login, quote/orderbook/funds/contracts APIs, live strategies, mongo-express, redisinsight) | normal | **0** |
+| Shared consumers, backtest-streamer/client (floor 3) | 3 (HPA up to 5) | **1** |
+| Mongo, Redis, Kafka, backtest-app/UI, `*-backtest` strategies, placeorder, LTP/OHLC/option chain, … | normal | normal |
+| Node group min | 4 | 1 (autoscaler removes idle nodes) |
+
+Edit the `SLEEP` / `REDUCE` lists at the top of `scripts/aws/market-mode.sh`
+to change what sleeps. Force a mode: Actions → Market Hours Capacity → Run
+workflow (`open` / `close`). Every deploy runs `auto`, so a deploy at night
+does not wake live trading.
 
 What the `prod` overlay changes vs base: Ingress class `alb`, host
 `algo.mrcobra.link`, ACM TLS at the ALB, ALB → `reverse-proxy:443` (HTTPS) with

@@ -105,9 +105,11 @@ resource "aws_eks_node_group" "prod" {
   node_role_arn   = aws_iam_role.eks_nodes.arn
   # Follow the control plane: after a kubernetes_version bump the cluster is
   # upgraded first, then the nodes roll (max_unavailable below).
-  version        = aws_eks_cluster.prod.version
-  subnet_ids     = aws_subnet.private[*].id
+  version = aws_eks_cluster.prod.version
+  # One AZ: see var.node_availability_zone.
+  subnet_ids     = [for sn in aws_subnet.private : sn.id if sn.availability_zone == var.node_availability_zone]
   instance_types = var.node_instance_types
+  capacity_type  = "ON_DEMAND"
 
   scaling_config {
     desired_size = var.node_desired_size
@@ -117,6 +119,12 @@ resource "aws_eks_node_group" "prod" {
 
   update_config {
     max_unavailable = 1
+  }
+
+  # Cluster Autoscaler sets desired_size and market-mode.sh sets min_size
+  # (market hours vs after hours); Terraform must not reset them.
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size, scaling_config[0].min_size]
   }
 
   depends_on = [

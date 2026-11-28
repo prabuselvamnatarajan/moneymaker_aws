@@ -6,10 +6,11 @@ cluster_name       = "moneymaker-prod"
 vpc_cidr           = "10.40.0.0/16"
 availability_zones = ["ap-south-1a", "ap-south-1b", "ap-south-1c"]
 
-node_instance_types = ["t3.xlarge"]
-node_desired_size   = 3
-node_min_size       = 2
-node_max_size       = 6
+node_instance_types    = ["t3a.large", "t3.large"]
+node_availability_zone = "ap-south-1a"
+node_desired_size      = 4 # initial only; Cluster Autoscaler owns it
+node_min_size          = 1 # initial only; market-mode.sh sets 4 in market hours
+node_max_size          = 6
 
 domain_name        = "algo.mrcobra.link"
 route53_zone_name  = "mrcobra.link"

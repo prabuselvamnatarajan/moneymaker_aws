@@ -10,19 +10,20 @@ State lives in the S3 bucket created by [`../bootstrap`](../bootstrap).
 | Resource | Purpose |
 | --- | --- |
 | VPC, 3 public + 3 private subnets, NAT gateway | Network for EKS and the ALB |
-| EKS cluster + managed node group (`t3.xlarge` × 3, 2–6) | Kubernetes control plane and workers |
+| EKS cluster + managed node group (`t3a.large`, one AZ, 1–6, sized by Cluster Autoscaler) | Kubernetes control plane and workers |
 | EKS access entries (`cluster_admin_arns`) | Who can use kubectl (GitHub role + `EKS_ADMIN_ARNS`) |
 | EBS CSI + EFS CSI add-ons (IRSA roles in `csi_iam.tf`) | gp3 volumes for Mongo/Redis; RWX EFS volumes |
 | EFS + access points | Mongo init signal and shared `backtest-data` |
 | ECR repositories (one per custom image) | Prod pulls app images from here, not Docker Hub |
 | ACM certificate + Route 53 DNS validation | TLS for `algo.mrcobra.link` at the ALB |
 | IAM role (IRSA) for AWS Load Balancer Controller | Official policy in `policies/` |
+| IAM role (IRSA) for Cluster Autoscaler | Scales only this cluster's node groups (`cluster_autoscaler_iam.tf`) |
 
 Prerequisite: the Route 53 hosted zone `mrcobra.link` already exists.
 
 Not in Terraform (and why):
 
-- **AWS Load Balancer Controller, metrics-server, StorageClasses** are installed
+- **AWS Load Balancer Controller, metrics-server, Cluster Autoscaler, StorageClasses** are installed
   by `scripts/aws/install-cluster-addons.sh` right after apply (same workflow).
   It also writes ConfigMap `kube-system/moneymaker-infra` with the outputs the
   app deploy needs (cert ARN, ECR registry, zone id).
