@@ -4,9 +4,11 @@ import bcrypt from "bcryptjs";
 
 async function isUserAdmin(userId) {
   const Role = mongoose.model("Role");
-  const user = await User.findById(userId);
+  // ⚡ Bolt Optimization: Use .lean() to bypass Mongoose Document instantiation overhead for read-only query
+  const user = await User.findById(userId).lean();
   if (!user) return false;
-  const roles = await Role.find({ _id: { $in: user.roles } });
+  // ⚡ Bolt Optimization: Use .lean() to bypass Mongoose Document instantiation overhead for read-only query
+  const roles = await Role.find({ _id: { $in: user.roles } }).lean();
   return roles.some(r => r.name === "admin");
 }
 

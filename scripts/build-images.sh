@@ -414,7 +414,21 @@ if [ "$PUSH_ONLY" -eq 1 ]; then
       (
         trap - EXIT
         log "Pushing $_remote"
-        docker push "$_remote"
+        _retry=0
+        _max_retries=3
+        while [ "$_retry" -lt "$_max_retries" ]; do
+          if docker push "$_remote"; then
+            break
+          fi
+          _retry=$((_retry + 1))
+          if [ "$_retry" -lt "$_max_retries" ]; then
+            log "WARN: Failed to push $_remote (attempt $_retry). Retrying in 5 seconds..."
+            sleep 5
+          else
+            log "ERROR: Failed to push $_remote after $_max_retries attempts."
+            exit 1
+          fi
+        done
       ) &
       PIDS="$PIDS $!"
       ACTIVE=$((ACTIVE + 1))
@@ -480,7 +494,21 @@ if [ "$DO_PUSH" -eq 1 ]; then
     (
       trap - EXIT
       log "Pushing $_remote"
-      docker push "$_remote"
+      _retry=0
+      _max_retries=3
+      while [ "$_retry" -lt "$_max_retries" ]; do
+        if docker push "$_remote"; then
+          break
+        fi
+        _retry=$((_retry + 1))
+        if [ "$_retry" -lt "$_max_retries" ]; then
+          log "WARN: Failed to push $_remote (attempt $_retry). Retrying in 5 seconds..."
+          sleep 5
+        else
+          log "ERROR: Failed to push $_remote after $_max_retries attempts."
+          exit 1
+        fi
+      done
     ) &
     PIDS="$PIDS $!"
     ACTIVE=$((ACTIVE + 1))
