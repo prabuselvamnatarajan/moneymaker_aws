@@ -213,8 +213,9 @@ data:
     mongosh admin --quiet --eval '
       try {
         db.createUser({
-          user: "root",
-          pwd: "example",
+          // From Secret moneymaker-secrets (mongo1 env); dev defaults kept.
+          user: process.env.MONGO_ROOT_USERNAME || "root",
+          pwd: process.env.MONGO_ROOT_PASSWORD || "example",
           roles: [ { role: "root", db: "admin" } ]
         });
         print("root created");
