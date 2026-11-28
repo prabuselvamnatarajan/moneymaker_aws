@@ -1,0 +1,60 @@
+name: Market Hours Capacity
+
+# Scales prod for the Indian equity session (09:15-15:30 IST, Mon-Fri).
+# scripts/aws/market-mode.sh decides open/close from the IST clock, so every
+# run is idempotent and a late or repeated run does the right thing.
+#
+# Schedules are UTC (IST = UTC+5:30). GitHub can start scheduled runs several
+# minutes late, so each change has a second attempt, and odd minutes avoid
+# the top-of-hour queue:
+#   08:17 IST  open   (02:47 UTC)   retry 08:47 IST (03:17 UTC)
+#   16:07 IST  close  (10:37 UTC)   retry 17:37 IST (12:07 UTC)
+# Weekends get no runs: Friday's close holds until Monday's open.
+on:
+  schedule:
+    - cron: "47 2 * * 1-5"
+    - cron: "17 3 * * 1-5"
+    - cron: "37 10 * * 1-5"
+    - cron: "7 12 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "auto = from the IST clock; open / close to force"
+        type: choice
+        options: [auto, open, close]
+        default: auto
+
+concurrency:
+  group: market-hours
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply market-hours mode
+    # Only once the EKS deploy is switched on (cluster exists).
+    if: vars.PROD_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'moneymaker-prod' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Apply mode
+        env:
+          MODE: ${{ inputs.mode || 'auto' }}
+        run: |
+          chmod +x scripts/aws/market-mode.sh
+          ./scripts/aws/market-mode.sh "$MODE"

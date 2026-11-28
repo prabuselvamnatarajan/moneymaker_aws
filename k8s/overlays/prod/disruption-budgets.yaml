@@ -1,0 +1,30 @@
+# Cluster Autoscaler drains nodes when it removes them after market hours.
+# These budgets make it move at most one member of each quorum at a time, so
+# the Mongo replica set keeps a primary and Kafka keeps two brokers.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mongo
+  namespace: moneymaker
+  labels:
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: mongo
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka
+  namespace: moneymaker
+  labels:
+    app.kubernetes.io/part-of: moneymaker
+spec:
+  maxUnavailable: 1
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [kafka-broker-1, kafka-broker-2, kafka-broker-3]

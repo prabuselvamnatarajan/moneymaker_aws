@@ -10,6 +10,7 @@ kind: Kustomization
 resources:
   - ../../base
   - mongo-init-signal-pvc.yaml
+  - disruption-budgets.yaml
 
 # ACM certificate ARN from terraform/prod output (acm_certificate_arn).
 # The tracked file is a placeholder; deploy-prod.sh overwrites it on the runner.

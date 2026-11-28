@@ -77,3 +77,17 @@ output "ecr_repositories" {
   description = "Custom images the deploy copies into ECR"
   value       = sort(keys(aws_ecr_repository.app))
 }
+
+output "cluster_autoscaler_role_arn" {
+  description = "IRSA role for Cluster Autoscaler"
+  value       = aws_iam_role.cluster_autoscaler.arn
+}
+
+output "kubernetes_version" {
+  value = aws_eks_cluster.prod.version
+}
+
+output "node_group_name" {
+  description = "Managed node group that market-mode.sh resizes"
+  value       = aws_eks_node_group.prod.node_group_name
+}

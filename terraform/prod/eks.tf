@@ -103,8 +103,13 @@ resource "aws_eks_node_group" "prod" {
   cluster_name    = aws_eks_cluster.prod.name
   node_group_name = "${var.cluster_name}-workers"
   node_role_arn   = aws_iam_role.eks_nodes.arn
-  subnet_ids      = aws_subnet.private[*].id
-  instance_types  = var.node_instance_types
+  # Follow the control plane: after a kubernetes_version bump the cluster is
+  # upgraded first, then the nodes roll (max_unavailable below).
+  version = aws_eks_cluster.prod.version
+  # One AZ: see var.node_availability_zone.
+  subnet_ids     = [for sn in aws_subnet.private : sn.id if sn.availability_zone == var.node_availability_zone]
+  instance_types = var.node_instance_types
+  capacity_type  = "ON_DEMAND"
 
   scaling_config {
     desired_size = var.node_desired_size
@@ -114,6 +119,12 @@ resource "aws_eks_node_group" "prod" {
 
   update_config {
     max_unavailable = 1
+  }
+
+  # Cluster Autoscaler sets desired_size and market-mode.sh sets min_size
+  # (market hours vs after hours); Terraform must not reset them.
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size, scaling_config[0].min_size]
   }
 
   depends_on = [
@@ -130,6 +141,7 @@ resource "aws_eks_node_group" "prod" {
 resource "aws_eks_addon" "efs_csi" {
   cluster_name                = aws_eks_cluster.prod.name
   addon_name                  = "aws-efs-csi-driver"
+  addon_version               = data.aws_eks_addon_version.efs_csi.version
   service_account_role_arn    = aws_iam_role.efs_csi.arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
@@ -142,6 +154,7 @@ resource "aws_eks_addon" "efs_csi" {
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name                = aws_eks_cluster.prod.name
   addon_name                  = "aws-ebs-csi-driver"
+  addon_version               = data.aws_eks_addon_version.ebs_csi.version
   service_account_role_arn    = aws_iam_role.ebs_csi.arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
@@ -169,4 +182,18 @@ resource "aws_eks_access_policy_association" "admins" {
   }
 
   depends_on = [aws_eks_access_entry.admins]
+}
+
+# Latest add-on build for the cluster's Kubernetes version, so a version bump
+# also upgrades the CSI drivers (after the nodes, via depends_on above).
+data "aws_eks_addon_version" "efs_csi" {
+  addon_name         = "aws-efs-csi-driver"
+  kubernetes_version = aws_eks_cluster.prod.version
+  most_recent        = true
+}
+
+data "aws_eks_addon_version" "ebs_csi" {
+  addon_name         = "aws-ebs-csi-driver"
+  kubernetes_version = aws_eks_cluster.prod.version
+  most_recent        = true
 }
