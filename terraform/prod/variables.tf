@@ -59,9 +59,9 @@ variable "route53_zone_name" {
 }
 
 variable "kubernetes_version" {
-  description = "EKS Kubernetes version"
+  description = "EKS Kubernetes version. EKS upgrades one minor version at a time; the node group and add-ons follow it (eks.tf)."
   type        = string
-  default     = "1.34"
+  default     = "1.35"
 }
 
 variable "cluster_admin_arns" {

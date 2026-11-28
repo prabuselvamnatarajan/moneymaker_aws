@@ -13,7 +13,7 @@ node_max_size       = 6
 
 domain_name        = "algo.mrcobra.link"
 route53_zone_name  = "mrcobra.link"
-kubernetes_version = "1.34"
+kubernetes_version = "1.35"
 
 # Who may run kubectl against the cluster. The workflows add AWS_ROLE_ARN.
 cluster_admin_arns = [
