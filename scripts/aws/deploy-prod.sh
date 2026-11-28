@@ -16,6 +16,9 @@
 #   PROD_APP_SECRETS  dotenv text for moneymaker-secrets (see deploy-secrets.example.txt)
 # Optional env:
 #   DOCKERHUB_USERNAME / DOCKERHUB_TOKEN  create the dockerhub-pull secret
+#   SKIP_DNS=1  do not touch Route 53 (test a deploy without moving the domain)
+#
+# Safe to run from a laptop: the two overlay files it edits are restored on exit.
 set -euo pipefail
 
 : "${AWS_REGION:?}" "${CLUSTER_NAME:?}" "${IMAGE_REGISTRY:?}" "${IMAGE_TAG:?}"
@@ -49,9 +52,11 @@ ECR_REPOSITORIES="$(infra ECR_REPOSITORIES)"
 # Every :latest image without a registry in the prod render must have an ECR repo.
 _rendered_custom=$(kubectl kustomize "$OVERLAY_DIR" | sed -n 's/^ *image: \([a-z0-9-]*\):latest$/\1/p' | sort -u)
 for _img in $_rendered_custom; do
+  case "$_img" in
+    nginx|mongo-express) continue ;;  # third-party images that happen to use :latest
+  esac
   case " $ECR_REPOSITORIES " in
     *" $_img "*) ;;
-    nginx|mongo-express) ;;  # third-party images that happen to use :latest
     *) die "image $_img has no ECR repository; add it to ecr_repositories in terraform/prod/variables.tf" ;;
   esac
 done
@@ -72,7 +77,16 @@ for _img in $ECR_REPOSITORIES; do
     "docker.io/$IMAGE_REGISTRY/$_img:$IMAGE_TAG"
 done
 
-# --- 3. Render-time overlay inputs (runner checkout only, never committed) --
+# --- 3. Render-time overlay inputs (restored on exit, never committed) -----
+_backup_dir="$(mktemp -d)"
+cp "$OVERLAY_DIR/kustomization.yaml" "$OVERLAY_DIR/certificate-arn.env" "$_backup_dir/"
+_secret_file=""
+cleanup() {
+  cp "$_backup_dir/kustomization.yaml" "$_backup_dir/certificate-arn.env" "$OVERLAY_DIR/"
+  rm -rf "$_backup_dir"
+  [ -z "$_secret_file" ] || rm -f "$_secret_file"
+}
+trap cleanup EXIT
 printf 'CERTIFICATE_ARN=%s\n' "$CERT_ARN" > "$OVERLAY_DIR/certificate-arn.env"
 {
   printf '\n# Added by scripts/aws/deploy-prod.sh\nimages:\n'
@@ -85,7 +99,6 @@ printf 'CERTIFICATE_ARN=%s\n' "$CERT_ARN" > "$OVERLAY_DIR/certificate-arn.env"
 kubectl apply -f "$ROOT/k8s/base/namespace.yaml" >/dev/null
 
 _secret_file="$(mktemp)"
-trap 'rm -f "$_secret_file"' EXIT
 chmod 600 "$_secret_file"
 printf '%s\n' "$PROD_APP_SECRETS" | tr -d '\r' | grep -Ev '^[[:space:]]*(#|$)' > "$_secret_file" || true
 for _k in $REQUIRED_SECRET_KEYS; do
@@ -124,6 +137,9 @@ ALB_ZONE_ID="$(aws elbv2 describe-load-balancers --region "$AWS_REGION" \
   --query "LoadBalancers[?DNSName=='$ALB_HOST'].CanonicalHostedZoneId | [0]" --output text)"
 [ -n "$ALB_ZONE_ID" ] && [ "$ALB_ZONE_ID" != "None" ] || die "could not find the ALB's hosted zone id"
 
+if [ "${SKIP_DNS:-0}" = "1" ]; then
+  log "SKIP_DNS=1: leaving Route 53 $DOMAIN_NAME unchanged"
+else
 log "UPSERT Route 53 $DOMAIN_NAME -> $ALB_HOST"
 aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" --change-batch "$(jq -cn \
   --arg name "$DOMAIN_NAME" --arg host "$ALB_HOST" --arg zone "$ALB_ZONE_ID" '{
@@ -131,6 +147,7 @@ aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" --change-bat
     Changes: [{Action: "UPSERT", ResourceRecordSet: {
       Name: $name, Type: "A",
       AliasTarget: {HostedZoneId: $zone, DNSName: $host, EvaluateTargetHealth: true}}}]}')" >/dev/null
+fi
 
 log "Smoke test https://$DOMAIN_NAME/backtestapp/health via the ALB"
 for _i in $(seq 1 30); do
