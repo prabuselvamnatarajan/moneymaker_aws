@@ -653,29 +653,46 @@ test('TC-LDG-003: Deposit to nonexistent or foreign account rejected', async ({ 
   await expectMessageContains(bogusRes, 'Account not found');
 });
 
-test('TC-LDG-004: Deposit ledger entry auto-links to Manual deployment if one exists', async ({
+test('TC-LDG-004: Deposit ledger entry auto-links to the system-created Manual deployment', async ({
   request,
 }) => {
-  const { accessToken } = await loginAsUser(request);
-  const account = asAccount(await createAccount(request, accessToken));
-  const strategy = await createStrategy(request, accessToken);
-  const symbol = await createSymbol(request, accessToken);
-  const manualDep = await createDeployment(request, accessToken, {
-    strategy_id: strategy._id,
-    account_id: account._id,
-    user_symbol_id: symbol._id,
-    instrument_token: symbol.instrument_token,
-    symbol: symbol.symbol,
-    overrides: { deployment_name: 'Manual' },
-  });
+  // "Manual" is a reserved name, so the API cannot create it. A new user gets
+  // PAPER + SIMULATION accounts, each with its own Manual deployment, from the
+  // account initializer.
+  const { accessToken: adminToken } = await loginAsAdmin(request);
+  const newUser = await createUserB(request, adminToken);
+  const token = newUser.tokens.accessToken;
 
-  const res = await deposit(request, accessToken, account._id, 250, 'Manual dep link');
+  const accounts = await jsonBody<PaginatedResponse<AccountDoc>>(
+    await apiRequest(request, token).get('/accounts', { params: { limit: 50 } })
+  );
+  const paper = accounts.items.find((a) => a.account_type === 'PAPER');
+  expect(paper, 'initializer should create a PAPER account').toBeTruthy();
+
+  const deployments = await jsonBody<
+    PaginatedResponse<{
+      _id: string;
+      account_id: string;
+      deployment_name: string;
+      strategy_mode: string;
+      strategy_id: string;
+      user_symbol_id: string;
+      symbol: string;
+    }>
+  >(await apiRequest(request, token).get('/deployments', { params: { limit: 100 } }));
+  const manualDep = deployments.items.find(
+    (d) => d.deployment_name === 'Manual' && String(d.account_id) === String(paper!._id)
+  );
+  expect(manualDep, 'initializer should create a Manual deployment for the PAPER account').toBeTruthy();
+  expect(manualDep!.strategy_mode).toBe('PAPER');
+
+  const res = await deposit(request, token, paper!._id, 250, 'Manual dep link');
   await expectStatus(res, 200);
   const entry = await ledgerFromResponse(res);
-  expect(String(entry.deployment_id)).toBe(String(manualDep._id));
-  expect(String(entry.strategy_id)).toBe(String(strategy._id));
-  expect(String(entry.user_symbol_id)).toBe(String(symbol._id));
-  expect(entry.symbol).toBe(symbol.symbol);
+  expect(String(entry.deployment_id)).toBe(String(manualDep!._id));
+  expect(String(entry.strategy_id)).toBe(String(manualDep!.strategy_id));
+  expect(String(entry.user_symbol_id)).toBe(String(manualDep!.user_symbol_id));
+  expect(entry.symbol).toBe(manualDep!.symbol);
 });
 
 test('TC-LDG-005: Deposit without Manual deployment omits deployment linkage fields', async ({
