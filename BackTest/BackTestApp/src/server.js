@@ -17,6 +17,14 @@ try {
   console.error("⚠️ Failed to initialize WebSocket server:", err.message);
 }
 
+// Start the shared Redis client used by request paths (connects in the background).
+try {
+  const { getSharedRedisClient } = await import("./utils/sharedRedis.js");
+  getSharedRedisClient();
+} catch (err) {
+  console.error("⚠️ Failed to start shared Redis client:", err.message);
+}
+
 // Connect to MongoDB and run initial migrations and state sync
 (async () => {
   try {

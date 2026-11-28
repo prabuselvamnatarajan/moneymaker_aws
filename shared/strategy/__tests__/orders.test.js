@@ -87,7 +87,8 @@ describe('shared/strategy orders - Order Payload Math & Sizing Rules', () => {
         const ts = 1700000000000;
         const id1 = buildClientOrderId('dep_1', 'tagA', 'BUY', ts);
         const id2 = buildClientOrderId('dep_2', 'tagA', 'BUY', ts);
-        assert.equal(id1, 'dep_1_tagA_BUY_1700000000000');
+        assert.equal(id1, 'dep_1_tagA_BUY_1700000000000_1');
+        assert.equal(buildClientOrderId('dep_1', 'tagA', 'BUY', ts, 2), 'dep_1_tagA_BUY_1700000000000_2');
         assert.notEqual(id1, id2);
     });
 
@@ -110,6 +111,6 @@ describe('shared/strategy orders - Order Payload Math & Sizing Rules', () => {
         assert.equal(payload.price, 500);
         assert.equal(payload.tag, 'TEST_SYMBOL');
         assert.equal(payload.transaction_type, 'BUY');
-        assert.equal(payload.client_order_id, 'dep_99_TEST_SYMBOL_BUY_1700000000000');
+        assert.equal(payload.client_order_id, 'dep_99_TEST_SYMBOL_BUY_1700000000000_1');
     });
 });
