@@ -105,11 +105,23 @@ export class Strategy {
 
     /** Message-local symbol / strategyDetails / isBackTest (falls back to instance fields for unit tests). */
     messageCtx() {
-        return messageContext.getStore() || {
+        const store = messageContext.getStore();
+        if (store) return store;
+        // Direct executeStrategy calls (unit tests) have no message store. Reuse one
+        // fallback context per strategyDetails object so the order sequence counts
+        // across the orders of that call.
+        const fb = this._fallbackCtx;
+        if (fb && fb.strategyDetails === this.strategyDetails && fb.symbol === this.symbol) {
+            fb.isBackTest = this.isBackTest;
+            return fb;
+        }
+        this._fallbackCtx = {
             symbol: this.symbol,
             strategyDetails: this.strategyDetails,
             isBackTest: this.isBackTest,
+            orderSeq: 0,
         };
+        return this._fallbackCtx;
     }
 
     constructRedisKey(symbol, isTestMode, deploymentId) {
@@ -143,6 +155,8 @@ export class Strategy {
 
     async computeOrderPayload(type, overrides = {}) {
         const ctx = this.messageCtx();
+        // n-th order built while handling this tick; part of client_order_id.
+        ctx.orderSeq = (ctx.orderSeq || 0) + 1;
         return buildOrderPayload({
             strategyDetails: overrides.strategyDetails ?? ctx.strategyDetails,
             transactionType: type,
@@ -150,6 +164,7 @@ export class Strategy {
             tag: overrides.tag ?? ctx.symbol,
             timestamp: overrides.timestamp,
             quantity: overrides.quantity,
+            sequence: ctx.orderSeq,
         });
     }
 
@@ -295,7 +310,7 @@ export class Strategy {
                 this.isBackTest = isBackTest;
 
                 await messageContext.run(
-                    { symbol, strategyDetails: strategy_details, isBackTest },
+                    { symbol, strategyDetails: strategy_details, isBackTest, orderSeq: 0 },
                     async () => {
                         const lastState = await this.getLastSymbolStateFromRedis();
                         const newState = await this.executeStrategy(

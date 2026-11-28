@@ -13,9 +13,24 @@ const activeSockets = new Map(); // socketId -> { ws, userId, subscribedTokens: 
 
 let redisClient = null;
 const redisUrl = process.env.REDIS_URL;
-if (redisUrl) {
+
+/**
+ * Connect the publisher client when the WebSocket server starts, not at import
+ * time, so importing this module (tests, tooling) opens no socket.
+ */
+function ensureRedisClient() {
+  if (redisClient || !redisUrl) return redisClient;
   redisClient = createClient({ url: redisUrl });
-  redisClient.connect().catch(err => console.error("Failed to connect Redis in WebSocket service:", err));
+  // Without a listener, a Redis socket error is thrown and exits the process.
+  let lastLog = 0;
+  redisClient.on("error", (err) => {
+    const now = Date.now();
+    if (now - lastLog < 30_000) return;
+    lastLog = now;
+    console.error("WebSocket service Redis error:", err.message);
+  });
+  redisClient.connect().catch(err => console.error("Failed to connect Redis in WebSocket service:", err.message));
+  return redisClient;
 }
 
 export function tokenMatchesSubscription(subscribedTokens, instrumentToken) {
@@ -78,6 +93,7 @@ async function refreshUserSubscriptions(userId) {
 }
 
 export function initWebSocketServer(server) {
+  ensureRedisClient();
   wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', async (request, socket, head) => {
@@ -331,70 +347,80 @@ async function initKafkaConsumer() {
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
       try {
-        if (!message.key || !message.value) return;
-        const instrumentToken = message.key.toString();
-        const data = JSON.parse(message.value.toString());
-
-        const metrics = extractMarketMetrics(data);
-        if (metrics === null) return;
-
-        const outboundPayload = {
-          instrument_token: instrumentToken,
-          last_price: metrics.last_price,
-          timestamp: Date.now()
-        };
-        if (data.symbol_name) {
-          outboundPayload.symbol = data.symbol_name;
-        }
-        if (metrics.change_pct != null) {
-          outboundPayload.change_pct = metrics.change_pct;
-        }
-        if (metrics.volume != null) {
-          outboundPayload.volume = metrics.volume;
-        }
-        if (data.latency?.beforeSplit != null) {
-          outboundPayload.latency_ms = data.latency.beforeSplit;
-        }
-        const outboundMsg = JSON.stringify(outboundPayload);
-
-        // Cache latest latency in Redis for REST API lookup
-        if (redisClient && redisClient.isOpen && data.latency?.beforeSplit != null) {
-          const lat = Math.round(Number(data.latency.beforeSplit));
-          if (!isNaN(lat)) {
-            const sym = data.symbol_name || cleanToken;
-            redisClient.setEx(`symbol:latency:${sym}`, 300, String(lat)).catch(() => {});
-            if (cleanToken !== sym) {
-              redisClient.setEx(`symbol:latency:${cleanToken}`, 300, String(lat)).catch(() => {});
-            }
-          }
-        }
-
-        const cleanToken = instrumentToken.includes('|') ? instrumentToken.split('|')[1] : instrumentToken;
-        const symbolName = data.symbol_name;
-
-        for (const [socketId, client] of activeSockets.entries()) {
-          if (
-            tokenMatchesSubscription(client.subscribedTokens, instrumentToken) ||
-            (symbolName && tokenMatchesSubscription(client.subscribedTokens, symbolName))
-          ) {
-            if (client.ws.readyState === client.ws.OPEN) {
-              client.ws.send(outboundMsg);
-            }
-          }
-        }
-
-        if (topic === 'backtest-stream-data' && redisClient && redisClient.isOpen) {
-          const channels = [
-            `backtest:${cleanToken}`,
-            `backtest:${instrumentToken}`
-          ];
-          for (const channel of channels) {
-            await redisClient.publish(channel, outboundMsg);
-          }
-        }
+        await handleMarketDataMessage(topic, message);
       } catch (err) {
         console.error("[Kafka WS Consumer] Error processing message:", err);
       }
     }
   });
+}
+
+/**
+ * Push one market-data message to subscribed browsers, cache its feed latency,
+ * and fan backtest ticks out on Redis pub/sub. Exported for tests; `redis` and
+ * `sockets` default to this module's client and socket registry.
+ */
+export async function handleMarketDataMessage(topic, message, { redis = redisClient, sockets = activeSockets } = {}) {
+  if (!message.key || !message.value) return;
+  const instrumentToken = message.key.toString();
+  const data = JSON.parse(message.value.toString());
+
+  const metrics = extractMarketMetrics(data);
+  if (metrics === null) return;
+
+  const outboundPayload = {
+    instrument_token: instrumentToken,
+    last_price: metrics.last_price,
+    timestamp: Date.now()
+  };
+  if (data.symbol_name) {
+    outboundPayload.symbol = data.symbol_name;
+  }
+  if (metrics.change_pct != null) {
+    outboundPayload.change_pct = metrics.change_pct;
+  }
+  if (metrics.volume != null) {
+    outboundPayload.volume = metrics.volume;
+  }
+  if (data.latency?.beforeSplit != null) {
+    outboundPayload.latency_ms = data.latency.beforeSplit;
+  }
+  const outboundMsg = JSON.stringify(outboundPayload);
+  // Declared before the latency cache below uses them (a later const
+  // here was a temporal-dead-zone ReferenceError on every live tick).
+  const cleanToken = instrumentToken.includes('|') ? instrumentToken.split('|')[1] : instrumentToken;
+  const symbolName = data.symbol_name;
+
+  // Cache latest latency in Redis for REST API lookup
+  if (redis && redis.isOpen && data.latency?.beforeSplit != null) {
+    const lat = Math.round(Number(data.latency.beforeSplit));
+    if (!isNaN(lat)) {
+      const sym = data.symbol_name || cleanToken;
+      redis.setEx(`symbol:latency:${sym}`, 300, String(lat)).catch(() => {});
+      if (cleanToken !== sym) {
+        redis.setEx(`symbol:latency:${cleanToken}`, 300, String(lat)).catch(() => {});
+      }
+    }
+  }
+
+  for (const [socketId, client] of sockets.entries()) {
+    if (
+      tokenMatchesSubscription(client.subscribedTokens, instrumentToken) ||
+      (symbolName && tokenMatchesSubscription(client.subscribedTokens, symbolName))
+    ) {
+      if (client.ws.readyState === client.ws.OPEN) {
+        client.ws.send(outboundMsg);
+      }
+    }
+  }
+
+  if (topic === 'backtest-stream-data' && redis && redis.isOpen) {
+    const channels = [
+      `backtest:${cleanToken}`,
+      `backtest:${instrumentToken}`
+    ];
+    for (const channel of channels) {
+      await redis.publish(channel, outboundMsg);
+    }
+  }
 }

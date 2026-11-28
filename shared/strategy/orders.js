@@ -65,10 +65,18 @@ export function sanitizeTag(tag) {
     return tag ? tag.replace(/[^a-zA-Z0-9_-]/g, '_') : 'symbol';
 }
 
-export function buildClientOrderId(deploymentId, tag, transactionType, timestamp) {
+/**
+ * Ledger idempotency key: deployment, tag, side, tick time and the order's
+ * position among the orders placed while handling that tick (1, 2, ...).
+ * The sequence keeps two same-side orders in one tick apart (a stop-and-reverse
+ * cover + entry, or a partial exit + final exit), and it is deterministic, so a
+ * retried HTTP request or a re-processed tick gets the same id again.
+ */
+export function buildClientOrderId(deploymentId, tag, transactionType, timestamp, sequence = 1) {
     const cleanTag = sanitizeTag(tag);
     const tsMs = timestamp ? new Date(timestamp).getTime() : Date.now();
-    return `${deploymentId || 'manual'}_${cleanTag}_${transactionType}_${tsMs}`;
+    const seq = Number.isInteger(Number(sequence)) && Number(sequence) > 0 ? Number(sequence) : 1;
+    return `${deploymentId || 'manual'}_${cleanTag}_${transactionType}_${tsMs}_${seq}`;
 }
 
 export function computeBuyQuantity({
@@ -124,6 +132,7 @@ export async function computeOrderPayload({
     tag,
     timestamp,
     quantity: quantityOverride,
+    sequence = 1,
 } = {}) {
     const strategy_details = strategyDetails || {};
     let {
@@ -201,7 +210,8 @@ export async function computeOrderPayload({
         strategy_details.deployment_id,
         cleanTag,
         transactionType,
-        timestamp
+        timestamp,
+        sequence
     );
 
     return orderPayLoad;
