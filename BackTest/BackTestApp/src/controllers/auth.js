@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import crypto from "crypto";
 
 import { login, sessionService, jwtService, authService } from "../iam/index.js";
+import { JWT_ACCESS_SECRET } from "../iam/config.js";
 import { initializeUserAccounts } from "../utils/accountInitializer.js";
 import Session from "../iam/models/session.js";
 import PersonalAccessToken from "../iam/models/personalAccessToken.js";
@@ -121,10 +122,9 @@ export const forgotPassword = async (req, res, next) => {
       "If an account exists with that email, password reset instructions have been sent.";
 
     if (user) {
-      const secret = process.env.JWT_ACCESS_SECRET || "iam-access-secret";
       const token = jwt.sign(
         { userId: user._id.toString(), purpose: "password-reset" },
-        secret,
+        JWT_ACCESS_SECRET,
         { expiresIn: "15m" }
       );
 
@@ -149,8 +149,7 @@ export const resetPassword = async (req, res, next) => {
 
     let payload;
     try {
-      const secret = process.env.JWT_ACCESS_SECRET || "iam-access-secret";
-      payload = jwt.verify(token, secret);
+      payload = jwt.verify(token, JWT_ACCESS_SECRET);
     } catch (err) {
       return res.status(400).json({ message: "Invalid or expired reset token" });
     }
