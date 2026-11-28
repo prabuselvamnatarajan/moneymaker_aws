@@ -81,13 +81,14 @@ Thumbs.db
 # Staged shared libs for microservice Docker builds
 **/redis_utils_bake/
 
-# Terraform (scaffold under terraform/prod — never commit local state or secrets)
+# Terraform (terraform/bootstrap + terraform/prod — never commit local state or secrets)
 **/.terraform/
 **/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfvars
 !terraform/prod/terraform.tfvars.example
+!terraform/bootstrap/terraform.tfvars.example
 crash.log
 crash.*.log
 override.tf

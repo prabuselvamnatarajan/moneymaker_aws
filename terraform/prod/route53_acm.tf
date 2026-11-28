@@ -38,18 +38,7 @@ resource "aws_acm_certificate_validation" "algo" {
   validation_record_fqdns = [for r in aws_route53_record.acm_validation : r.fqdn]
 }
 
-# Alias to the ALB hostname once the AWS Load Balancer Controller creates the Ingress.
-# Leave alb_dns_name / alb_zone_id empty until the Ingress is up (see variables.tf).
-resource "aws_route53_record" "algo" {
-  count = var.alb_dns_name != "" && var.alb_zone_id != "" ? 1 : 0
-
-  zone_id = data.aws_route53_zone.main.zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  alias {
-    name                   = var.alb_dns_name
-    zone_id                = var.alb_zone_id
-    evaluate_target_health = true
-  }
-}
+# The A-alias algo.mrcobra.link -> ALB is not managed here: the ALB is created
+# by the AWS Load Balancer Controller on first deploy, so the deploy workflow
+# UPSERTs that record (scripts/aws/deploy-prod.sh) and the destroy workflow
+# deletes it (scripts/aws/teardown-cluster.sh).

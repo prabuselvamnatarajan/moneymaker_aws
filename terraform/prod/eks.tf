@@ -45,6 +45,13 @@ resource "aws_eks_cluster" "prod" {
   role_arn = aws_iam_role.eks_cluster.arn
   version  = var.kubernetes_version
 
+  # Access entries (API mode) instead of the aws-auth ConfigMap. Nobody is
+  # admin implicitly; cluster_admin_arns below lists who is.
+  access_config {
+    authentication_mode                         = "API"
+    bootstrap_cluster_creator_admin_permissions = false
+  }
+
   vpc_config {
     subnet_ids              = concat(aws_subnet.private[*].id, aws_subnet.public[*].id)
     endpoint_private_access = true
@@ -97,6 +104,11 @@ resource "aws_iam_role_policy_attachment" "eks_efs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
 }
 
+resource "aws_iam_role_policy_attachment" "eks_ebs_csi" {
+  role       = aws_iam_role.eks_nodes.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
 resource "aws_eks_node_group" "prod" {
   cluster_name    = aws_eks_cluster.prod.name
   node_group_name = "${var.cluster_name}-workers"
@@ -118,6 +130,8 @@ resource "aws_eks_node_group" "prod" {
     aws_iam_role_policy_attachment.eks_worker_node,
     aws_iam_role_policy_attachment.eks_cni,
     aws_iam_role_policy_attachment.eks_ecr_read,
+    aws_iam_role_policy_attachment.eks_efs_csi,
+    aws_iam_role_policy_attachment.eks_ebs_csi,
   ]
 
   tags = {
@@ -132,4 +146,37 @@ resource "aws_eks_addon" "efs_csi" {
   resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [aws_eks_node_group.prod]
+}
+
+# Mongo / Redis StatefulSets use volumeClaimTemplates on the default
+# StorageClass (gp3, applied from k8s/cluster/storageclasses.yaml).
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name                = aws_eks_cluster.prod.name
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [aws_eks_node_group.prod]
+}
+
+resource "aws_eks_access_entry" "admins" {
+  for_each = toset(var.cluster_admin_arns)
+
+  cluster_name  = aws_eks_cluster.prod.name
+  principal_arn = each.value
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "admins" {
+  for_each = toset(var.cluster_admin_arns)
+
+  cluster_name  = aws_eks_cluster.prod.name
+  principal_arn = each.value
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.admins]
 }

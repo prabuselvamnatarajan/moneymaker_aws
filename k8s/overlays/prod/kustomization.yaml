@@ -1,14 +1,18 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# efs-storageclass.yaml is a template — edit fileSystemId from terraform
-# output efs_file_system_id, then: kubectl apply -f efs-storageclass.yaml
+# Applied by scripts/aws/deploy-prod.sh (deploy workflow), which also:
+#   - writes certificate-arn.env from the cluster's moneymaker-infra ConfigMap
+#   - appends an images: block pointing every custom image at ECR:<commit sha>
+#   - creates Secret moneymaker-secrets from the PROD_APP_SECRETS GitHub secret
+# Cluster add-ons and StorageClasses (gp3, efs-sc) come from the infra
+# workflow: scripts/aws/install-cluster-addons.sh + k8s/cluster/.
 resources:
   - ../../base
   - mongo-init-signal-pvc.yaml
 
 # ACM certificate ARN from terraform/prod output (acm_certificate_arn).
-# Edit certificate-arn.env then re-apply.
+# The tracked file is a placeholder; deploy-prod.sh overwrites it on the runner.
 configMapGenerator:
   - name: acm-certificate
     envs:
@@ -29,7 +33,34 @@ replacements:
           - metadata.annotations.[alb.ingress.kubernetes.io/certificate-arn]
 
 patches:
+  # --- Secrets: never ship the base dev passwords to prod ---
+  # moneymaker-secrets is created by deploy-prod.sh from a GitHub secret.
+  - target:
+      kind: Secret
+      name: moneymaker-secrets
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: moneymaker-secrets
+
+  # --- Docker Hub pull secret for third-party images (mongo, kafka, nginx...) ---
+  # Shared NAT IP + anonymous Docker Hub limits would throttle pulls. The
+  # secret is created by deploy-prod.sh when DOCKERHUB_TOKEN is set; a missing
+  # secret only logs a kubelet warning. App images come from ECR (node role).
+  - target:
+      kind: (Deployment|StatefulSet|Job)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: dockerhub-pull
+
   # --- Ingress: ALB + ACM (TLS terminated at the load balancer) ---
+  # The ALB talks HTTPS to reverse-proxy:443 (self-signed; ALB does not verify
+  # backend certs). nginx's :80 server redirects unknown paths to https, which
+  # would loop behind an ALB that already terminated TLS.
   - target:
       kind: Ingress
       name: moneymaker
@@ -42,9 +73,17 @@ patches:
           alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
           alb.ingress.kubernetes.io/ssl-redirect: "443"
           alb.ingress.kubernetes.io/certificate-arn: PLACEHOLDER
+          alb.ingress.kubernetes.io/backend-protocol: HTTPS
+          alb.ingress.kubernetes.io/healthcheck-protocol: HTTPS
+          alb.ingress.kubernetes.io/healthcheck-path: /backtestapp/health
+          alb.ingress.kubernetes.io/success-codes: "200"
+          alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=3600
       - op: replace
         path: /spec/ingressClassName
         value: alb
+      - op: replace
+        path: /spec/rules/0/http/paths/0/backend/service/port/number
+        value: 443
       - op: add
         path: /spec/rules/0/host
         value: algo.mrcobra.link

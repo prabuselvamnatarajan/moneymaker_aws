@@ -8,7 +8,7 @@ overlays. Deploy with `./scripts/deploy-k8s.sh --overlay <name>`.
 | `full` | local **k3s** (install if missing) | Traefik Ingress; hostPorts for local debugging |
 | `ci` | k3s / CI | E2E subset (`replicas: 0` for unused services) |
 | `dev` | **minikube** | nginx Ingress; host `algo.mrcobra.link`; self-signed TLS |
-| `prod` | **EKS** (apply-only) | ALB + ACM; Swarm replica floor restored on six services |
+| `prod` | **EKS** (via GitHub Actions) | ALB + ACM; ECR images; Swarm replica floor restored on six services |
 
 CPU, memory, application passwords, nginx, and `common-env` stay in the shared
 base for every overlay. Autoscaling policy (`maxReplicas: 5`, 90% CPU/memory,
@@ -86,28 +86,24 @@ Browsers will warn about the self-signed certificate.
 
 ## Prod (EKS + Terraform)
 
-Infrastructure scaffold: [`terraform/prod`](../terraform/prod) (not applied by
-this repo's scripts). Order of operations:
+Prod runs on EKS and is driven entirely by GitHub Actions:
 
-1. `terraform apply` in `terraform/prod` (see that README).
-2. `aws eks update-kubeconfig` from the Terraform output.
-3. Install the AWS Load Balancer Controller (Helm) using the IRSA role ARN.
-4. Set `fileSystemId` in [`overlays/prod/efs-storageclass.yaml`](overlays/prod/efs-storageclass.yaml) from `efs_file_system_id`, then apply that StorageClass.
-5. Set `CERTIFICATE_ARN` in [`overlays/prod/certificate-arn.env`](overlays/prod/certificate-arn.env) from `acm_certificate_arn`.
-6. Push images to a registry the cluster can pull.
-7. Deploy:
+| Workflow | When | What |
+| --- | --- | --- |
+| `infra-apply.yml` | manual | `terraform/prod` plan → approval → apply, then `scripts/aws/install-cluster-addons.sh` (ALB controller, metrics-server, `k8s/cluster/storageclasses.yaml`) |
+| `deploy.yml` → **Deploy to EKS** | every push to `main` after unit + e2e pass | `scripts/aws/deploy-prod.sh`: copy `sha-<commit>` images Docker Hub → ECR, create `moneymaker-secrets` from `PROD_APP_SECRETS`, `deploy-k8s.sh --overlay prod`, point `algo.mrcobra.link` at the ALB, smoke test |
+| `infra-destroy.yml` | manual | `scripts/aws/teardown-cluster.sh` (DNS, namespace, ALB, volumes) then `terraform destroy` |
 
-```sh
-./scripts/deploy-k8s.sh --overlay prod --no-import
-```
+Setup order and GitHub settings: [`terraform/prod/README.md`](../terraform/prod/README.md)
+and [`.github/workflows/deploy-secrets.example.txt`](../.github/workflows/deploy-secrets.example.txt).
 
-Prod apply skips k3s install, image import, and post-apply Ingress class
-patches. The Ingress uses class `alb`, host `algo.mrcobra.link`, and ACM TLS at
-the load balancer. `hostPort` bindings are removed. Mongo bootstrap signal and
-`backtest-data` use ReadWriteMany (EFS).
-
-After the ALB exists, set `alb_dns_name` / `alb_zone_id` in Terraform so Route 53
-aliases `algo.mrcobra.link` to the load balancer.
+What the `prod` overlay changes vs base: Ingress class `alb`, host
+`algo.mrcobra.link`, ACM TLS at the ALB, ALB → `reverse-proxy:443` (HTTPS) with
+health check `/backtestapp/health`; `hostPort` removed; Mongo bootstrap signal
+and `backtest-data` on EFS (RWX); replica floor of 3 on six services; the base
+dev Secret `moneymaker-secrets` is dropped (created by the deploy instead);
+every workload gets `imagePullSecrets: dockerhub-pull`. Image names are pointed
+at ECR by an `images:` block the deploy appends on the runner.
 
 ## Local / CI (full and ci)
 
@@ -136,32 +132,12 @@ Host ports on the **full** overlay (HTTP/HTTPS stay on Traefik → reverse-proxy
 | redisinsight | 8001 |
 | Ingress (Traefik → reverse-proxy) | 80, 443 |
 
-## One-time AWS host migration (k3s EC2 path)
+## Old EC2 + k3s host
 
-The GitHub Actions SSH job runs `./build-all.sh` on the Ubuntu host, which
-deploys Kubernetes via the `full` overlay. Prepare the host once:
-
-1. **Free ports 80 and 443** if an older Docker stack is still bound to them:
-   ```sh
-   docker stack rm moneymaker || true
-   docker swarm leave --force || true
-   ```
-2. **Install k3s** (or let the first `./scripts/deploy-k8s.sh` do it as root/sudo):
-   ```sh
-   curl -sfL https://get.k3s.io | sudo sh -
-   mkdir -p ~/.kube
-   sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-   sudo chown "$USER:$USER" ~/.kube/config
-   ```
-3. **Confirm ports** 80 and 443 are free for Traefik (k3s Ingress).
-4. **Pull and deploy**:
-   ```sh
-   cd /home/ubuntu/moneymaker_aws
-   git pull origin main
-   ./build-all.sh
-   ```
-
-For the EKS path, use `terraform/prod` and `--overlay prod` instead.
+Production used to be a single EC2 host deployed over SSH with the `full`
+overlay. That job has been removed from `deploy.yml`. Once EKS is serving
+`algo.mrcobra.link`, the old instance can be stopped. The `full` overlay is still
+used for local k3s.
 
 ## Tear down
 

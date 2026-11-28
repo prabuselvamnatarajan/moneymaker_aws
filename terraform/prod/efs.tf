@@ -4,11 +4,11 @@ resource "aws_security_group" "efs" {
   vpc_id      = aws_vpc.prod.id
 
   ingress {
-    description     = "NFS from private subnets"
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    cidr_blocks     = [for s in aws_subnet.private : s.cidr_block]
+    description = "NFS from private subnets"
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = [for s in aws_subnet.private : s.cidr_block]
   }
 
   egress {

@@ -23,6 +23,7 @@ jobs:
       cancel-in-progress: true
     outputs:
       image_tag: ${{ steps.set-tag.outputs.image_tag }}
+      deploy_tag: ${{ steps.set-tag.outputs.deploy_tag }}
       unit_images: ${{ steps.list-unit.outputs.images }}
     steps:
       - name: Checkout
@@ -42,6 +43,9 @@ jobs:
           validate_image_tag "$tag" "image tag"
           echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Image tag for branch ${branch}: $tag"
+          # Immutable per-commit tag; prod deploys exactly the images that
+          # were tested, even if a newer main build moves :latest meanwhile.
+          echo "deploy_tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: List unit-test images
         id: list-unit
@@ -76,6 +80,19 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.set-tag.outputs.image_tag }}
           # Used after/before push to force Hub repos public (account default may be private).
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push immutable commit tag (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          ./scripts/build-images.sh \
+            --profile full \
+            --registry "$IMAGE_REGISTRY" \
+            --tag "$DEPLOY_TAG" \
+            --push-only \
+            --parallel 4
+        env:
+          DEPLOY_TAG: ${{ steps.set-tag.outputs.deploy_tag }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   unit:
@@ -261,59 +278,68 @@ jobs:
           retention-days: 7
 
   deploy:
-    name: Deploy to AWS
-    needs: [unit, e2e]
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Deploy to EKS
+    needs: [build, unit, e2e]
+    # Off until the Infrastructure Apply workflow has created the cluster:
+    # set repository variable PROD_DEPLOY_ENABLED=true afterwards.
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PROD_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
     concurrency:
       group: deploy-main
       cancel-in-progress: false
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'moneymaker-prod' }}
     steps:
-      - name: Deploy tested images to AWS
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          IMAGE_REGISTRY: ${{ env.IMAGE_REGISTRY }}
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Skip if main has moved on
+        id: tip
+        run: |
+          set -eu
+          git fetch --no-tags --depth=1 origin main
+          tip=$(git rev-parse FETCH_HEAD)
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "Skipping deploy; origin/main is $tip, this run is $GITHUB_SHA"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        if: steps.tip.outputs.current == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.PRIVATE_KEY }}
-          command_timeout: 60m
-          envs: DEPLOY_PATH,IMAGE_REGISTRY,GITHUB_SHA
-          script: |
-            set -eu
-            deploy_path="${DEPLOY_PATH:-$HOME/moneymaker_aws}"
-            case "$deploy_path" in
-              *..*)
-                echo "ERROR: DEPLOY_PATH must not contain .." >&2
-                exit 1
-                ;;
-              /[A-Za-z0-9._/-]*)
-                ;;
-              *)
-                echo "ERROR: DEPLOY_PATH must be an absolute path without spaces" >&2
-                exit 1
-                ;;
-            esac
-            cd "$deploy_path"
-            git fetch --no-tags origin main
-            tip=$(git rev-parse refs/remotes/origin/main)
-            if [ "$tip" != "$GITHUB_SHA" ]; then
-              echo "Skipping deploy; origin/main is $tip, this run is $GITHUB_SHA"
-              exit 0
-            fi
-            git checkout --force --detach "$GITHUB_SHA"
-            chmod +x scripts/pull-images.sh scripts/deploy-k8s.sh
-            ./scripts/pull-images.sh \
-              --profile full \
-              --registry "$IMAGE_REGISTRY" \
-              --tag latest \
-              --parallel 4
-            git fetch --no-tags origin main
-            tip=$(git rev-parse refs/remotes/origin/main)
-            if [ "$tip" != "$GITHUB_SHA" ]; then
-              echo "Skipping deploy; origin/main moved to $tip while images were pulling"
-              exit 0
-            fi
-            ./scripts/deploy-k8s.sh --overlay full
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Docker Hub
+        if: steps.tip.outputs.current == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.IMAGE_REGISTRY }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Deploy tested images to EKS
+        if: steps.tip.outputs.current == 'true'
+        run: |
+          find scripts -type f -name '*.sh' -exec chmod +x {} +
+          ./scripts/aws/deploy-prod.sh
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.deploy_tag }}
+          PROD_APP_SECRETS: ${{ secrets.PROD_APP_SECRETS }}
+          DOCKERHUB_USERNAME: ${{ env.IMAGE_REGISTRY }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Dump Kubernetes diagnostics on failure
+        if: failure() && steps.tip.outputs.current == 'true'
+        run: |
+          kubectl -n moneymaker get all,ingress,pvc 2>&1 || true
+          kubectl -n moneymaker get events --sort-by=.lastTimestamp 2>&1 | tail -60 || true
+          kubectl -n kube-system logs deployment/aws-load-balancer-controller --tail=80 2>&1 || true
